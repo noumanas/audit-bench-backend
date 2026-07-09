@@ -1,0 +1,156 @@
+// AI Code Auditor — data model
+// Two report kinds share one mental model: an Audit is a single-file/paste
+// review; a ScanJob is a repository-wide review composed of many ScanFiles.
+// Both belong to a User, whose Plan governs daily/monthly audit quotas.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Verdict {
+  pass
+  needs_work
+  do_not_ship
+}
+
+enum ScanStatus {
+  queued
+  processing
+  completed
+  failed
+}
+
+enum ScanSourceType {
+  zip
+  github_repo
+  github_pr
+  gitlab_repo
+  gitlab_mr
+}
+
+model Plan {
+  id                String   @id @default(uuid())
+  slug              String   @unique // "free" | "pro" | "team" | "enterprise"
+  name              String
+  priceMonthlyCents Int      @default(0)
+  // null = unlimited
+  dailyAuditLimit   Int?
+  monthlyAuditLimit Int?
+  repositoryScan    Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  users             User[]
+}
+
+model User {
+  id              String    @id @default(uuid())
+  email           String    @unique
+  passwordHash    String
+  name            String?
+  plan            Plan      @relation(fields: [planId], references: [id])
+  planId          String
+  // Personal Access Tokens for repo listing/scanning — plaintext in this
+  // dev-scoped build; a real deployment would encrypt these at rest.
+  githubToken     String?
+  githubUsername  String?
+  gitlabToken     String?
+  gitlabUsername  String?
+  createdAt       DateTime  @default(now())
+  audits          Audit[]
+  scanJobs        ScanJob[]
+}
+
+model Audit {
+  id        String   @id @default(uuid())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  filename  String
+  language  String?
+  provider  String
+  verdict   Verdict
+  summary   String
+  findings  Json // Finding[] — see src/audit/finding.types.ts
+  // Free, local-only checks (ESLint/TSC/complexity/formatting/risk triage) —
+  // see src/audit/stage1/types.ts. Always populated, even on a pure Stage 1 run.
+  stage1    Json?
+  // False when Stage 1 found nothing worth escalating and no LLM call was
+  // made — these runs don't consume plan quota. True on a cache hit that
+  // was originally AI-reviewed.
+  aiInvoked Boolean  @default(true)
+  fromCache Boolean  @default(false)
+  codeSize  Int
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// Keyed by a hash of (content + provider + focus areas) so re-auditing
+// unchanged code — the common case when the same file is scanned across
+// repeated repo scans, or a user re-runs an audit — costs nothing.
+model AuditCache {
+  id          String   @id @default(uuid())
+  contentHash String   @unique
+  verdict     Verdict
+  summary     String
+  findings    Json
+  stage1      Json?
+  aiInvoked   Boolean  @default(false)
+  hitCount    Int      @default(0)
+  createdAt   DateTime @default(now())
+  lastHitAt   DateTime @default(now())
+}
+
+model ScanJob {
+  id           String     @id @default(uuid())
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId       String
+  sourceName   String // original zip filename, "owner/repo", or "owner/repo#12"
+  sourceType   ScanSourceType @default(zip)
+  pullRequestUrl String? // set for github_pr / gitlab_mr
+  status       ScanStatus @default(queued)
+  provider     String
+  framework    String? // best-guess detected framework
+  fileCount    Int        @default(0)
+  filesScanned Int        @default(0)
+  verdict      Verdict?
+  summary      String?
+  // Aggregate cross-file analysis, see src/repository/repo-analysis.types.ts
+  dependencyGraph Json?
+  circularImports Json?
+  deadCode        Json?
+  duplicates      Json?
+  secrets         Json?
+  dependencyVulnerabilities Json? // DependencyVulnerability[] — see analysis/dependency-audit.ts
+  // Cost-saving summary for this scan — see RepositoryService.processScan.
+  filesFromCache Int @default(0)
+  filesAiSkipped Int @default(0) // Stage 1 found nothing risky; no LLM call made
+  // True only if at least one file in this scan triggered a FRESH LLM call
+  // (not served from cache) — this, not fileCount, is what quota counts.
+  aiInvoked   Boolean    @default(true)
+  error       String?
+  createdAt   DateTime   @default(now())
+  completedAt DateTime?
+  files       ScanFile[]
+
+  @@index([userId])
+}
+
+model ScanFile {
+  id        String   @id @default(uuid())
+  scanJob   ScanJob  @relation(fields: [scanJobId], references: [id], onDelete: Cascade)
+  scanJobId String
+  path      String
+  language  String?
+  verdict   Verdict?
+  findings  Json // Finding[]
+  stage1    Json?
+  aiInvoked Boolean  @default(true)
+  fromCache Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([scanJobId])
+}

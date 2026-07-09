@@ -1,0 +1,60 @@
+import { PrismaService } from '../prisma/prisma.service';
+import { RequestUser } from '../auth/types';
+export declare class ReportController {
+    private readonly prisma;
+    constructor(prisma: PrismaService);
+    findOne(user: RequestUser, id: string): Promise<{
+        id: string;
+        createdAt: Date;
+        userId: string;
+        aiInvoked: boolean;
+        fromCache: boolean;
+        verdict: import(".prisma/client").$Enums.Verdict;
+        summary: string;
+        findings: import("@prisma/client/runtime/library").JsonValue;
+        stage1: import("@prisma/client/runtime/library").JsonValue | null;
+        filename: string;
+        provider: string;
+        language: string | null;
+        codeSize: number;
+        kind: string;
+    } | {
+        files: {
+            id: string;
+            createdAt: Date;
+            aiInvoked: boolean;
+            fromCache: boolean;
+            verdict: import(".prisma/client").$Enums.Verdict | null;
+            findings: import("@prisma/client/runtime/library").JsonValue;
+            stage1: import("@prisma/client/runtime/library").JsonValue | null;
+            path: string;
+            language: string | null;
+            scanJobId: string;
+        }[];
+        error: string | null;
+        id: string;
+        createdAt: Date;
+        userId: string;
+        aiInvoked: boolean;
+        verdict: import(".prisma/client").$Enums.Verdict | null;
+        summary: string | null;
+        provider: string;
+        sourceName: string;
+        sourceType: import(".prisma/client").$Enums.ScanSourceType;
+        pullRequestUrl: string | null;
+        status: import(".prisma/client").$Enums.ScanStatus;
+        framework: string | null;
+        fileCount: number;
+        filesScanned: number;
+        dependencyGraph: import("@prisma/client/runtime/library").JsonValue | null;
+        circularImports: import("@prisma/client/runtime/library").JsonValue | null;
+        deadCode: import("@prisma/client/runtime/library").JsonValue | null;
+        duplicates: import("@prisma/client/runtime/library").JsonValue | null;
+        secrets: import("@prisma/client/runtime/library").JsonValue | null;
+        dependencyVulnerabilities: import("@prisma/client/runtime/library").JsonValue | null;
+        filesFromCache: number;
+        filesAiSkipped: number;
+        completedAt: Date | null;
+        kind: string;
+    }>;
+}

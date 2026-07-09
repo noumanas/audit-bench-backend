@@ -1,0 +1,72 @@
+import { GithubService } from './github.service';
+import { RepositoryService } from '../repository/repository.service';
+import { ConnectGithubDto } from './dto/connect-github.dto';
+import { ScanRepoDto } from './dto/scan-repo.dto';
+import { ReviewPrDto } from './dto/review-pr.dto';
+import { RequestUser } from '../auth/types';
+export declare class GithubController {
+    private readonly githubService;
+    private readonly repositoryService;
+    constructor(githubService: GithubService, repositoryService: RepositoryService);
+    status(user: RequestUser): Promise<{
+        connected: boolean;
+        username: string | null;
+    }>;
+    connect(user: RequestUser, dto: ConnectGithubDto): Promise<{
+        username: string;
+    }>;
+    disconnect(user: RequestUser): Promise<void>;
+    listRepos(user: RequestUser): Promise<import("./github.types").GithubRepoSummary[]>;
+    scan(user: RequestUser, dto: ScanRepoDto): Promise<{
+        error: string | null;
+        id: string;
+        createdAt: Date;
+        userId: string;
+        aiInvoked: boolean;
+        verdict: import(".prisma/client").$Enums.Verdict | null;
+        summary: string | null;
+        provider: string;
+        sourceName: string;
+        sourceType: import(".prisma/client").$Enums.ScanSourceType;
+        pullRequestUrl: string | null;
+        status: import(".prisma/client").$Enums.ScanStatus;
+        framework: string | null;
+        fileCount: number;
+        filesScanned: number;
+        dependencyGraph: import("@prisma/client/runtime/library").JsonValue | null;
+        circularImports: import("@prisma/client/runtime/library").JsonValue | null;
+        deadCode: import("@prisma/client/runtime/library").JsonValue | null;
+        duplicates: import("@prisma/client/runtime/library").JsonValue | null;
+        secrets: import("@prisma/client/runtime/library").JsonValue | null;
+        dependencyVulnerabilities: import("@prisma/client/runtime/library").JsonValue | null;
+        filesFromCache: number;
+        filesAiSkipped: number;
+        completedAt: Date | null;
+    }>;
+    reviewPr(user: RequestUser, dto: ReviewPrDto): Promise<{
+        error: string | null;
+        id: string;
+        createdAt: Date;
+        userId: string;
+        aiInvoked: boolean;
+        verdict: import(".prisma/client").$Enums.Verdict | null;
+        summary: string | null;
+        provider: string;
+        sourceName: string;
+        sourceType: import(".prisma/client").$Enums.ScanSourceType;
+        pullRequestUrl: string | null;
+        status: import(".prisma/client").$Enums.ScanStatus;
+        framework: string | null;
+        fileCount: number;
+        filesScanned: number;
+        dependencyGraph: import("@prisma/client/runtime/library").JsonValue | null;
+        circularImports: import("@prisma/client/runtime/library").JsonValue | null;
+        deadCode: import("@prisma/client/runtime/library").JsonValue | null;
+        duplicates: import("@prisma/client/runtime/library").JsonValue | null;
+        secrets: import("@prisma/client/runtime/library").JsonValue | null;
+        dependencyVulnerabilities: import("@prisma/client/runtime/library").JsonValue | null;
+        filesFromCache: number;
+        filesAiSkipped: number;
+        completedAt: Date | null;
+    }>;
+}
