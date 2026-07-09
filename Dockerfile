@@ -24,6 +24,7 @@ COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma ./prisma
 COPY --from=build /app/package.json ./package.json
 COPY docker-entrypoint.sh ./docker-entrypoint.sh
+COPY docker-entrypoint-check-db.js ./docker-entrypoint-check-db.js
 RUN chmod +x ./docker-entrypoint.sh \
   && addgroup -S app && adduser -S app -G app \
   && chown -R app:app /app
