@@ -83,6 +83,23 @@ export class GithubService {
     );
   }
 
+  async listBranches(userId: string, owner: string, repo: string): Promise<string[]> {
+    const token = await this.requireToken(userId);
+
+    const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/branches?per_page=100`, {
+      headers: this.authHeaders(token),
+    });
+    if (res.status === 404) {
+      throw new NotFoundException(`Repository ${owner}/${repo} not found or not accessible with this token`);
+    }
+    if (!res.ok) {
+      throw new BadRequestException(`GitHub rejected the request (${res.status})`);
+    }
+
+    const branches: any[] = await res.json();
+    return branches.map((b) => b.name as string);
+  }
+
   async downloadRepoZip(userId: string, owner: string, repo: string, ref?: string): Promise<Buffer> {
     const token = await this.requireToken(userId);
 

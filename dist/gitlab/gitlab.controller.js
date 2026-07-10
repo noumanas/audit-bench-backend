@@ -40,6 +40,9 @@ let GitlabController = class GitlabController {
     listProjects(user) {
         return this.gitlabService.listProjects(user.id);
     }
+    listBranches(user, projectId) {
+        return this.gitlabService.listBranches(user.id, projectId);
+    }
     async scan(user, dto) {
         const zipBuffer = await this.gitlabService.downloadProjectZip(user.id, dto.projectId, dto.ref);
         return this.repositoryService.createScanJobFromBuffer(user.id, zipBuffer, dto.projectPath || `project ${dto.projectId}`, dto.provider, 'gitlab_repo');
@@ -84,6 +87,14 @@ __decorate([
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", void 0)
 ], GitlabController.prototype, "listProjects", null);
+__decorate([
+    (0, common_1.Get)('projects/:projectId/branches'),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Param)('projectId', common_1.ParseIntPipe)),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Number]),
+    __metadata("design:returntype", void 0)
+], GitlabController.prototype, "listBranches", null);
 __decorate([
     (0, common_1.Post)('scan'),
     __param(0, (0, current_user_decorator_1.CurrentUser)()),

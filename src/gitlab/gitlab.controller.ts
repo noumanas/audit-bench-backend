@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, UseGuards } from '@nestjs/common';
 import { GitlabService } from './gitlab.service';
 import { RepositoryService } from '../repository/repository.service';
 import { ConnectGitlabDto } from './dto/connect-gitlab.dto';
@@ -34,6 +34,11 @@ export class GitlabController {
   @Get('projects')
   listProjects(@CurrentUser() user: RequestUser) {
     return this.gitlabService.listProjects(user.id);
+  }
+
+  @Get('projects/:projectId/branches')
+  listBranches(@CurrentUser() user: RequestUser, @Param('projectId', ParseIntPipe) projectId: number) {
+    return this.gitlabService.listBranches(user.id, projectId);
   }
 
   @Post('scan')

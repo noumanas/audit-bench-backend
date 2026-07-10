@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { GithubService } from './github.service';
 import { RepositoryService } from '../repository/repository.service';
 import { ConnectGithubDto } from './dto/connect-github.dto';
@@ -34,6 +34,11 @@ export class GithubController {
   @Get('repos')
   listRepos(@CurrentUser() user: RequestUser) {
     return this.githubService.listRepos(user.id);
+  }
+
+  @Get('repos/:owner/:repo/branches')
+  listBranches(@CurrentUser() user: RequestUser, @Param('owner') owner: string, @Param('repo') repo: string) {
+    return this.githubService.listBranches(user.id, owner, repo);
   }
 
   @Post('scan')

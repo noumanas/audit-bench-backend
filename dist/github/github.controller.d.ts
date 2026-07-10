@@ -17,6 +17,7 @@ export declare class GithubController {
     }>;
     disconnect(user: RequestUser): Promise<void>;
     listRepos(user: RequestUser): Promise<import("./github.types").GithubRepoSummary[]>;
+    listBranches(user: RequestUser, owner: string, repo: string): Promise<string[]>;
     scan(user: RequestUser, dto: ScanRepoDto): Promise<{
         error: string | null;
         id: string;

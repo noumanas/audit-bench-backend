@@ -83,6 +83,23 @@ export class GitlabService {
     );
   }
 
+  async listBranches(userId: string, projectId: number): Promise<string[]> {
+    const token = await this.requireToken(userId);
+
+    const res = await fetch(`${this.baseUrl()}/projects/${projectId}/repository/branches?per_page=100`, {
+      headers: this.authHeaders(token),
+    });
+    if (res.status === 404) {
+      throw new NotFoundException(`Project ${projectId} not found or not accessible with this token`);
+    }
+    if (!res.ok) {
+      throw new BadRequestException(`GitLab rejected the request (${res.status})`);
+    }
+
+    const branches: any[] = await res.json();
+    return branches.map((b) => b.name as string);
+  }
+
   async downloadProjectZip(userId: string, projectId: number, ref?: string): Promise<Buffer> {
     const token = await this.requireToken(userId);
 

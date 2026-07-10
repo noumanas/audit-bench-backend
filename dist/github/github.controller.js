@@ -40,6 +40,9 @@ let GithubController = class GithubController {
     listRepos(user) {
         return this.githubService.listRepos(user.id);
     }
+    listBranches(user, owner, repo) {
+        return this.githubService.listBranches(user.id, owner, repo);
+    }
     async scan(user, dto) {
         const zipBuffer = await this.githubService.downloadRepoZip(user.id, dto.owner, dto.repo, dto.ref);
         return this.repositoryService.createScanJobFromBuffer(user.id, zipBuffer, `${dto.owner}/${dto.repo}`, dto.provider, 'github_repo');
@@ -84,6 +87,15 @@ __decorate([
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", void 0)
 ], GithubController.prototype, "listRepos", null);
+__decorate([
+    (0, common_1.Get)('repos/:owner/:repo/branches'),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Param)('owner')),
+    __param(2, (0, common_1.Param)('repo')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String, String]),
+    __metadata("design:returntype", void 0)
+], GithubController.prototype, "listBranches", null);
 __decorate([
     (0, common_1.Post)('scan'),
     __param(0, (0, current_user_decorator_1.CurrentUser)()),

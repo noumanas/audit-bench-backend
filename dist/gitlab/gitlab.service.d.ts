@@ -17,6 +17,7 @@ export declare class GitlabService {
         username: string | null;
     }>;
     listProjects(userId: string): Promise<GitlabProjectSummary[]>;
+    listBranches(userId: string, projectId: number): Promise<string[]>;
     downloadProjectZip(userId: string, projectId: number, ref?: string): Promise<Buffer>;
     fetchMrFiles(userId: string, projectId: number, mrIid: number): Promise<GitlabMrDetails>;
     private fetchFileContent;

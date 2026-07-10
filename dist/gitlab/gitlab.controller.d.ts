@@ -17,6 +17,7 @@ export declare class GitlabController {
     }>;
     disconnect(user: RequestUser): Promise<void>;
     listProjects(user: RequestUser): Promise<import("./gitlab.types").GitlabProjectSummary[]>;
+    listBranches(user: RequestUser, projectId: number): Promise<string[]>;
     scan(user: RequestUser, dto: ScanProjectDto): Promise<{
         error: string | null;
         id: string;

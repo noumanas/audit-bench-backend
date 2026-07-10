@@ -14,6 +14,7 @@ export declare class GithubService {
         username: string | null;
     }>;
     listRepos(userId: string): Promise<GithubRepoSummary[]>;
+    listBranches(userId: string, owner: string, repo: string): Promise<string[]>;
     downloadRepoZip(userId: string, owner: string, repo: string, ref?: string): Promise<Buffer>;
     fetchPrFiles(userId: string, owner: string, repo: string, pullNumber: number): Promise<GithubPrDetails>;
     private fetchFileContent;

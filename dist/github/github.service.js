@@ -79,6 +79,20 @@ let GithubService = class GithubService {
             htmlUrl: r.html_url,
         }));
     }
+    async listBranches(userId, owner, repo) {
+        const token = await this.requireToken(userId);
+        const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/branches?per_page=100`, {
+            headers: this.authHeaders(token),
+        });
+        if (res.status === 404) {
+            throw new common_1.NotFoundException(`Repository ${owner}/${repo} not found or not accessible with this token`);
+        }
+        if (!res.ok) {
+            throw new common_1.BadRequestException(`GitHub rejected the request (${res.status})`);
+        }
+        const branches = await res.json();
+        return branches.map((b) => b.name);
+    }
     async downloadRepoZip(userId, owner, repo, ref) {
         const token = await this.requireToken(userId);
         const path = ref ? `${owner}/${repo}/zipball/${ref}` : `${owner}/${repo}/zipball`;
