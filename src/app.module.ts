@@ -13,6 +13,7 @@ import { ReportModule } from './report/report.module';
 import { GithubModule } from './github/github.module';
 import { GitlabModule } from './gitlab/gitlab.module';
 import { AnalyticsModule } from './analytics/analytics.module';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
     GithubModule,
     GitlabModule,
     AnalyticsModule,
+    AdminModule,
   ],
   controllers: [AppController],
   providers: [AppService],

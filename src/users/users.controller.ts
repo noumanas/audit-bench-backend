@@ -26,8 +26,13 @@ export class UsersController {
 
   @Post('plan')
   changePlan(@CurrentUser() user: RequestUser, @Body() dto: ChangePlanDto) {
-    // Self-service plan switch for demo purposes — a real billing flow
-    // (Stripe checkout/webhooks) would gate this instead of a bare POST.
+    // Free applies instantly; anything else files a PlanRequest for an
+    // admin/super_admin to approve — see UsersService.changePlan.
     return this.usersService.changePlan(user.id, dto.slug);
+  }
+
+  @Get('plan-requests')
+  listMyPlanRequests(@CurrentUser() user: RequestUser) {
+    return this.usersService.listMyPlanRequests(user.id);
   }
 }

@@ -22,6 +22,7 @@ const report_module_1 = require("./report/report.module");
 const github_module_1 = require("./github/github.module");
 const gitlab_module_1 = require("./gitlab/gitlab.module");
 const analytics_module_1 = require("./analytics/analytics.module");
+const admin_module_1 = require("./admin/admin.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -40,6 +41,7 @@ exports.AppModule = AppModule = __decorate([
             github_module_1.GithubModule,
             gitlab_module_1.GitlabModule,
             analytics_module_1.AnalyticsModule,
+            admin_module_1.AdminModule,
         ],
         controllers: [app_controller_1.AppController],
         providers: [app_service_1.AppService],

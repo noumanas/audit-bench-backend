@@ -1,3 +1,4 @@
+import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { SignupDto } from './dto/signup.dto';
@@ -5,7 +6,8 @@ import { LoginDto } from './dto/login.dto';
 export declare class AuthService {
     private readonly prisma;
     private readonly jwt;
-    constructor(prisma: PrismaService, jwt: JwtService);
+    private readonly config;
+    constructor(prisma: PrismaService, jwt: JwtService, config: ConfigService);
     signup(dto: SignupDto): Promise<{
         accessToken: string;
         user: {
@@ -14,6 +16,7 @@ export declare class AuthService {
             name: string | null;
             createdAt: Date;
             plan: unknown;
+            role: import(".prisma/client").$Enums.Role;
         };
     }>;
     login(dto: LoginDto): Promise<{
@@ -24,6 +27,7 @@ export declare class AuthService {
             name: string | null;
             createdAt: Date;
             plan: unknown;
+            role: import(".prisma/client").$Enums.Role;
         };
     }>;
     private buildSession;

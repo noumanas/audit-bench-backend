@@ -1,6 +1,8 @@
 import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
+import { Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
@@ -14,6 +16,7 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
+    private readonly config: ConfigService,
   ) {}
 
   async signup(dto: SignupDto) {
@@ -24,8 +27,16 @@ export class AuthService {
     if (!plan) throw new Error(`Default plan "${DEFAULT_PLAN_SLUG}" is not seeded`);
 
     const passwordHash = await bcrypt.hash(dto.password, SALT_ROUNDS);
+    // One-time bootstrap: the very first account to sign up with the email
+    // configured as SUPER_ADMIN_EMAIL becomes a super_admin — there's no
+    // other way to create the first admin, since every other path requires
+    // an existing super_admin to grant the role.
+    const superAdminEmail = this.config.get<string>('SUPER_ADMIN_EMAIL');
+    const role: Role =
+      superAdminEmail && superAdminEmail.toLowerCase() === dto.email.toLowerCase() ? 'super_admin' : 'user';
+
     const user = await this.prisma.user.create({
-      data: { email: dto.email, passwordHash, name: dto.name, planId: plan.id },
+      data: { email: dto.email, passwordHash, name: dto.name, planId: plan.id, role },
       include: { plan: true },
     });
 
@@ -48,7 +59,7 @@ export class AuthService {
   private buildSession(
     id: string,
     email: string,
-    user: { id: string; email: string; name: string | null; createdAt: Date; plan: unknown },
+    user: { id: string; email: string; name: string | null; createdAt: Date; plan: unknown; role: Role },
   ) {
     const payload: JwtPayload = { sub: id, email };
     return {
@@ -59,6 +70,7 @@ export class AuthService {
         name: user.name,
         createdAt: user.createdAt,
         plan: user.plan,
+        role: user.role,
       },
     };
   }

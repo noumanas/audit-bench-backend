@@ -35,6 +35,9 @@ let UsersController = class UsersController {
     changePlan(user, dto) {
         return this.usersService.changePlan(user.id, dto.slug);
     }
+    listMyPlanRequests(user) {
+        return this.usersService.listMyPlanRequests(user.id);
+    }
 };
 exports.UsersController = UsersController;
 __decorate([
@@ -59,6 +62,13 @@ __decorate([
     __metadata("design:paramtypes", [Object, change_plan_dto_1.ChangePlanDto]),
     __metadata("design:returntype", void 0)
 ], UsersController.prototype, "changePlan", null);
+__decorate([
+    (0, common_1.Get)('plan-requests'),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", void 0)
+], UsersController.prototype, "listMyPlanRequests", null);
 exports.UsersController = UsersController = __decorate([
     (0, common_1.Controller)('me'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),

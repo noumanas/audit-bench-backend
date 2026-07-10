@@ -33,35 +33,73 @@ enum ScanSourceType {
   gitlab_mr
 }
 
+enum Role {
+  user
+  admin
+  super_admin
+}
+
+enum PlanRequestStatus {
+  pending
+  approved
+  rejected
+}
+
 model Plan {
-  id                String   @id @default(uuid())
-  slug              String   @unique // "free" | "pro" | "team" | "enterprise"
+  id                String        @id @default(uuid())
+  slug              String        @unique // "free" | "pro" | "team" | "enterprise"
   name              String
-  priceMonthlyCents Int      @default(0)
+  priceMonthlyCents Int           @default(0)
   // null = unlimited
   dailyAuditLimit   Int?
   monthlyAuditLimit Int?
-  repositoryScan    Boolean  @default(true)
-  createdAt         DateTime @default(now())
+  repositoryScan    Boolean       @default(true)
+  createdAt         DateTime      @default(now())
   users             User[]
+  planRequests      PlanRequest[]
 }
 
 model User {
-  id              String    @id @default(uuid())
-  email           String    @unique
+  id              String        @id @default(uuid())
+  email           String        @unique
   passwordHash    String
   name            String?
-  plan            Plan      @relation(fields: [planId], references: [id])
+  plan            Plan          @relation(fields: [planId], references: [id])
   planId          String
+  role            Role          @default(user)
   // Personal Access Tokens for repo listing/scanning — plaintext in this
   // dev-scoped build; a real deployment would encrypt these at rest.
   githubToken     String?
   githubUsername  String?
   gitlabToken     String?
   gitlabUsername  String?
-  createdAt       DateTime  @default(now())
+  createdAt       DateTime      @default(now())
   audits          Audit[]
   scanJobs        ScanJob[]
+  planRequests    PlanRequest[] @relation("PlanRequestsByUser")
+  // Requests this user reviewed as an admin/super_admin — distinct relation
+  // from the requests they themselves filed.
+  reviewedPlanRequests PlanRequest[] @relation("PlanRequestsReviewedBy")
+}
+
+// A user's self-service plan switch is only instant for the free tier —
+// requesting a paid plan (Pro/Team/Enterprise) files one of these instead,
+// and an admin/super_admin must approve it before the plan actually changes.
+model PlanRequest {
+  id              String            @id @default(uuid())
+  user            User              @relation("PlanRequestsByUser", fields: [userId], references: [id], onDelete: Cascade)
+  userId          String
+  requestedPlan   Plan              @relation(fields: [requestedPlanId], references: [id])
+  requestedPlanId String
+  status          PlanRequestStatus @default(pending)
+  reviewedBy      User?             @relation("PlanRequestsReviewedBy", fields: [reviewedById], references: [id])
+  reviewedById    String?
+  note            String? // optional reviewer note, mainly used on rejection
+  createdAt       DateTime          @default(now())
+  reviewedAt      DateTime?
+
+  @@index([userId])
+  @@index([status])
 }
 
 model Audit {

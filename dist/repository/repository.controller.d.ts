@@ -7,6 +7,7 @@ export declare class RepositoryController {
         error: string | null;
         id: string;
         createdAt: Date;
+        status: import(".prisma/client").$Enums.ScanStatus;
         userId: string;
         aiInvoked: boolean;
         verdict: import(".prisma/client").$Enums.Verdict | null;
@@ -15,7 +16,6 @@ export declare class RepositoryController {
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
         pullRequestUrl: string | null;
-        status: import(".prisma/client").$Enums.ScanStatus;
         framework: string | null;
         fileCount: number;
         filesScanned: number;
@@ -33,6 +33,7 @@ export declare class RepositoryController {
         error: string | null;
         id: string;
         createdAt: Date;
+        status: import(".prisma/client").$Enums.ScanStatus;
         userId: string;
         aiInvoked: boolean;
         verdict: import(".prisma/client").$Enums.Verdict | null;
@@ -41,7 +42,6 @@ export declare class RepositoryController {
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
         pullRequestUrl: string | null;
-        status: import(".prisma/client").$Enums.ScanStatus;
         framework: string | null;
         fileCount: number;
         filesScanned: number;
@@ -72,6 +72,7 @@ export declare class RepositoryController {
         error: string | null;
         id: string;
         createdAt: Date;
+        status: import(".prisma/client").$Enums.ScanStatus;
         userId: string;
         aiInvoked: boolean;
         verdict: import(".prisma/client").$Enums.Verdict | null;
@@ -80,7 +81,6 @@ export declare class RepositoryController {
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
         pullRequestUrl: string | null;
-        status: import(".prisma/client").$Enums.ScanStatus;
         framework: string | null;
         fileCount: number;
         filesScanned: number;

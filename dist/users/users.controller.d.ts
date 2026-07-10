@@ -20,6 +20,7 @@ export declare class UsersController {
         email: string;
         name: string | null;
         id: string;
+        role: import(".prisma/client").$Enums.Role;
         githubUsername: string | null;
         createdAt: Date;
     }>;
@@ -42,7 +43,58 @@ export declare class UsersController {
         monthlyResetsAt: Date;
     }>;
     changePlan(user: RequestUser, dto: ChangePlanDto): Promise<{
-        plan: {
+        applied: true;
+        user: {
+            plan: {
+                name: string;
+                id: string;
+                createdAt: Date;
+                slug: string;
+                priceMonthlyCents: number;
+                dailyAuditLimit: number | null;
+                monthlyAuditLimit: number | null;
+                repositoryScan: boolean;
+            };
+            email: string;
+            name: string | null;
+            id: string;
+            role: import(".prisma/client").$Enums.Role;
+            githubUsername: string | null;
+            createdAt: Date;
+        };
+        request?: undefined;
+    } | {
+        applied: false;
+        request: {
+            requestedPlan: {
+                name: string;
+                id: string;
+                createdAt: Date;
+                slug: string;
+                priceMonthlyCents: number;
+                dailyAuditLimit: number | null;
+                monthlyAuditLimit: number | null;
+                repositoryScan: boolean;
+            };
+            reviewedBy: {
+                email: string;
+                name: string | null;
+                id: string;
+            } | null;
+        } & {
+            id: string;
+            createdAt: Date;
+            status: import(".prisma/client").$Enums.PlanRequestStatus;
+            note: string | null;
+            reviewedAt: Date | null;
+            userId: string;
+            requestedPlanId: string;
+            reviewedById: string | null;
+        };
+        user?: undefined;
+    }>;
+    listMyPlanRequests(user: RequestUser): Promise<({
+        requestedPlan: {
             name: string;
             id: string;
             createdAt: Date;
@@ -52,10 +104,19 @@ export declare class UsersController {
             monthlyAuditLimit: number | null;
             repositoryScan: boolean;
         };
-        email: string;
-        name: string | null;
+        reviewedBy: {
+            email: string;
+            name: string | null;
+            id: string;
+        } | null;
+    } & {
         id: string;
-        githubUsername: string | null;
         createdAt: Date;
-    }>;
+        status: import(".prisma/client").$Enums.PlanRequestStatus;
+        note: string | null;
+        reviewedAt: Date | null;
+        userId: string;
+        requestedPlanId: string;
+        reviewedById: string | null;
+    })[]>;
 }

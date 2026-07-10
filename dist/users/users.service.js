@@ -18,8 +18,16 @@ const SAFE_USER_SELECT = {
     name: true,
     createdAt: true,
     plan: true,
+    role: true,
     githubUsername: true,
 };
+const PLAN_REQUEST_INCLUDE = {
+    requestedPlan: true,
+    reviewedBy: { select: { id: true, email: true, name: true } },
+};
+function isSelfServicePlan(plan) {
+    return plan.priceMonthlyCents === 0 && plan.slug !== 'enterprise';
+}
 let UsersService = class UsersService {
     prisma;
     constructor(prisma) {
@@ -38,10 +46,35 @@ let UsersService = class UsersService {
         const plan = await this.prisma.plan.findUnique({ where: { slug } });
         if (!plan)
             throw new common_1.BadRequestException(`Unknown plan "${slug}"`);
-        return this.prisma.user.update({
-            where: { id: userId },
-            data: { planId: plan.id },
-            select: SAFE_USER_SELECT,
+        const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+        if (user.planId === plan.id) {
+            throw new common_1.ConflictException(`You're already on the ${plan.name} plan`);
+        }
+        if (isSelfServicePlan(plan)) {
+            const updated = await this.prisma.user.update({
+                where: { id: userId },
+                data: { planId: plan.id },
+                select: SAFE_USER_SELECT,
+            });
+            return { applied: true, user: updated };
+        }
+        const pending = await this.prisma.planRequest.findFirst({
+            where: { userId, status: 'pending' },
+        });
+        if (pending) {
+            throw new common_1.ConflictException('You already have a pending plan request awaiting review');
+        }
+        const request = await this.prisma.planRequest.create({
+            data: { userId, requestedPlanId: plan.id },
+            include: PLAN_REQUEST_INCLUDE,
+        });
+        return { applied: false, request };
+    }
+    async listMyPlanRequests(userId) {
+        return this.prisma.planRequest.findMany({
+            where: { userId },
+            include: PLAN_REQUEST_INCLUDE,
+            orderBy: { createdAt: 'desc' },
         });
     }
 };
