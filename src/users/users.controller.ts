@@ -35,4 +35,14 @@ export class UsersController {
   listMyPlanRequests(@CurrentUser() user: RequestUser) {
     return this.usersService.listMyPlanRequests(user.id);
   }
+
+  @Get('badge-token')
+  async getBadgeToken(@CurrentUser() user: RequestUser) {
+    return { badgeToken: await this.usersService.getBadgeToken(user.id) };
+  }
+
+  @Post('badge-token/rotate')
+  async rotateBadgeToken(@CurrentUser() user: RequestUser) {
+    return { badgeToken: await this.usersService.rotateBadgeToken(user.id) };
+  }
 }

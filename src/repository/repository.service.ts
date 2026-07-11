@@ -20,6 +20,8 @@ import { ScannedFile } from '../analysis/types';
 import { LlmProviderName } from '../common/types';
 import { worstVerdict } from '../common/verdict';
 import { Prisma, ScanSourceType } from '@prisma/client';
+import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
+import { PrContext, PrFeedback } from '../pr-feedback/pr-feedback.types';
 
 function selectFilesToAnalyze(files: ScannedFile[], max: number): ScannedFile[] {
   const analyzable = files.filter((f) => {
@@ -39,6 +41,7 @@ interface JobDataBase {
   sourceName: string;
   sourceType: ScanSourceType;
   pullRequestUrl?: string;
+  prContext?: Prisma.InputJsonValue;
   framework?: string | null;
   fileCount: number;
   dependencyGraph?: Prisma.InputJsonValue;
@@ -62,6 +65,7 @@ export class RepositoryService {
     private readonly quota: QuotaService,
     private readonly pipeline: PipelineService,
     private readonly cache: AuditCacheService,
+    private readonly prFeedback: PrFeedbackService,
   ) {}
 
   async createScanJob(userId: string, file: Express.Multer.File, provider?: string) {
@@ -120,7 +124,14 @@ export class RepositoryService {
   async createDiffReview(
     userId: string,
     files: ScannedFile[],
-    meta: { sourceName: string; sourceType: 'github_pr' | 'gitlab_mr'; pullRequestUrl: string; provider?: string },
+    meta: {
+      sourceName: string;
+      sourceType: 'github_pr' | 'gitlab_mr';
+      pullRequestUrl: string;
+      provider?: string;
+      /** Set so processScan can publish the review/summary/status back once the scan completes. */
+      prContext?: PrContext;
+    },
   ) {
     await this.quota.assertPlanAllowsRepositoryScan(userId);
 
@@ -142,6 +153,7 @@ export class RepositoryService {
       sourceName: meta.sourceName,
       sourceType: meta.sourceType,
       pullRequestUrl: meta.pullRequestUrl,
+      prContext: meta.prContext as unknown as Prisma.InputJsonValue,
       fileCount: analyzable.length,
       secrets: secrets as unknown as Prisma.InputJsonValue,
     });
@@ -225,7 +237,7 @@ export class RepositoryService {
                 where: { id: jobId },
                 data: { filesScanned: { increment: 1 } },
               });
-              return result;
+              return { path: file.path, result };
             } catch (err) {
               this.logger.warn(`Skipping ${file.path}: ${(err as Error).message}`);
               return null;
@@ -234,7 +246,8 @@ export class RepositoryService {
         ),
       );
 
-      const succeeded = results.filter((r): r is NonNullable<typeof r> => r !== null);
+      const succeededByFile = results.filter((r): r is NonNullable<typeof r> => r !== null);
+      const succeeded = succeededByFile.map((r) => r.result);
       const totalFindings = succeeded.reduce((sum, r) => sum + r.findings.length, 0);
       const overallVerdict = succeeded.length ? worstVerdict(succeeded.map((r) => r.verdict)) : 'pass';
 
@@ -250,18 +263,38 @@ export class RepositoryService {
         crossFileNote = ` ${depVulnCount} vulnerable dependency issue(s), ${circularCount} circular import chain(s), ${deadCodeCount} possibly dead file(s), ${duplicatesCount} duplicate block(s),`;
       }
 
+      const summary = `Reviewed ${succeeded.length}/${files.length} files (of ${job.fileCount} total) — ${filesFromCache} from cache, ${filesAiSkipped} needed no AI review. Found ${totalFindings} finding(s),${crossFileNote} ${secretsCount} potential secret(s).`;
+
       await this.prisma.scanJob.update({
         where: { id: jobId },
         data: {
           status: 'completed',
           verdict: overallVerdict,
-          summary: `Reviewed ${succeeded.length}/${files.length} files (of ${job.fileCount} total) — ${filesFromCache} from cache, ${filesAiSkipped} needed no AI review. Found ${totalFindings} finding(s),${crossFileNote} ${secretsCount} potential secret(s).`,
+          summary,
           filesFromCache,
           filesAiSkipped,
           aiInvoked: anyFreshAiInvoked,
           completedAt: new Date(),
         },
       });
+
+      if (job.prContext) {
+        const feedback: PrFeedback = {
+          verdict: overallVerdict,
+          summary,
+          findings: succeededByFile.flatMap(({ path, result }) =>
+            result.findings.map((f) => ({
+              path,
+              line: f.line,
+              severity: f.severity,
+              title: f.title,
+              description: f.description,
+            })),
+          ),
+          scanUrl: this.buildScanUrl(jobId),
+        };
+        await this.prFeedback.publish(job.userId, job.prContext as unknown as PrContext, feedback);
+      }
     } catch (err) {
       this.logger.error(`Scan ${jobId} failed`, err as Error);
       await this.prisma.scanJob.update({
@@ -269,6 +302,11 @@ export class RepositoryService {
         data: { status: 'failed', error: (err as Error).message, completedAt: new Date() },
       });
     }
+  }
+
+  private buildScanUrl(jobId: string): string | undefined {
+    const origin = (this.config.get<string>('FRONTEND_ORIGIN') || '').split(',')[0]?.trim();
+    return origin ? `${origin}/app/repository/${jobId}` : undefined;
   }
 
   async findOne(userId: string, id: string) {

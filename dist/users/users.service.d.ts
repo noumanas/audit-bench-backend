@@ -16,6 +16,7 @@ export declare class UsersService {
         email: string;
         name: string | null;
         id: string;
+        badgeToken: string | null;
         role: import(".prisma/client").$Enums.Role;
         githubUsername: string | null;
         createdAt: Date;
@@ -36,6 +37,7 @@ export declare class UsersService {
             email: string;
             name: string | null;
             id: string;
+            badgeToken: string | null;
             role: import(".prisma/client").$Enums.Role;
             githubUsername: string | null;
             createdAt: Date;
@@ -97,4 +99,6 @@ export declare class UsersService {
         requestedPlanId: string;
         reviewedById: string | null;
     })[]>;
+    getBadgeToken(userId: string): Promise<string>;
+    rotateBadgeToken(userId: string): Promise<string>;
 }

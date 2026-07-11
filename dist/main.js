@@ -21,7 +21,12 @@ async function bootstrap() {
         },
     });
     app.useGlobalPipes(new common_1.ValidationPipe({ whitelist: true, transform: true }));
-    app.use((0, express_1.json)({ limit: '5mb' }));
+    app.use((0, express_1.json)({
+        limit: '5mb',
+        verify: (req, _res, buf) => {
+            req.rawBody = buf;
+        },
+    }));
     await app.listen(process.env.PORT ?? 4000);
 }
 bootstrap();

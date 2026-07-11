@@ -38,6 +38,12 @@ let UsersController = class UsersController {
     listMyPlanRequests(user) {
         return this.usersService.listMyPlanRequests(user.id);
     }
+    async getBadgeToken(user) {
+        return { badgeToken: await this.usersService.getBadgeToken(user.id) };
+    }
+    async rotateBadgeToken(user) {
+        return { badgeToken: await this.usersService.rotateBadgeToken(user.id) };
+    }
 };
 exports.UsersController = UsersController;
 __decorate([
@@ -69,6 +75,20 @@ __decorate([
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", void 0)
 ], UsersController.prototype, "listMyPlanRequests", null);
+__decorate([
+    (0, common_1.Get)('badge-token'),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], UsersController.prototype, "getBadgeToken", null);
+__decorate([
+    (0, common_1.Post)('badge-token/rotate'),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], UsersController.prototype, "rotateBadgeToken", null);
 exports.UsersController = UsersController = __decorate([
     (0, common_1.Controller)('me'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),

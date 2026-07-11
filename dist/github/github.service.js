@@ -11,13 +11,20 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.GithubService = void 0;
 const common_1 = require("@nestjs/common");
+const crypto = require("crypto");
 const prisma_service_1 = require("../prisma/prisma.service");
 const diff_ranges_1 = require("../common/diff-ranges");
+const pr_feedback_service_1 = require("../pr-feedback/pr-feedback.service");
 const GITHUB_API = 'https://api.github.com';
 let GithubService = class GithubService {
     prisma;
-    constructor(prisma) {
+    prFeedback;
+    constructor(prisma, prFeedback) {
         this.prisma = prisma;
+        this.prFeedback = prFeedback;
+    }
+    onModuleInit() {
+        this.prFeedback.register('github', this);
     }
     authHeaders(token) {
         return {
@@ -152,10 +159,102 @@ let GithubService = class GithubService {
             return null;
         return Buffer.from(data.content, 'base64').toString('utf8');
     }
+    async publish(userId, context, feedback) {
+        const token = await this.requireToken(userId);
+        await this.postPrReview(token, context.owner, context.repo, context.pullNumber, context.headSha, feedback);
+        await this.postCommitStatus(token, context.owner, context.repo, context.headSha, feedback);
+    }
+    async postPrReview(token, owner, repo, pullNumber, headSha, feedback) {
+        const comments = feedback.findings
+            .filter((f) => f.line !== null)
+            .slice(0, 50)
+            .map((f) => ({
+            path: f.path,
+            line: f.line,
+            body: `**${severityLabel(f.severity)} — ${f.title}**\n\n${f.description}`,
+        }));
+        const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${pullNumber}/reviews`, {
+            method: 'POST',
+            headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                commit_id: headSha,
+                body: buildSummaryBody(feedback),
+                event: 'COMMENT',
+                comments,
+            }),
+        });
+        if (!res.ok) {
+            await fetch(`${GITHUB_API}/repos/${owner}/${repo}/issues/${pullNumber}/comments`, {
+                method: 'POST',
+                headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+                body: JSON.stringify({ body: buildSummaryBody(feedback) }),
+            });
+        }
+    }
+    async postCommitStatus(token, owner, repo, sha, feedback) {
+        const { state, description } = commitStatusFor(feedback);
+        await fetch(`${GITHUB_API}/repos/${owner}/${repo}/statuses/${sha}`, {
+            method: 'POST',
+            headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ state, description, context: 'audit/bench' }),
+        });
+    }
+    async postIssueComment(userId, owner, repo, issueNumber, body) {
+        const token = await this.requireToken(userId);
+        await fetch(`${GITHUB_API}/repos/${owner}/${repo}/issues/${issueNumber}/comments`, {
+            method: 'POST',
+            headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ body }),
+        });
+    }
+    static verifyWebhookSignature(secret, rawBody, signatureHeader) {
+        if (!signatureHeader?.startsWith('sha256='))
+            return false;
+        const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+        const provided = signatureHeader.slice('sha256='.length);
+        const expectedBuf = Buffer.from(expected, 'hex');
+        const providedBuf = Buffer.from(provided, 'hex');
+        return expectedBuf.length === providedBuf.length && crypto.timingSafeEqual(expectedBuf, providedBuf);
+    }
 };
 exports.GithubService = GithubService;
 exports.GithubService = GithubService = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [prisma_service_1.PrismaService])
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService,
+        pr_feedback_service_1.PrFeedbackService])
 ], GithubService);
+function severityLabel(severity) {
+    const icons = { critical: '🔴 Critical', high: '🟠 High', medium: '🟡 Medium', low: '🔵 Low' };
+    return icons[severity] || severity;
+}
+function buildSummaryBody(feedback) {
+    const verdictLabel = { pass: '✅ Pass', needs_work: '⚠️ Needs work', do_not_ship: '⛔ Do not ship' }[feedback.verdict];
+    const counts = feedback.findings.reduce((acc, f) => {
+        acc[f.severity] = (acc[f.severity] || 0) + 1;
+        return acc;
+    }, {});
+    const countLine = ['critical', 'high', 'medium', 'low']
+        .filter((s) => counts[s])
+        .map((s) => `${counts[s]} ${s}`)
+        .join(', ');
+    const lines = [
+        `### audit/bench review — ${verdictLabel}`,
+        '',
+        feedback.summary,
+        '',
+        countLine ? `**Findings:** ${countLine}` : '_No findings — all clear._',
+    ];
+    if (feedback.scanUrl)
+        lines.push('', `[View full report](${feedback.scanUrl})`);
+    return lines.join('\n');
+}
+function commitStatusFor(feedback) {
+    if (feedback.verdict === 'do_not_ship') {
+        return { state: 'failure', description: 'audit/bench found blocking issues — see review comments' };
+    }
+    if (feedback.verdict === 'needs_work') {
+        return { state: 'success', description: 'audit/bench found issues worth reviewing' };
+    }
+    return { state: 'success', description: 'audit/bench found no issues' };
+}
 //# sourceMappingURL=github.service.js.map

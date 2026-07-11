@@ -48,12 +48,13 @@ let GitlabController = class GitlabController {
         return this.repositoryService.createScanJobFromBuffer(user.id, zipBuffer, dto.projectPath || `project ${dto.projectId}`, dto.provider, 'gitlab_repo');
     }
     async reviewMr(user, dto) {
-        const { files, url } = await this.gitlabService.fetchMrFiles(user.id, dto.projectId, dto.mrIid);
+        const { files, url, headSha, diffRefs } = await this.gitlabService.fetchMrFiles(user.id, dto.projectId, dto.mrIid);
         return this.repositoryService.createDiffReview(user.id, files, {
             sourceName: `${dto.projectPath || `project ${dto.projectId}`} !${dto.mrIid}`,
             sourceType: 'gitlab_mr',
             pullRequestUrl: url,
             provider: dto.provider,
+            prContext: { kind: 'gitlab', projectId: dto.projectId, mrIid: dto.mrIid, headSha, diffRefs },
         });
     }
 };

@@ -11,15 +11,22 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.GitlabService = void 0;
 const common_1 = require("@nestjs/common");
+const crypto = require("crypto");
 const config_1 = require("@nestjs/config");
 const prisma_service_1 = require("../prisma/prisma.service");
 const diff_ranges_1 = require("../common/diff-ranges");
+const pr_feedback_service_1 = require("../pr-feedback/pr-feedback.service");
 let GitlabService = class GitlabService {
     prisma;
     config;
-    constructor(prisma, config) {
+    prFeedback;
+    constructor(prisma, config, prFeedback) {
         this.prisma = prisma;
         this.config = config;
+        this.prFeedback = prFeedback;
+    }
+    onModuleInit() {
+        this.prFeedback.register('gitlab', this);
     }
     baseUrl() {
         return this.config.get('GITLAB_BASE_URL') || 'https://gitlab.com/api/v4';
@@ -119,6 +126,11 @@ let GitlabService = class GitlabService {
             throw new common_1.BadRequestException(`GitLab rejected the request (${res.status})`);
         const mr = await res.json();
         const headSha = mr.diff_refs?.head_sha;
+        const diffRefs = {
+            baseSha: mr.diff_refs?.base_sha,
+            startSha: mr.diff_refs?.start_sha,
+            headSha,
+        };
         const files = [];
         for (const c of mr.changes || []) {
             if (c.deleted_file || !c.diff)
@@ -133,7 +145,7 @@ let GitlabService = class GitlabService {
                 status: c.new_file ? 'added' : c.renamed_file ? 'renamed' : 'modified',
             });
         }
-        return { files, headSha, url: mr.web_url };
+        return { files, headSha, url: mr.web_url, diffRefs };
     }
     async fetchFileContent(token, projectId, path, ref) {
         const encodedPath = encodeURIComponent(path);
@@ -142,11 +154,102 @@ let GitlabService = class GitlabService {
             return null;
         return res.text();
     }
+    async publish(userId, context, feedback) {
+        const token = await this.requireToken(userId);
+        await this.postMrDiscussions(token, context.projectId, context.mrIid, context.diffRefs, feedback);
+        await this.postMrNoteWithToken(token, context.projectId, context.mrIid, buildSummaryBody(feedback));
+        await this.postCommitStatus(token, context.projectId, context.headSha, feedback);
+    }
+    async postMrDiscussions(token, projectId, mrIid, diffRefs, feedback) {
+        const inline = feedback.findings.filter((f) => f.line !== null).slice(0, 50);
+        for (const f of inline) {
+            const body = `**${severityLabel(f.severity)} — ${f.title}**\n\n${f.description}`;
+            const res = await fetch(`${this.baseUrl()}/projects/${projectId}/merge_requests/${mrIid}/discussions`, {
+                method: 'POST',
+                headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    body,
+                    position: {
+                        position_type: 'text',
+                        base_sha: diffRefs.baseSha,
+                        start_sha: diffRefs.startSha,
+                        head_sha: diffRefs.headSha,
+                        new_path: f.path,
+                        new_line: f.line,
+                    },
+                }),
+            });
+            if (!res.ok) {
+                await this.postMrNoteWithToken(token, projectId, mrIid, body);
+            }
+        }
+    }
+    async postMrNote(userId, projectId, mrIid, body) {
+        const token = await this.requireToken(userId);
+        await this.postMrNoteWithToken(token, projectId, mrIid, body);
+    }
+    async postMrNoteWithToken(token, projectId, mrIid, body) {
+        await fetch(`${this.baseUrl()}/projects/${projectId}/merge_requests/${mrIid}/notes`, {
+            method: 'POST',
+            headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ body }),
+        });
+    }
+    async postCommitStatus(token, projectId, sha, feedback) {
+        const { state, description } = commitStatusFor(feedback);
+        await fetch(`${this.baseUrl()}/projects/${projectId}/statuses/${sha}`, {
+            method: 'POST',
+            headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ state, description, name: 'audit/bench' }),
+        });
+    }
+    static verifyWebhookToken(secret, tokenHeader) {
+        if (!tokenHeader)
+            return false;
+        const secretBuf = Buffer.from(secret);
+        const providedBuf = Buffer.from(tokenHeader);
+        return secretBuf.length === providedBuf.length && crypto.timingSafeEqual(secretBuf, providedBuf);
+    }
 };
 exports.GitlabService = GitlabService;
 exports.GitlabService = GitlabService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
-        config_1.ConfigService])
+        config_1.ConfigService,
+        pr_feedback_service_1.PrFeedbackService])
 ], GitlabService);
+function severityLabel(severity) {
+    const icons = { critical: '🔴 Critical', high: '🟠 High', medium: '🟡 Medium', low: '🔵 Low' };
+    return icons[severity] || severity;
+}
+function buildSummaryBody(feedback) {
+    const verdictLabel = { pass: '✅ Pass', needs_work: '⚠️ Needs work', do_not_ship: '⛔ Do not ship' }[feedback.verdict];
+    const counts = feedback.findings.reduce((acc, f) => {
+        acc[f.severity] = (acc[f.severity] || 0) + 1;
+        return acc;
+    }, {});
+    const countLine = ['critical', 'high', 'medium', 'low']
+        .filter((s) => counts[s])
+        .map((s) => `${counts[s]} ${s}`)
+        .join(', ');
+    const lines = [
+        `### audit/bench review — ${verdictLabel}`,
+        '',
+        feedback.summary,
+        '',
+        countLine ? `**Findings:** ${countLine}` : '_No findings — all clear._',
+    ];
+    if (feedback.scanUrl)
+        lines.push('', `[View full report](${feedback.scanUrl})`);
+    return lines.join('\n');
+}
+function commitStatusFor(feedback) {
+    if (feedback.verdict === 'do_not_ship') {
+        return { state: 'failed', description: 'audit/bench found blocking issues — see review comments' };
+    }
+    if (feedback.verdict === 'needs_work') {
+        return { state: 'success', description: 'audit/bench found issues worth reviewing' };
+    }
+    return { state: 'success', description: 'audit/bench found no issues' };
+}
 //# sourceMappingURL=gitlab.service.js.map

@@ -6,6 +6,8 @@ import { PipelineService } from '../audit/pipeline.service';
 import { AuditCacheService } from '../audit/cache.service';
 import { ScannedFile } from '../analysis/types';
 import { Prisma, ScanSourceType } from '@prisma/client';
+import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
+import { PrContext } from '../pr-feedback/pr-feedback.types';
 export declare class RepositoryService {
     private readonly prisma;
     private readonly llm;
@@ -13,8 +15,9 @@ export declare class RepositoryService {
     private readonly quota;
     private readonly pipeline;
     private readonly cache;
+    private readonly prFeedback;
     private readonly logger;
-    constructor(prisma: PrismaService, llm: LlmService, config: ConfigService, quota: QuotaService, pipeline: PipelineService, cache: AuditCacheService);
+    constructor(prisma: PrismaService, llm: LlmService, config: ConfigService, quota: QuotaService, pipeline: PipelineService, cache: AuditCacheService, prFeedback: PrFeedbackService);
     createScanJob(userId: string, file: Express.Multer.File, provider?: string): Promise<{
         error: string | null;
         id: string;
@@ -28,6 +31,7 @@ export declare class RepositoryService {
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
         pullRequestUrl: string | null;
+        prContext: Prisma.JsonValue | null;
         framework: string | null;
         fileCount: number;
         filesScanned: number;
@@ -54,6 +58,7 @@ export declare class RepositoryService {
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
         pullRequestUrl: string | null;
+        prContext: Prisma.JsonValue | null;
         framework: string | null;
         fileCount: number;
         filesScanned: number;
@@ -72,6 +77,7 @@ export declare class RepositoryService {
         sourceType: 'github_pr' | 'gitlab_mr';
         pullRequestUrl: string;
         provider?: string;
+        prContext?: PrContext;
     }): Promise<{
         error: string | null;
         id: string;
@@ -85,6 +91,7 @@ export declare class RepositoryService {
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
         pullRequestUrl: string | null;
+        prContext: Prisma.JsonValue | null;
         framework: string | null;
         fileCount: number;
         filesScanned: number;
@@ -101,6 +108,7 @@ export declare class RepositoryService {
     private gateAndCreateJob;
     private anyFileNeedsFreshAiCall;
     private processScan;
+    private buildScanUrl;
     findOne(userId: string, id: string): Promise<{
         files: {
             id: string;
@@ -127,6 +135,7 @@ export declare class RepositoryService {
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
         pullRequestUrl: string | null;
+        prContext: Prisma.JsonValue | null;
         framework: string | null;
         fileCount: number;
         filesScanned: number;
@@ -153,6 +162,7 @@ export declare class RepositoryService {
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
         pullRequestUrl: string | null;
+        prContext: Prisma.JsonValue | null;
         framework: string | null;
         fileCount: number;
         filesScanned: number;

@@ -1,13 +1,23 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
+import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { GithubPrDetails, GithubPrFile, GithubRepoSummary } from './github.types';
 import { parseChangedRanges } from '../common/diff-ranges';
+import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
+import { PrContext, PrFeedback, PrPublisher } from '../pr-feedback/pr-feedback.types';
 
 const GITHUB_API = 'https://api.github.com';
 
 @Injectable()
-export class GithubService {
-  constructor(private readonly prisma: PrismaService) {}
+export class GithubService implements OnModuleInit, PrPublisher {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly prFeedback: PrFeedbackService,
+  ) {}
+
+  onModuleInit() {
+    this.prFeedback.register('github', this);
+  }
 
   private authHeaders(token: string) {
     return {
@@ -169,4 +179,122 @@ export class GithubService {
     if (data.encoding !== 'base64' || typeof data.content !== 'string') return null;
     return Buffer.from(data.content, 'base64').toString('utf8');
   }
+
+  /** PrPublisher — posts the review (inline comments + summary) and the merge-blocking commit status. */
+  async publish(userId: string, context: Extract<PrContext, { kind: 'github' }>, feedback: PrFeedback): Promise<void> {
+    const token = await this.requireToken(userId);
+    await this.postPrReview(token, context.owner, context.repo, context.pullNumber, context.headSha, feedback);
+    await this.postCommitStatus(token, context.owner, context.repo, context.headSha, feedback);
+  }
+
+  private async postPrReview(
+    token: string,
+    owner: string,
+    repo: string,
+    pullNumber: number,
+    headSha: string,
+    feedback: PrFeedback,
+  ): Promise<void> {
+    const comments = feedback.findings
+      .filter((f) => f.line !== null)
+      .slice(0, 50) // GitHub review payloads get unreliable well past this
+      .map((f) => ({
+        path: f.path,
+        line: f.line as number,
+        body: `**${severityLabel(f.severity)} — ${f.title}**\n\n${f.description}`,
+      }));
+
+    const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${pullNumber}/reviews`, {
+      method: 'POST',
+      headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        commit_id: headSha,
+        body: buildSummaryBody(feedback),
+        event: 'COMMENT',
+        comments,
+      }),
+    });
+
+    if (!res.ok) {
+      // A single out-of-diff line invalidates the whole batch — fall back to
+      // a plain summary-only comment so the PR still gets *something* useful.
+      await fetch(`${GITHUB_API}/repos/${owner}/${repo}/issues/${pullNumber}/comments`, {
+        method: 'POST',
+        headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ body: buildSummaryBody(feedback) }),
+      });
+    }
+  }
+
+  private async postCommitStatus(token: string, owner: string, repo: string, sha: string, feedback: PrFeedback): Promise<void> {
+    const { state, description } = commitStatusFor(feedback);
+    await fetch(`${GITHUB_API}/repos/${owner}/${repo}/statuses/${sha}`, {
+      method: 'POST',
+      headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ state, description, context: 'audit/bench' }),
+    });
+  }
+
+  /** Used by the webhook receiver to reply to an @-mention on a PR thread. */
+  async postIssueComment(userId: string, owner: string, repo: string, issueNumber: number, body: string): Promise<void> {
+    const token = await this.requireToken(userId);
+    await fetch(`${GITHUB_API}/repos/${owner}/${repo}/issues/${issueNumber}/comments`, {
+      method: 'POST',
+      headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body }),
+    });
+  }
+
+  /** GitHub signs webhook deliveries with `X-Hub-Signature-256: sha256=<hmac>` over the raw body. */
+  static verifyWebhookSignature(secret: string, rawBody: Buffer, signatureHeader: string | undefined): boolean {
+    if (!signatureHeader?.startsWith('sha256=')) return false;
+    const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+    const provided = signatureHeader.slice('sha256='.length);
+    const expectedBuf = Buffer.from(expected, 'hex');
+    const providedBuf = Buffer.from(provided, 'hex');
+    return expectedBuf.length === providedBuf.length && crypto.timingSafeEqual(expectedBuf, providedBuf);
+  }
+}
+
+function severityLabel(severity: string): string {
+  const icons: Record<string, string> = { critical: '🔴 Critical', high: '🟠 High', medium: '🟡 Medium', low: '🔵 Low' };
+  return icons[severity] || severity;
+}
+
+function buildSummaryBody(feedback: PrFeedback): string {
+  const verdictLabel = { pass: '✅ Pass', needs_work: '⚠️ Needs work', do_not_ship: '⛔ Do not ship' }[feedback.verdict];
+  const counts = feedback.findings.reduce<Record<string, number>>((acc, f) => {
+    acc[f.severity] = (acc[f.severity] || 0) + 1;
+    return acc;
+  }, {});
+  const countLine = ['critical', 'high', 'medium', 'low']
+    .filter((s) => counts[s])
+    .map((s) => `${counts[s]} ${s}`)
+    .join(', ');
+
+  const lines = [
+    `### audit/bench review — ${verdictLabel}`,
+    '',
+    feedback.summary,
+    '',
+    countLine ? `**Findings:** ${countLine}` : '_No findings — all clear._',
+  ];
+  if (feedback.scanUrl) lines.push('', `[View full report](${feedback.scanUrl})`);
+  return lines.join('\n');
+}
+
+/**
+ * do_not_ship blocks merge under branch protection; needs_work is reported
+ * (visible in the check + inline comments) but doesn't block, since most
+ * findings at that severity are worth a human judgment call rather than a
+ * hard gate.
+ */
+function commitStatusFor(feedback: PrFeedback): { state: 'success' | 'failure'; description: string } {
+  if (feedback.verdict === 'do_not_ship') {
+    return { state: 'failure', description: 'audit/bench found blocking issues — see review comments' };
+  }
+  if (feedback.verdict === 'needs_work') {
+    return { state: 'success', description: 'audit/bench found issues worth reviewing' };
+  }
+  return { state: 'success', description: 'audit/bench found no issues' };
 }

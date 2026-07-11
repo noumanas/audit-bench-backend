@@ -11,6 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.UsersService = void 0;
 const common_1 = require("@nestjs/common");
+const crypto = require("crypto");
 const prisma_service_1 = require("../prisma/prisma.service");
 const SAFE_USER_SELECT = {
     id: true,
@@ -20,6 +21,7 @@ const SAFE_USER_SELECT = {
     plan: true,
     role: true,
     githubUsername: true,
+    badgeToken: true,
 };
 const PLAN_REQUEST_INCLUDE = {
     requestedPlan: true,
@@ -76,6 +78,17 @@ let UsersService = class UsersService {
             include: PLAN_REQUEST_INCLUDE,
             orderBy: { createdAt: 'desc' },
         });
+    }
+    async getBadgeToken(userId) {
+        const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+        if (user.badgeToken)
+            return user.badgeToken;
+        return this.rotateBadgeToken(userId);
+    }
+    async rotateBadgeToken(userId) {
+        const badgeToken = crypto.randomBytes(24).toString('hex');
+        await this.prisma.user.update({ where: { id: userId }, data: { badgeToken } });
+        return badgeToken;
     }
 };
 exports.UsersService = UsersService;

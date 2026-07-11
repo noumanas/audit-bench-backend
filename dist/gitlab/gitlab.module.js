@@ -11,14 +11,16 @@ const common_1 = require("@nestjs/common");
 const gitlab_service_1 = require("./gitlab.service");
 const gitlab_controller_1 = require("./gitlab.controller");
 const repository_module_1 = require("../repository/repository.module");
+const pr_feedback_module_1 = require("../pr-feedback/pr-feedback.module");
 let GitlabModule = class GitlabModule {
 };
 exports.GitlabModule = GitlabModule;
 exports.GitlabModule = GitlabModule = __decorate([
     (0, common_1.Module)({
-        imports: [repository_module_1.RepositoryModule],
+        imports: [repository_module_1.RepositoryModule, pr_feedback_module_1.PrFeedbackModule],
         controllers: [gitlab_controller_1.GitlabController],
         providers: [gitlab_service_1.GitlabService],
+        exports: [gitlab_service_1.GitlabService],
     })
 ], GitlabModule);
 //# sourceMappingURL=gitlab.module.js.map

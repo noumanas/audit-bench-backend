@@ -55,12 +55,13 @@ export class GithubController {
 
   @Post('pr')
   async reviewPr(@CurrentUser() user: RequestUser, @Body() dto: ReviewPrDto) {
-    const { files, url } = await this.githubService.fetchPrFiles(user.id, dto.owner, dto.repo, dto.pullNumber);
+    const { files, url, headSha } = await this.githubService.fetchPrFiles(user.id, dto.owner, dto.repo, dto.pullNumber);
     return this.repositoryService.createDiffReview(user.id, files, {
       sourceName: `${dto.owner}/${dto.repo}#${dto.pullNumber}`,
       sourceType: 'github_pr',
       pullRequestUrl: url,
       provider: dto.provider,
+      prContext: { kind: 'github', owner: dto.owner, repo: dto.repo, pullNumber: dto.pullNumber, headSha },
     });
   }
 }

@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 
 // Explicit allow-list — never spread a raw User row to a client. That row
@@ -12,6 +13,7 @@ const SAFE_USER_SELECT = {
   plan: true,
   role: true,
   githubUsername: true,
+  badgeToken: true,
 } as const;
 
 const PLAN_REQUEST_INCLUDE = {
@@ -84,5 +86,18 @@ export class UsersService {
       include: PLAN_REQUEST_INCLUDE,
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  /** Get-or-create — most users never need to think about rotation, just want a working badge URL. */
+  async getBadgeToken(userId: string): Promise<string> {
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    if (user.badgeToken) return user.badgeToken;
+    return this.rotateBadgeToken(userId);
+  }
+
+  async rotateBadgeToken(userId: string): Promise<string> {
+    const badgeToken = crypto.randomBytes(24).toString('hex');
+    await this.prisma.user.update({ where: { id: userId }, data: { badgeToken } });
+    return badgeToken;
   }
 }

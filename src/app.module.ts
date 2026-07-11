@@ -14,6 +14,8 @@ import { GithubModule } from './github/github.module';
 import { GitlabModule } from './gitlab/gitlab.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { AdminModule } from './admin/admin.module';
+import { BadgeModule } from './badge/badge.module';
+import { WebhooksModule } from './webhooks/webhooks.module';
 
 @Module({
   imports: [
@@ -30,6 +32,8 @@ import { AdminModule } from './admin/admin.module';
     GitlabModule,
     AnalyticsModule,
     AdminModule,
+    BadgeModule,
+    WebhooksModule,
   ],
   controllers: [AppController],
   providers: [AppService],

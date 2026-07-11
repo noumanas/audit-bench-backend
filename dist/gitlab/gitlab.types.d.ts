@@ -19,4 +19,9 @@ export interface GitlabMrDetails {
     files: GitlabMrFile[];
     headSha: string;
     url: string;
+    diffRefs: {
+        baseSha: string;
+        startSha: string;
+        headSha: string;
+    };
 }

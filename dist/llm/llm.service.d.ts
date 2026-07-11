@@ -10,6 +10,7 @@ export declare class LlmService {
     constructor(config: ConfigService, anthropic: AnthropicProvider, openai: OpenAiProvider, gemini: GeminiProvider);
     resolveProvider(requested?: string): LlmProviderName;
     hasEscalationModel(providerName: LlmProviderName): boolean;
+    completeText(providerName: LlmProviderName, prompt: string): Promise<string>;
     completeStructured<T>(providerName: LlmProviderName, prompt: string, schema: z.ZodType<T>, opts?: {
         escalate?: boolean;
     }): Promise<T>;

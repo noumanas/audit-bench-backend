@@ -23,7 +23,17 @@ async function bootstrap() {
     },
   });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
-  app.use(json({ limit: '5mb' })); // large pasted files
+  app.use(
+    json({
+      limit: '5mb', // large pasted files
+      // Webhook signature verification (GitHub HMAC) needs the exact raw
+      // bytes GitHub signed — re-serializing the parsed JSON wouldn't
+      // reliably match byte-for-byte, so stash it alongside the parsed body.
+      verify: (req: any, _res, buf) => {
+        req.rawBody = buf;
+      },
+    }),
+  );
 
   await app.listen(process.env.PORT ?? 4000);
 }

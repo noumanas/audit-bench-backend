@@ -13,12 +13,13 @@ const repository_controller_1 = require("./repository.controller");
 const llm_module_1 = require("../llm/llm.module");
 const quota_module_1 = require("../quota/quota.module");
 const pipeline_module_1 = require("../audit/pipeline.module");
+const pr_feedback_module_1 = require("../pr-feedback/pr-feedback.module");
 let RepositoryModule = class RepositoryModule {
 };
 exports.RepositoryModule = RepositoryModule;
 exports.RepositoryModule = RepositoryModule = __decorate([
     (0, common_1.Module)({
-        imports: [llm_module_1.LlmModule, quota_module_1.QuotaModule, pipeline_module_1.PipelineModule],
+        imports: [llm_module_1.LlmModule, quota_module_1.QuotaModule, pipeline_module_1.PipelineModule, pr_feedback_module_1.PrFeedbackModule],
         controllers: [repository_controller_1.RepositoryController],
         providers: [repository_service_1.RepositoryService],
         exports: [repository_service_1.RepositoryService],

@@ -1,8 +1,13 @@
+import { OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { GithubPrDetails, GithubRepoSummary } from './github.types';
-export declare class GithubService {
+import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
+import { PrContext, PrFeedback, PrPublisher } from '../pr-feedback/pr-feedback.types';
+export declare class GithubService implements OnModuleInit, PrPublisher {
     private readonly prisma;
-    constructor(prisma: PrismaService);
+    private readonly prFeedback;
+    constructor(prisma: PrismaService, prFeedback: PrFeedbackService);
+    onModuleInit(): void;
     private authHeaders;
     private requireToken;
     connect(userId: string, token: string): Promise<{
@@ -18,4 +23,11 @@ export declare class GithubService {
     downloadRepoZip(userId: string, owner: string, repo: string, ref?: string): Promise<Buffer>;
     fetchPrFiles(userId: string, owner: string, repo: string, pullNumber: number): Promise<GithubPrDetails>;
     private fetchFileContent;
+    publish(userId: string, context: Extract<PrContext, {
+        kind: 'github';
+    }>, feedback: PrFeedback): Promise<void>;
+    private postPrReview;
+    private postCommitStatus;
+    postIssueComment(userId: string, owner: string, repo: string, issueNumber: number, body: string): Promise<void>;
+    static verifyWebhookSignature(secret: string, rawBody: Buffer, signatureHeader: string | undefined): boolean;
 }

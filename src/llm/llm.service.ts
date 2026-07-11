@@ -39,6 +39,11 @@ export class LlmService {
     return Boolean(this.config.get<string>(`${providerName.toUpperCase()}_ESCALATION_MODEL`));
   }
 
+  /** Plain-text completion — for the conversational PR/MR chat reply, which isn't structured output. */
+  async completeText(providerName: LlmProviderName, prompt: string): Promise<string> {
+    return this.providers[providerName].complete(prompt);
+  }
+
   /**
    * Calls the given provider and parses+validates its response against `schema`.
    * Retries once with a stricter follow-up if the first response isn't valid JSON,

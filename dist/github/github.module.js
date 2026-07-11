@@ -11,14 +11,16 @@ const common_1 = require("@nestjs/common");
 const github_service_1 = require("./github.service");
 const github_controller_1 = require("./github.controller");
 const repository_module_1 = require("../repository/repository.module");
+const pr_feedback_module_1 = require("../pr-feedback/pr-feedback.module");
 let GithubModule = class GithubModule {
 };
 exports.GithubModule = GithubModule;
 exports.GithubModule = GithubModule = __decorate([
     (0, common_1.Module)({
-        imports: [repository_module_1.RepositoryModule],
+        imports: [repository_module_1.RepositoryModule, pr_feedback_module_1.PrFeedbackModule],
         controllers: [github_controller_1.GithubController],
         providers: [github_service_1.GithubService],
+        exports: [github_service_1.GithubService],
     })
 ], GithubModule);
 //# sourceMappingURL=github.module.js.map

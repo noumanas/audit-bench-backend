@@ -73,6 +73,10 @@ model User {
   githubUsername  String?
   gitlabToken     String?
   gitlabUsername  String?
+  // Public, unguessable token used in the README badge URL — distinct from
+  // `id` so a leaked badge URL can't be used to look up the account by id
+  // and can be rotated independently. Generated on first request.
+  badgeToken      String?       @unique
   createdAt       DateTime      @default(now())
   audits          Audit[]
   scanJobs        ScanJob[]
@@ -80,6 +84,25 @@ model User {
   // Requests this user reviewed as an admin/super_admin — distinct relation
   // from the requests they themselves filed.
   reviewedPlanRequests PlanRequest[] @relation("PlanRequestsReviewedBy")
+  webhookConfigs  WebhookConfig[]
+}
+
+// Manually configured by the user in their repo/project's webhook settings
+// (no GitHub App / OAuth — this integration is PAT-only) so an incoming
+// webhook can be matched to (a) whose token to reply with and (b) the
+// secret to verify the delivery against.
+model WebhookConfig {
+  id             String   @id @default(uuid())
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId         String
+  provider       String // 'github' | 'gitlab'
+  // GitHub: "owner/repo" (matches repository.full_name).
+  // GitLab: the numeric project id, as a string (matches project.id).
+  repoIdentifier String
+  secret         String
+  createdAt      DateTime @default(now())
+
+  @@unique([provider, repoIdentifier])
 }
 
 // A user's self-service plan switch is only instant for the free tier —
@@ -149,6 +172,10 @@ model ScanJob {
   sourceName   String // original zip filename, "owner/repo", or "owner/repo#12"
   sourceType   ScanSourceType @default(zip)
   pullRequestUrl String? // set for github_pr / gitlab_mr
+  // Set for github_pr / gitlab_mr — everything PrFeedbackService needs to
+  // post the review comments / summary / commit status back once the scan
+  // completes. Shape: PrContext (see src/pr-feedback/pr-feedback.types.ts).
+  prContext      Json?
   status       ScanStatus @default(queued)
   provider     String
   framework    String? // best-guess detected framework

@@ -20,6 +20,7 @@ export declare class UsersController {
         email: string;
         name: string | null;
         id: string;
+        badgeToken: string | null;
         role: import(".prisma/client").$Enums.Role;
         githubUsername: string | null;
         createdAt: Date;
@@ -58,6 +59,7 @@ export declare class UsersController {
             email: string;
             name: string | null;
             id: string;
+            badgeToken: string | null;
             role: import(".prisma/client").$Enums.Role;
             githubUsername: string | null;
             createdAt: Date;
@@ -119,4 +121,10 @@ export declare class UsersController {
         requestedPlanId: string;
         reviewedById: string | null;
     })[]>;
+    getBadgeToken(user: RequestUser): Promise<{
+        badgeToken: string;
+    }>;
+    rotateBadgeToken(user: RequestUser): Promise<{
+        badgeToken: string;
+    }>;
 }

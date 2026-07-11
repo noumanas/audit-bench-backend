@@ -39,6 +39,9 @@ let LlmService = class LlmService {
     hasEscalationModel(providerName) {
         return Boolean(this.config.get(`${providerName.toUpperCase()}_ESCALATION_MODEL`));
     }
+    async completeText(providerName, prompt) {
+        return this.providers[providerName].complete(prompt);
+    }
     async completeStructured(providerName, prompt, schema, opts) {
         const provider = this.providers[providerName];
         const attempt = async (p) => {

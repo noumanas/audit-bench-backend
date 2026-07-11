@@ -30,6 +30,7 @@ const duplicate_code_1 = require("../analysis/duplicate-code");
 const secrets_scanner_1 = require("../analysis/secrets-scanner");
 const dependency_audit_1 = require("../analysis/dependency-audit");
 const verdict_1 = require("../common/verdict");
+const pr_feedback_service_1 = require("../pr-feedback/pr-feedback.service");
 function selectFilesToAnalyze(files, max) {
     const analyzable = files.filter((f) => {
         const ext = f.path.split('.').pop()?.toLowerCase();
@@ -48,14 +49,16 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
     quota;
     pipeline;
     cache;
+    prFeedback;
     logger = new common_1.Logger(RepositoryService_1.name);
-    constructor(prisma, llm, config, quota, pipeline, cache) {
+    constructor(prisma, llm, config, quota, pipeline, cache, prFeedback) {
         this.prisma = prisma;
         this.llm = llm;
         this.config = config;
         this.quota = quota;
         this.pipeline = pipeline;
         this.cache = cache;
+        this.prFeedback = prFeedback;
     }
     async createScanJob(userId, file, provider) {
         return this.createScanJobFromBuffer(userId, file.buffer, file.originalname, provider);
@@ -106,6 +109,7 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
             sourceName: meta.sourceName,
             sourceType: meta.sourceType,
             pullRequestUrl: meta.pullRequestUrl,
+            prContext: meta.prContext,
             fileCount: analyzable.length,
             secrets: secrets,
         });
@@ -170,14 +174,15 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
                         where: { id: jobId },
                         data: { filesScanned: { increment: 1 } },
                     });
-                    return result;
+                    return { path: file.path, result };
                 }
                 catch (err) {
                     this.logger.warn(`Skipping ${file.path}: ${err.message}`);
                     return null;
                 }
             })));
-            const succeeded = results.filter((r) => r !== null);
+            const succeededByFile = results.filter((r) => r !== null);
+            const succeeded = succeededByFile.map((r) => r.result);
             const totalFindings = succeeded.reduce((sum, r) => sum + r.findings.length, 0);
             const overallVerdict = succeeded.length ? (0, verdict_1.worstVerdict)(succeeded.map((r) => r.verdict)) : 'pass';
             const job = await this.prisma.scanJob.findUniqueOrThrow({ where: { id: jobId } });
@@ -190,18 +195,34 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
                 const duplicatesCount = Array.isArray(job.duplicates) ? job.duplicates.length : 0;
                 crossFileNote = ` ${depVulnCount} vulnerable dependency issue(s), ${circularCount} circular import chain(s), ${deadCodeCount} possibly dead file(s), ${duplicatesCount} duplicate block(s),`;
             }
+            const summary = `Reviewed ${succeeded.length}/${files.length} files (of ${job.fileCount} total) — ${filesFromCache} from cache, ${filesAiSkipped} needed no AI review. Found ${totalFindings} finding(s),${crossFileNote} ${secretsCount} potential secret(s).`;
             await this.prisma.scanJob.update({
                 where: { id: jobId },
                 data: {
                     status: 'completed',
                     verdict: overallVerdict,
-                    summary: `Reviewed ${succeeded.length}/${files.length} files (of ${job.fileCount} total) — ${filesFromCache} from cache, ${filesAiSkipped} needed no AI review. Found ${totalFindings} finding(s),${crossFileNote} ${secretsCount} potential secret(s).`,
+                    summary,
                     filesFromCache,
                     filesAiSkipped,
                     aiInvoked: anyFreshAiInvoked,
                     completedAt: new Date(),
                 },
             });
+            if (job.prContext) {
+                const feedback = {
+                    verdict: overallVerdict,
+                    summary,
+                    findings: succeededByFile.flatMap(({ path, result }) => result.findings.map((f) => ({
+                        path,
+                        line: f.line,
+                        severity: f.severity,
+                        title: f.title,
+                        description: f.description,
+                    }))),
+                    scanUrl: this.buildScanUrl(jobId),
+                };
+                await this.prFeedback.publish(job.userId, job.prContext, feedback);
+            }
         }
         catch (err) {
             this.logger.error(`Scan ${jobId} failed`, err);
@@ -210,6 +231,10 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
                 data: { status: 'failed', error: err.message, completedAt: new Date() },
             });
         }
+    }
+    buildScanUrl(jobId) {
+        const origin = (this.config.get('FRONTEND_ORIGIN') || '').split(',')[0]?.trim();
+        return origin ? `${origin}/app/repository/${jobId}` : undefined;
     }
     async findOne(userId, id) {
         const job = await this.prisma.scanJob.findUnique({
@@ -236,6 +261,7 @@ exports.RepositoryService = RepositoryService = RepositoryService_1 = __decorate
         config_1.ConfigService,
         quota_service_1.QuotaService,
         pipeline_service_1.PipelineService,
-        cache_service_1.AuditCacheService])
+        cache_service_1.AuditCacheService,
+        pr_feedback_service_1.PrFeedbackService])
 ], RepositoryService);
 //# sourceMappingURL=repository.service.js.map

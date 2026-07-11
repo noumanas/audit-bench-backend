@@ -23,6 +23,8 @@ const github_module_1 = require("./github/github.module");
 const gitlab_module_1 = require("./gitlab/gitlab.module");
 const analytics_module_1 = require("./analytics/analytics.module");
 const admin_module_1 = require("./admin/admin.module");
+const badge_module_1 = require("./badge/badge.module");
+const webhooks_module_1 = require("./webhooks/webhooks.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -42,6 +44,8 @@ exports.AppModule = AppModule = __decorate([
             gitlab_module_1.GitlabModule,
             analytics_module_1.AnalyticsModule,
             admin_module_1.AdminModule,
+            badge_module_1.BadgeModule,
+            webhooks_module_1.WebhooksModule,
         ],
         controllers: [app_controller_1.AppController],
         providers: [app_service_1.AppService],
