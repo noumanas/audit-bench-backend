@@ -145,7 +145,82 @@ let GithubService = class GithubService {
                 status: f.status,
             });
         }
-        return { files, headSha, url: pr.html_url };
+        return { files, headSha, url: pr.html_url, headRef: pr.head.ref, baseRef: pr.base.ref };
+    }
+    async getRepoMeta(userId, owner, repo) {
+        const token = await this.requireToken(userId);
+        const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}`, { headers: this.authHeaders(token) });
+        if (res.status === 404)
+            throw new common_1.NotFoundException(`Repository ${owner}/${repo} not found or not accessible with this token`);
+        if (!res.ok)
+            throw new common_1.BadRequestException(`GitHub rejected the request (${res.status})`);
+        const data = await res.json();
+        return { defaultBranch: data.default_branch };
+    }
+    async getFileAtRef(userId, owner, repo, path, ref) {
+        const token = await this.requireToken(userId);
+        const encodedPath = path.split('/').map(encodeURIComponent).join('/');
+        const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/contents/${encodedPath}?ref=${encodeURIComponent(ref)}`, {
+            headers: this.authHeaders(token),
+        });
+        if (res.status === 404)
+            throw new common_1.NotFoundException(`${path} not found at ${ref}`);
+        if (!res.ok)
+            throw new common_1.BadRequestException(`GitHub rejected the request (${res.status})`);
+        const data = await res.json();
+        if (data.encoding !== 'base64' || typeof data.content !== 'string') {
+            throw new common_1.BadRequestException('Unexpected content encoding from GitHub');
+        }
+        return { content: Buffer.from(data.content, 'base64').toString('utf8'), sha: data.sha };
+    }
+    async getBranchHeadSha(userId, owner, repo, branch) {
+        const token = await this.requireToken(userId);
+        const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/git/ref/heads/${encodeURIComponent(branch)}`, {
+            headers: this.authHeaders(token),
+        });
+        if (!res.ok)
+            throw new common_1.BadRequestException(`GitHub rejected resolving branch "${branch}" (${res.status})`);
+        const data = await res.json();
+        return data.object.sha;
+    }
+    async createBranch(userId, owner, repo, newBranch, fromSha) {
+        const token = await this.requireToken(userId);
+        const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/git/refs`, {
+            method: 'POST',
+            headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ref: `refs/heads/${newBranch}`, sha: fromSha }),
+        });
+        if (!res.ok)
+            throw new common_1.BadRequestException(`GitHub rejected creating branch "${newBranch}" (${res.status})`);
+    }
+    async commitFileUpdate(userId, owner, repo, path, branch, content, message, sha) {
+        const token = await this.requireToken(userId);
+        const encodedPath = path.split('/').map(encodeURIComponent).join('/');
+        const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/contents/${encodedPath}`, {
+            method: 'PUT',
+            headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message, content: Buffer.from(content, 'utf8').toString('base64'), sha, branch }),
+        });
+        if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            throw new common_1.BadRequestException(`GitHub rejected the commit (${res.status})${body.message ? `: ${body.message}` : ''}`);
+        }
+        const data = await res.json();
+        return data.commit?.html_url || '';
+    }
+    async createPullRequest(userId, owner, repo, title, head, base, body) {
+        const token = await this.requireToken(userId);
+        const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls`, {
+            method: 'POST',
+            headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title, head, base, body }),
+        });
+        if (!res.ok) {
+            const respBody = await res.json().catch(() => ({}));
+            throw new common_1.BadRequestException(`GitHub rejected creating the pull request (${res.status})${respBody.message ? `: ${respBody.message}` : ''}`);
+        }
+        const data = await res.json();
+        return { url: data.html_url, number: data.number };
     }
     async fetchFileContent(token, owner, repo, path, ref) {
         const encodedPath = path.split('/').map(encodeURIComponent).join('/');

@@ -145,7 +145,14 @@ let GitlabService = class GitlabService {
                 status: c.new_file ? 'added' : c.renamed_file ? 'renamed' : 'modified',
             });
         }
-        return { files, headSha, url: mr.web_url, diffRefs };
+        return {
+            files,
+            headSha,
+            url: mr.web_url,
+            diffRefs,
+            sourceBranch: mr.source_branch,
+            targetBranch: mr.target_branch,
+        };
     }
     async fetchFileContent(token, projectId, path, ref) {
         const encodedPath = encodeURIComponent(path);
@@ -153,6 +160,56 @@ let GitlabService = class GitlabService {
         if (!res.ok)
             return null;
         return res.text();
+    }
+    async getProjectMeta(userId, projectId) {
+        const token = await this.requireToken(userId);
+        const res = await fetch(`${this.baseUrl()}/projects/${projectId}`, { headers: this.authHeaders(token) });
+        if (res.status === 404)
+            throw new common_1.NotFoundException(`Project ${projectId} not found or not accessible with this token`);
+        if (!res.ok)
+            throw new common_1.BadRequestException(`GitLab rejected the request (${res.status})`);
+        const data = await res.json();
+        return { defaultBranch: data.default_branch };
+    }
+    async getFileAtRef(userId, projectId, path, ref) {
+        const token = await this.requireToken(userId);
+        const content = await this.fetchFileContent(token, projectId, path, ref);
+        if (content === null)
+            throw new common_1.NotFoundException(`${path} not found at ${ref}`);
+        return content;
+    }
+    async commitFile(userId, projectId, branch, path, content, message, startBranch) {
+        const token = await this.requireToken(userId);
+        const res = await fetch(`${this.baseUrl()}/projects/${projectId}/repository/commits`, {
+            method: 'POST',
+            headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                branch,
+                commit_message: message,
+                ...(startBranch ? { start_branch: startBranch } : {}),
+                actions: [{ action: 'update', file_path: path, content }],
+            }),
+        });
+        if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            throw new common_1.BadRequestException(`GitLab rejected the commit (${res.status})${body.message ? `: ${body.message}` : ''}`);
+        }
+        const data = await res.json();
+        return data.web_url || '';
+    }
+    async createMergeRequest(userId, projectId, sourceBranch, targetBranch, title, description) {
+        const token = await this.requireToken(userId);
+        const res = await fetch(`${this.baseUrl()}/projects/${projectId}/merge_requests`, {
+            method: 'POST',
+            headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ source_branch: sourceBranch, target_branch: targetBranch, title, description }),
+        });
+        if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            throw new common_1.BadRequestException(`GitLab rejected creating the merge request (${res.status})${body.message ? `: ${body.message}` : ''}`);
+        }
+        const data = await res.json();
+        return { url: data.web_url, iid: data.iid };
     }
     async publish(userId, context, feedback) {
         const token = await this.requireToken(userId);

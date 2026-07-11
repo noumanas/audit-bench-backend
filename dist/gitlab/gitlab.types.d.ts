@@ -24,4 +24,6 @@ export interface GitlabMrDetails {
         startSha: string;
         headSha: string;
     };
+    sourceBranch: string;
+    targetBranch: string;
 }

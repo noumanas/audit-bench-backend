@@ -20,4 +20,6 @@ export interface GithubPrDetails {
     files: GithubPrFile[];
     headSha: string;
     url: string;
+    headRef: string;
+    baseRef: string;
 }

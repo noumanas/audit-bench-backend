@@ -176,6 +176,10 @@ model ScanJob {
   // post the review comments / summary / commit status back once the scan
   // completes. Shape: PrContext (see src/pr-feedback/pr-feedback.types.ts).
   prContext      Json?
+  // Set for github_repo / gitlab_repo — what FixService needs to branch off
+  // and open a PR/MR when the user commits a fix from the web editor.
+  // Shape: RepoRef (see src/common/repo-ref.types.ts).
+  repoRef        Json?
   status       ScanStatus @default(queued)
   provider     String
   framework    String? // best-guess detected framework

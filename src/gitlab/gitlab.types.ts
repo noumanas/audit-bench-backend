@@ -23,4 +23,6 @@ export interface GitlabMrDetails {
   headSha: string;
   url: string;
   diffRefs: { baseSha: string; startSha: string; headSha: string };
+  sourceBranch: string;
+  targetBranch: string;
 }

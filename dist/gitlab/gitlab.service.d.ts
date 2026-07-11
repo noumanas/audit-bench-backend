@@ -26,6 +26,15 @@ export declare class GitlabService implements OnModuleInit, PrPublisher {
     downloadProjectZip(userId: string, projectId: number, ref?: string): Promise<Buffer>;
     fetchMrFiles(userId: string, projectId: number, mrIid: number): Promise<GitlabMrDetails>;
     private fetchFileContent;
+    getProjectMeta(userId: string, projectId: number): Promise<{
+        defaultBranch: string;
+    }>;
+    getFileAtRef(userId: string, projectId: number, path: string, ref: string): Promise<string>;
+    commitFile(userId: string, projectId: number, branch: string, path: string, content: string, message: string, startBranch?: string): Promise<string>;
+    createMergeRequest(userId: string, projectId: number, sourceBranch: string, targetBranch: string, title: string, description: string): Promise<{
+        url: string;
+        iid: number;
+    }>;
     publish(userId: string, context: Extract<PrContext, {
         kind: 'gitlab';
     }>, feedback: PrFeedback): Promise<void>;

@@ -43,6 +43,8 @@ export class GithubController {
 
   @Post('scan')
   async scan(@CurrentUser() user: RequestUser, @Body() dto: ScanRepoDto) {
+    const { defaultBranch } = await this.githubService.getRepoMeta(user.id, dto.owner, dto.repo);
+    const ref = dto.ref || defaultBranch;
     const zipBuffer = await this.githubService.downloadRepoZip(user.id, dto.owner, dto.repo, dto.ref);
     return this.repositoryService.createScanJobFromBuffer(
       user.id,
@@ -50,18 +52,24 @@ export class GithubController {
       `${dto.owner}/${dto.repo}`,
       dto.provider,
       'github_repo',
+      { kind: 'github', owner: dto.owner, repo: dto.repo, ref, defaultBranch },
     );
   }
 
   @Post('pr')
   async reviewPr(@CurrentUser() user: RequestUser, @Body() dto: ReviewPrDto) {
-    const { files, url, headSha } = await this.githubService.fetchPrFiles(user.id, dto.owner, dto.repo, dto.pullNumber);
+    const { files, url, headSha, headRef, baseRef } = await this.githubService.fetchPrFiles(
+      user.id,
+      dto.owner,
+      dto.repo,
+      dto.pullNumber,
+    );
     return this.repositoryService.createDiffReview(user.id, files, {
       sourceName: `${dto.owner}/${dto.repo}#${dto.pullNumber}`,
       sourceType: 'github_pr',
       pullRequestUrl: url,
       provider: dto.provider,
-      prContext: { kind: 'github', owner: dto.owner, repo: dto.repo, pullNumber: dto.pullNumber, headSha },
+      prContext: { kind: 'github', owner: dto.owner, repo: dto.repo, pullNumber: dto.pullNumber, headSha, headRef, baseRef },
     });
   }
 }

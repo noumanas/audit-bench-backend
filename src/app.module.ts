@@ -16,6 +16,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
 import { AdminModule } from './admin/admin.module';
 import { BadgeModule } from './badge/badge.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
+import { FixModule } from './fix/fix.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     AdminModule,
     BadgeModule,
     WebhooksModule,
+    FixModule,
   ],
   controllers: [AppController],
   providers: [AppService],

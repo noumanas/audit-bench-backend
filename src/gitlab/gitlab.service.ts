@@ -163,7 +163,14 @@ export class GitlabService implements OnModuleInit, PrPublisher {
       });
     }
 
-    return { files, headSha, url: mr.web_url, diffRefs };
+    return {
+      files,
+      headSha,
+      url: mr.web_url,
+      diffRefs,
+      sourceBranch: mr.source_branch,
+      targetBranch: mr.target_branch,
+    };
   }
 
   private async fetchFileContent(token: string, projectId: number, path: string, ref: string): Promise<string | null> {
@@ -174,6 +181,79 @@ export class GitlabService implements OnModuleInit, PrPublisher {
     );
     if (!res.ok) return null;
     return res.text();
+  }
+
+  /** Project metadata needed to resolve "the ref that was scanned" when none was explicitly given. */
+  async getProjectMeta(userId: string, projectId: number): Promise<{ defaultBranch: string }> {
+    const token = await this.requireToken(userId);
+    const res = await fetch(`${this.baseUrl()}/projects/${projectId}`, { headers: this.authHeaders(token) });
+    if (res.status === 404) throw new NotFoundException(`Project ${projectId} not found or not accessible with this token`);
+    if (!res.ok) throw new BadRequestException(`GitLab rejected the request (${res.status})`);
+    const data = await res.json();
+    return { defaultBranch: data.default_branch };
+  }
+
+  /** Fetches a single file's content at a given ref — public wrapper for FixService. */
+  async getFileAtRef(userId: string, projectId: number, path: string, ref: string): Promise<string> {
+    const token = await this.requireToken(userId);
+    const content = await this.fetchFileContent(token, projectId, path, ref);
+    if (content === null) throw new NotFoundException(`${path} not found at ${ref}`);
+    return content;
+  }
+
+  /**
+   * Commits a full-file content update via the Commits API. Passing
+   * `startBranch` creates `branch` off it atomically in the same call —
+   * used when fixing a repo scan (no existing branch to commit to yet).
+   */
+  async commitFile(
+    userId: string,
+    projectId: number,
+    branch: string,
+    path: string,
+    content: string,
+    message: string,
+    startBranch?: string,
+  ): Promise<string> {
+    const token = await this.requireToken(userId);
+    const res = await fetch(`${this.baseUrl()}/projects/${projectId}/repository/commits`, {
+      method: 'POST',
+      headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        branch,
+        commit_message: message,
+        ...(startBranch ? { start_branch: startBranch } : {}),
+        actions: [{ action: 'update', file_path: path, content }],
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new BadRequestException(`GitLab rejected the commit (${res.status})${body.message ? `: ${body.message}` : ''}`);
+    }
+    const data = await res.json();
+    return data.web_url || '';
+  }
+
+  async createMergeRequest(
+    userId: string,
+    projectId: number,
+    sourceBranch: string,
+    targetBranch: string,
+    title: string,
+    description: string,
+  ): Promise<{ url: string; iid: number }> {
+    const token = await this.requireToken(userId);
+    const res = await fetch(`${this.baseUrl()}/projects/${projectId}/merge_requests`, {
+      method: 'POST',
+      headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source_branch: sourceBranch, target_branch: targetBranch, title, description }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new BadRequestException(`GitLab rejected creating the merge request (${res.status})${body.message ? `: ${body.message}` : ''}`);
+    }
+    const data = await res.json();
+    return { url: data.web_url, iid: data.iid };
   }
 
   /** PrPublisher — posts inline discussions + a summary note, and the merge-blocking commit status. */

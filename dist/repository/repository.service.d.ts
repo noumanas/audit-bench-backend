@@ -8,6 +8,7 @@ import { ScannedFile } from '../analysis/types';
 import { Prisma, ScanSourceType } from '@prisma/client';
 import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
 import { PrContext } from '../pr-feedback/pr-feedback.types';
+import { RepoRef } from '../common/repo-ref.types';
 export declare class RepositoryService {
     private readonly prisma;
     private readonly llm;
@@ -32,6 +33,7 @@ export declare class RepositoryService {
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
         pullRequestUrl: string | null;
         prContext: Prisma.JsonValue | null;
+        repoRef: Prisma.JsonValue | null;
         framework: string | null;
         fileCount: number;
         filesScanned: number;
@@ -45,7 +47,7 @@ export declare class RepositoryService {
         filesAiSkipped: number;
         completedAt: Date | null;
     }>;
-    createScanJobFromBuffer(userId: string, zipBuffer: Buffer, sourceName: string, provider?: string, sourceType?: ScanSourceType): Promise<{
+    createScanJobFromBuffer(userId: string, zipBuffer: Buffer, sourceName: string, provider?: string, sourceType?: ScanSourceType, repoRef?: RepoRef): Promise<{
         error: string | null;
         id: string;
         createdAt: Date;
@@ -59,6 +61,7 @@ export declare class RepositoryService {
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
         pullRequestUrl: string | null;
         prContext: Prisma.JsonValue | null;
+        repoRef: Prisma.JsonValue | null;
         framework: string | null;
         fileCount: number;
         filesScanned: number;
@@ -92,6 +95,7 @@ export declare class RepositoryService {
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
         pullRequestUrl: string | null;
         prContext: Prisma.JsonValue | null;
+        repoRef: Prisma.JsonValue | null;
         framework: string | null;
         fileCount: number;
         filesScanned: number;
@@ -136,6 +140,7 @@ export declare class RepositoryService {
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
         pullRequestUrl: string | null;
         prContext: Prisma.JsonValue | null;
+        repoRef: Prisma.JsonValue | null;
         framework: string | null;
         fileCount: number;
         filesScanned: number;
@@ -163,6 +168,7 @@ export declare class RepositoryService {
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
         pullRequestUrl: string | null;
         prContext: Prisma.JsonValue | null;
+        repoRef: Prisma.JsonValue | null;
         framework: string | null;
         fileCount: number;
         filesScanned: number;

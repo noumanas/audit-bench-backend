@@ -44,17 +44,19 @@ let GitlabController = class GitlabController {
         return this.gitlabService.listBranches(user.id, projectId);
     }
     async scan(user, dto) {
+        const { defaultBranch } = await this.gitlabService.getProjectMeta(user.id, dto.projectId);
+        const ref = dto.ref || defaultBranch;
         const zipBuffer = await this.gitlabService.downloadProjectZip(user.id, dto.projectId, dto.ref);
-        return this.repositoryService.createScanJobFromBuffer(user.id, zipBuffer, dto.projectPath || `project ${dto.projectId}`, dto.provider, 'gitlab_repo');
+        return this.repositoryService.createScanJobFromBuffer(user.id, zipBuffer, dto.projectPath || `project ${dto.projectId}`, dto.provider, 'gitlab_repo', { kind: 'gitlab', projectId: dto.projectId, ref, defaultBranch });
     }
     async reviewMr(user, dto) {
-        const { files, url, headSha, diffRefs } = await this.gitlabService.fetchMrFiles(user.id, dto.projectId, dto.mrIid);
+        const { files, url, headSha, diffRefs, sourceBranch, targetBranch } = await this.gitlabService.fetchMrFiles(user.id, dto.projectId, dto.mrIid);
         return this.repositoryService.createDiffReview(user.id, files, {
             sourceName: `${dto.projectPath || `project ${dto.projectId}`} !${dto.mrIid}`,
             sourceType: 'gitlab_mr',
             pullRequestUrl: url,
             provider: dto.provider,
-            prContext: { kind: 'gitlab', projectId: dto.projectId, mrIid: dto.mrIid, headSha, diffRefs },
+            prContext: { kind: 'gitlab', projectId: dto.projectId, mrIid: dto.mrIid, headSha, diffRefs, sourceBranch, targetBranch },
         });
     }
 };

@@ -17,6 +17,7 @@ export declare class RepositoryController {
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
         pullRequestUrl: string | null;
         prContext: import("@prisma/client/runtime/library").JsonValue | null;
+        repoRef: import("@prisma/client/runtime/library").JsonValue | null;
         framework: string | null;
         fileCount: number;
         filesScanned: number;
@@ -44,6 +45,7 @@ export declare class RepositoryController {
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
         pullRequestUrl: string | null;
         prContext: import("@prisma/client/runtime/library").JsonValue | null;
+        repoRef: import("@prisma/client/runtime/library").JsonValue | null;
         framework: string | null;
         fileCount: number;
         filesScanned: number;
@@ -84,6 +86,7 @@ export declare class RepositoryController {
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
         pullRequestUrl: string | null;
         prContext: import("@prisma/client/runtime/library").JsonValue | null;
+        repoRef: import("@prisma/client/runtime/library").JsonValue | null;
         framework: string | null;
         fileCount: number;
         filesScanned: number;

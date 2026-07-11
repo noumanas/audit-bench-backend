@@ -63,7 +63,7 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
     async createScanJob(userId, file, provider) {
         return this.createScanJobFromBuffer(userId, file.buffer, file.originalname, provider);
     }
-    async createScanJobFromBuffer(userId, zipBuffer, sourceName, provider, sourceType = 'zip') {
+    async createScanJobFromBuffer(userId, zipBuffer, sourceName, provider, sourceType = 'zip', repoRef) {
         await this.quota.assertPlanAllowsRepositoryScan(userId);
         const providerName = this.llm.resolveProvider(provider);
         const maxFileSize = this.config.get('MAX_FILE_SIZE_BYTES') || 200_000;
@@ -80,6 +80,7 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
         const job = await this.gateAndCreateJob(userId, filesToAnalyze, providerName, {
             sourceName,
             sourceType,
+            repoRef: repoRef,
             fileCount: files.length,
             framework,
             dependencyGraph: graph,

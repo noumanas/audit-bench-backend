@@ -22,6 +22,20 @@ export declare class GithubService implements OnModuleInit, PrPublisher {
     listBranches(userId: string, owner: string, repo: string): Promise<string[]>;
     downloadRepoZip(userId: string, owner: string, repo: string, ref?: string): Promise<Buffer>;
     fetchPrFiles(userId: string, owner: string, repo: string, pullNumber: number): Promise<GithubPrDetails>;
+    getRepoMeta(userId: string, owner: string, repo: string): Promise<{
+        defaultBranch: string;
+    }>;
+    getFileAtRef(userId: string, owner: string, repo: string, path: string, ref: string): Promise<{
+        content: string;
+        sha: string;
+    }>;
+    getBranchHeadSha(userId: string, owner: string, repo: string, branch: string): Promise<string>;
+    createBranch(userId: string, owner: string, repo: string, newBranch: string, fromSha: string): Promise<void>;
+    commitFileUpdate(userId: string, owner: string, repo: string, path: string, branch: string, content: string, message: string, sha: string): Promise<string>;
+    createPullRequest(userId: string, owner: string, repo: string, title: string, head: string, base: string, body: string): Promise<{
+        url: string;
+        number: number;
+    }>;
     private fetchFileContent;
     publish(userId: string, context: Extract<PrContext, {
         kind: 'github';

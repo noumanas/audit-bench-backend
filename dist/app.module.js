@@ -25,6 +25,7 @@ const analytics_module_1 = require("./analytics/analytics.module");
 const admin_module_1 = require("./admin/admin.module");
 const badge_module_1 = require("./badge/badge.module");
 const webhooks_module_1 = require("./webhooks/webhooks.module");
+const fix_module_1 = require("./fix/fix.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -46,6 +47,7 @@ exports.AppModule = AppModule = __decorate([
             admin_module_1.AdminModule,
             badge_module_1.BadgeModule,
             webhooks_module_1.WebhooksModule,
+            fix_module_1.FixModule,
         ],
         controllers: [app_controller_1.AppController],
         providers: [app_service_1.AppService],

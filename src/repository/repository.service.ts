@@ -22,6 +22,7 @@ import { worstVerdict } from '../common/verdict';
 import { Prisma, ScanSourceType } from '@prisma/client';
 import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
 import { PrContext, PrFeedback } from '../pr-feedback/pr-feedback.types';
+import { RepoRef } from '../common/repo-ref.types';
 
 function selectFilesToAnalyze(files: ScannedFile[], max: number): ScannedFile[] {
   const analyzable = files.filter((f) => {
@@ -42,6 +43,7 @@ interface JobDataBase {
   sourceType: ScanSourceType;
   pullRequestUrl?: string;
   prContext?: Prisma.InputJsonValue;
+  repoRef?: Prisma.InputJsonValue;
   framework?: string | null;
   fileCount: number;
   dependencyGraph?: Prisma.InputJsonValue;
@@ -79,6 +81,9 @@ export class RepositoryService {
     sourceName: string,
     provider?: string,
     sourceType: ScanSourceType = 'zip',
+    // Set for github_repo / gitlab_repo — lets FixService branch off the
+    // scanned ref and open a PR/MR once the user commits a fix.
+    repoRef?: RepoRef,
   ) {
     await this.quota.assertPlanAllowsRepositoryScan(userId);
 
@@ -99,6 +104,7 @@ export class RepositoryService {
     const job = await this.gateAndCreateJob(userId, filesToAnalyze, providerName, {
       sourceName,
       sourceType,
+      repoRef: repoRef as unknown as Prisma.InputJsonValue,
       fileCount: files.length,
       framework,
       dependencyGraph: graph as unknown as Prisma.InputJsonValue,
