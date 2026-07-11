@@ -24,9 +24,6 @@ export declare class GithubController {
         createdAt: Date;
         status: import(".prisma/client").$Enums.ScanStatus;
         userId: string;
-        aiInvoked: boolean;
-        verdict: import(".prisma/client").$Enums.Verdict | null;
-        summary: string | null;
         provider: string;
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
@@ -36,6 +33,8 @@ export declare class GithubController {
         framework: string | null;
         fileCount: number;
         filesScanned: number;
+        verdict: import(".prisma/client").$Enums.Verdict | null;
+        summary: string | null;
         dependencyGraph: import("@prisma/client/runtime/library").JsonValue | null;
         circularImports: import("@prisma/client/runtime/library").JsonValue | null;
         deadCode: import("@prisma/client/runtime/library").JsonValue | null;
@@ -44,6 +43,7 @@ export declare class GithubController {
         dependencyVulnerabilities: import("@prisma/client/runtime/library").JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
+        aiInvoked: boolean;
         completedAt: Date | null;
     }>;
     reviewPr(user: RequestUser, dto: ReviewPrDto): Promise<{
@@ -52,9 +52,6 @@ export declare class GithubController {
         createdAt: Date;
         status: import(".prisma/client").$Enums.ScanStatus;
         userId: string;
-        aiInvoked: boolean;
-        verdict: import(".prisma/client").$Enums.Verdict | null;
-        summary: string | null;
         provider: string;
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
@@ -64,6 +61,8 @@ export declare class GithubController {
         framework: string | null;
         fileCount: number;
         filesScanned: number;
+        verdict: import(".prisma/client").$Enums.Verdict | null;
+        summary: string | null;
         dependencyGraph: import("@prisma/client/runtime/library").JsonValue | null;
         circularImports: import("@prisma/client/runtime/library").JsonValue | null;
         deadCode: import("@prisma/client/runtime/library").JsonValue | null;
@@ -72,6 +71,7 @@ export declare class GithubController {
         dependencyVulnerabilities: import("@prisma/client/runtime/library").JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
+        aiInvoked: boolean;
         completedAt: Date | null;
     }>;
 }

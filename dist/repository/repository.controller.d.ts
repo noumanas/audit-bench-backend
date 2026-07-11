@@ -9,9 +9,6 @@ export declare class RepositoryController {
         createdAt: Date;
         status: import(".prisma/client").$Enums.ScanStatus;
         userId: string;
-        aiInvoked: boolean;
-        verdict: import(".prisma/client").$Enums.Verdict | null;
-        summary: string | null;
         provider: string;
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
@@ -21,6 +18,8 @@ export declare class RepositoryController {
         framework: string | null;
         fileCount: number;
         filesScanned: number;
+        verdict: import(".prisma/client").$Enums.Verdict | null;
+        summary: string | null;
         dependencyGraph: import("@prisma/client/runtime/library").JsonValue | null;
         circularImports: import("@prisma/client/runtime/library").JsonValue | null;
         deadCode: import("@prisma/client/runtime/library").JsonValue | null;
@@ -29,6 +28,7 @@ export declare class RepositoryController {
         dependencyVulnerabilities: import("@prisma/client/runtime/library").JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
+        aiInvoked: boolean;
         completedAt: Date | null;
     }>;
     findRecent(user: RequestUser, limit?: string): Promise<{
@@ -37,9 +37,6 @@ export declare class RepositoryController {
         createdAt: Date;
         status: import(".prisma/client").$Enums.ScanStatus;
         userId: string;
-        aiInvoked: boolean;
-        verdict: import(".prisma/client").$Enums.Verdict | null;
-        summary: string | null;
         provider: string;
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
@@ -49,6 +46,8 @@ export declare class RepositoryController {
         framework: string | null;
         fileCount: number;
         filesScanned: number;
+        verdict: import(".prisma/client").$Enums.Verdict | null;
+        summary: string | null;
         dependencyGraph: import("@prisma/client/runtime/library").JsonValue | null;
         circularImports: import("@prisma/client/runtime/library").JsonValue | null;
         deadCode: import("@prisma/client/runtime/library").JsonValue | null;
@@ -57,20 +56,21 @@ export declare class RepositoryController {
         dependencyVulnerabilities: import("@prisma/client/runtime/library").JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
+        aiInvoked: boolean;
         completedAt: Date | null;
     }[]>;
     findOne(user: RequestUser, id: string): Promise<{
         files: {
             id: string;
             createdAt: Date;
-            aiInvoked: boolean;
-            fromCache: boolean;
             verdict: import(".prisma/client").$Enums.Verdict | null;
-            findings: import("@prisma/client/runtime/library").JsonValue;
-            stage1: import("@prisma/client/runtime/library").JsonValue | null;
+            aiInvoked: boolean;
+            scanJobId: string;
             path: string;
             language: string | null;
-            scanJobId: string;
+            findings: import("@prisma/client/runtime/library").JsonValue;
+            stage1: import("@prisma/client/runtime/library").JsonValue | null;
+            fromCache: boolean;
         }[];
     } & {
         error: string | null;
@@ -78,9 +78,6 @@ export declare class RepositoryController {
         createdAt: Date;
         status: import(".prisma/client").$Enums.ScanStatus;
         userId: string;
-        aiInvoked: boolean;
-        verdict: import(".prisma/client").$Enums.Verdict | null;
-        summary: string | null;
         provider: string;
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
@@ -90,6 +87,8 @@ export declare class RepositoryController {
         framework: string | null;
         fileCount: number;
         filesScanned: number;
+        verdict: import(".prisma/client").$Enums.Verdict | null;
+        summary: string | null;
         dependencyGraph: import("@prisma/client/runtime/library").JsonValue | null;
         circularImports: import("@prisma/client/runtime/library").JsonValue | null;
         deadCode: import("@prisma/client/runtime/library").JsonValue | null;
@@ -98,6 +97,7 @@ export declare class RepositoryController {
         dependencyVulnerabilities: import("@prisma/client/runtime/library").JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
+        aiInvoked: boolean;
         completedAt: Date | null;
     }>;
 }

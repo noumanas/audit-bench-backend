@@ -24,9 +24,6 @@ export declare class GitlabController {
         createdAt: Date;
         status: import(".prisma/client").$Enums.ScanStatus;
         userId: string;
-        aiInvoked: boolean;
-        verdict: import(".prisma/client").$Enums.Verdict | null;
-        summary: string | null;
         provider: string;
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
@@ -36,6 +33,8 @@ export declare class GitlabController {
         framework: string | null;
         fileCount: number;
         filesScanned: number;
+        verdict: import(".prisma/client").$Enums.Verdict | null;
+        summary: string | null;
         dependencyGraph: import("@prisma/client/runtime/library").JsonValue | null;
         circularImports: import("@prisma/client/runtime/library").JsonValue | null;
         deadCode: import("@prisma/client/runtime/library").JsonValue | null;
@@ -44,6 +43,7 @@ export declare class GitlabController {
         dependencyVulnerabilities: import("@prisma/client/runtime/library").JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
+        aiInvoked: boolean;
         completedAt: Date | null;
     }>;
     reviewMr(user: RequestUser, dto: ReviewMrDto): Promise<{
@@ -52,9 +52,6 @@ export declare class GitlabController {
         createdAt: Date;
         status: import(".prisma/client").$Enums.ScanStatus;
         userId: string;
-        aiInvoked: boolean;
-        verdict: import(".prisma/client").$Enums.Verdict | null;
-        summary: string | null;
         provider: string;
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
@@ -64,6 +61,8 @@ export declare class GitlabController {
         framework: string | null;
         fileCount: number;
         filesScanned: number;
+        verdict: import(".prisma/client").$Enums.Verdict | null;
+        summary: string | null;
         dependencyGraph: import("@prisma/client/runtime/library").JsonValue | null;
         circularImports: import("@prisma/client/runtime/library").JsonValue | null;
         deadCode: import("@prisma/client/runtime/library").JsonValue | null;
@@ -72,6 +71,7 @@ export declare class GitlabController {
         dependencyVulnerabilities: import("@prisma/client/runtime/library").JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
+        aiInvoked: boolean;
         completedAt: Date | null;
     }>;
 }
