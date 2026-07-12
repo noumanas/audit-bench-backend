@@ -6,6 +6,7 @@ import { GitlabMrDetails, GitlabMrFile, GitlabProjectSummary } from './gitlab.ty
 import { parseChangedRanges } from '../common/diff-ranges';
 import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
 import { PrContext, PrFeedback, PrPublisher } from '../pr-feedback/pr-feedback.types';
+import { gitlabInstanceUrl } from '../common/gitlab-url';
 
 @Injectable()
 export class GitlabService implements OnModuleInit, PrPublisher {
@@ -24,7 +25,10 @@ export class GitlabService implements OnModuleInit, PrPublisher {
   }
 
   private authHeaders(token: string) {
-    return { 'PRIVATE-TOKEN': token, 'User-Agent': 'ai-code-auditor' };
+    // `Authorization: Bearer` works for both a pasted PAT and an OAuth
+    // access token; the older `PRIVATE-TOKEN` header only understands PATs,
+    // which would 401 for anyone connected via "Login with GitLab".
+    return { Authorization: `Bearer ${token}`, 'User-Agent': 'ai-code-auditor' };
   }
 
   private async requireToken(userId: string): Promise<string> {
@@ -32,7 +36,42 @@ export class GitlabService implements OnModuleInit, PrPublisher {
     if (!user.gitlabToken) {
       throw new BadRequestException('Connect a GitLab account first');
     }
+    // OAuth access tokens (unlike a pasted PAT) expire — refresh proactively
+    // so callers never have to handle a mid-request 401 themselves.
+    if (user.gitlabRefreshToken && user.gitlabTokenExpiresAt && user.gitlabTokenExpiresAt.getTime() - Date.now() < 60_000) {
+      return this.refreshAccessToken(userId, user.gitlabRefreshToken);
+    }
     return user.gitlabToken;
+  }
+
+  private async refreshAccessToken(userId: string, refreshToken: string): Promise<string> {
+    const clientId = this.config.get<string>('GITLAB_OAUTH_CLIENT_ID');
+    const clientSecret = this.config.get<string>('GITLAB_OAUTH_CLIENT_SECRET');
+    if (!clientId || !clientSecret) {
+      // Shouldn't happen — a refresh token only exists if OAuth login issued
+      // one — but fall back to the (possibly stale) stored token rather than crash.
+      return (await this.prisma.user.findUniqueOrThrow({ where: { id: userId } })).gitlabToken as string;
+    }
+
+    const res = await fetch(`${gitlabInstanceUrl((k) => this.config.get<string>(k))}/oauth/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: 'refresh_token' }),
+    });
+    if (!res.ok) {
+      throw new BadRequestException('Your GitLab session expired and could not be refreshed — reconnect GitLab.');
+    }
+    const data = await res.json();
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        gitlabToken: data.access_token,
+        gitlabRefreshToken: data.refresh_token ?? refreshToken,
+        gitlabTokenExpiresAt: data.expires_in ? new Date(Date.now() + data.expires_in * 1000) : null,
+      },
+    });
+    return data.access_token;
   }
 
   async connect(userId: string, token: string) {

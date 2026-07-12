@@ -3,16 +3,9 @@ export declare class UsersService {
     private readonly prisma;
     constructor(prisma: PrismaService);
     getProfile(userId: string): Promise<{
-        id: string;
-        email: string;
-        badgeToken: string | null;
-        name: string | null;
-        role: import(".prisma/client").$Enums.Role;
-        githubUsername: string | null;
-        createdAt: Date;
         plan: {
-            id: string;
             name: string;
+            id: string;
             createdAt: Date;
             slug: string;
             priceMonthlyCents: number;
@@ -20,20 +13,20 @@ export declare class UsersService {
             monthlyAuditLimit: number | null;
             repositoryScan: boolean;
         };
+        email: string;
+        name: string | null;
+        id: string;
+        badgeToken: string | null;
+        role: import(".prisma/client").$Enums.Role;
+        githubUsername: string | null;
+        createdAt: Date;
     }>;
     changePlan(userId: string, slug: string): Promise<{
         applied: true;
         user: {
-            id: string;
-            email: string;
-            badgeToken: string | null;
-            name: string | null;
-            role: import(".prisma/client").$Enums.Role;
-            githubUsername: string | null;
-            createdAt: Date;
             plan: {
-                id: string;
                 name: string;
+                id: string;
                 createdAt: Date;
                 slug: string;
                 priceMonthlyCents: number;
@@ -41,14 +34,21 @@ export declare class UsersService {
                 monthlyAuditLimit: number | null;
                 repositoryScan: boolean;
             };
+            email: string;
+            name: string | null;
+            id: string;
+            badgeToken: string | null;
+            role: import(".prisma/client").$Enums.Role;
+            githubUsername: string | null;
+            createdAt: Date;
         };
         request?: undefined;
     } | {
         applied: false;
         request: {
             requestedPlan: {
-                id: string;
                 name: string;
+                id: string;
                 createdAt: Date;
                 slug: string;
                 priceMonthlyCents: number;
@@ -57,17 +57,17 @@ export declare class UsersService {
                 repositoryScan: boolean;
             };
             reviewedBy: {
-                id: string;
                 email: string;
                 name: string | null;
+                id: string;
             } | null;
         } & {
             id: string;
             createdAt: Date;
+            userId: string;
             status: import(".prisma/client").$Enums.PlanRequestStatus;
             note: string | null;
             reviewedAt: Date | null;
-            userId: string;
             requestedPlanId: string;
             reviewedById: string | null;
         };
@@ -75,8 +75,8 @@ export declare class UsersService {
     }>;
     listMyPlanRequests(userId: string): Promise<({
         requestedPlan: {
-            id: string;
             name: string;
+            id: string;
             createdAt: Date;
             slug: string;
             priceMonthlyCents: number;
@@ -85,17 +85,17 @@ export declare class UsersService {
             repositoryScan: boolean;
         };
         reviewedBy: {
-            id: string;
             email: string;
             name: string | null;
+            id: string;
         } | null;
     } & {
         id: string;
         createdAt: Date;
+        userId: string;
         status: import(".prisma/client").$Enums.PlanRequestStatus;
         note: string | null;
         reviewedAt: Date | null;
-        userId: string;
         requestedPlanId: string;
         reviewedById: string | null;
     })[]>;

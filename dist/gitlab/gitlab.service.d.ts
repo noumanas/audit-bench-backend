@@ -13,6 +13,7 @@ export declare class GitlabService implements OnModuleInit, PrPublisher {
     private baseUrl;
     private authHeaders;
     private requireToken;
+    private refreshAccessToken;
     connect(userId: string, token: string): Promise<{
         username: string;
     }>;

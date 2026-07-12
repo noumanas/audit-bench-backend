@@ -62,7 +62,9 @@ model Plan {
 model User {
   id              String        @id @default(uuid())
   email           String        @unique
-  passwordHash    String
+  // Null for an account created via GitHub/GitLab OAuth (no password ever
+  // set) — see AuthService.login, which rejects password login for these.
+  passwordHash    String?
   name            String?
   plan            Plan          @relation(fields: [planId], references: [id])
   planId          String
@@ -73,6 +75,11 @@ model User {
   githubUsername  String?
   gitlabToken     String?
   gitlabUsername  String?
+  // GitLab OAuth access tokens (unlike a pasted PAT, or GitHub's classic
+  // OAuth App tokens) expire after ~2h — these let GitlabService silently
+  // refresh gitlabToken before it goes stale. Unused for a pasted PAT.
+  gitlabRefreshToken   String?
+  gitlabTokenExpiresAt DateTime?
   // Public, unguessable token used in the README badge URL — distinct from
   // `id` so a leaked badge URL can't be used to look up the account by id
   // and can be rotated independently. Generated on first request.
@@ -85,6 +92,36 @@ model User {
   // from the requests they themselves filed.
   reviewedPlanRequests PlanRequest[] @relation("PlanRequestsReviewedBy")
   webhookConfigs  WebhookConfig[]
+  oauthAccounts   OAuthAccount[]
+  oauthLoginCodes OAuthLoginCode[]
+}
+
+// Identifies a user by the provider's own stable account id — never by
+// email — so a same-email GitHub/GitLab account can never silently sign
+// into an existing password-based account (see AuthOAuthService).
+model OAuthAccount {
+  id             String   @id @default(uuid())
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId         String
+  provider       String // 'github' | 'gitlab'
+  providerUserId String
+  createdAt      DateTime @default(now())
+
+  @@unique([provider, providerUserId])
+}
+
+// A one-time, short-lived code handed to the browser in the OAuth
+// redirect's query string instead of the real JWT — the frontend exchanges
+// it server-side for the actual session, so the access token itself never
+// appears in a URL, browser history, or Referer header.
+model OAuthLoginCode {
+  id        String    @id @default(uuid())
+  code      String    @unique
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
 }
 
 // Manually configured by the user in their repo/project's webhook settings

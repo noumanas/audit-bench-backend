@@ -7,16 +7,9 @@ export declare class UsersController {
     private readonly quotaService;
     constructor(usersService: UsersService, quotaService: QuotaService);
     getProfile(user: RequestUser): Promise<{
-        id: string;
-        email: string;
-        badgeToken: string | null;
-        name: string | null;
-        role: import(".prisma/client").$Enums.Role;
-        githubUsername: string | null;
-        createdAt: Date;
         plan: {
-            id: string;
             name: string;
+            id: string;
             createdAt: Date;
             slug: string;
             priceMonthlyCents: number;
@@ -24,11 +17,18 @@ export declare class UsersController {
             monthlyAuditLimit: number | null;
             repositoryScan: boolean;
         };
+        email: string;
+        name: string | null;
+        id: string;
+        badgeToken: string | null;
+        role: import(".prisma/client").$Enums.Role;
+        githubUsername: string | null;
+        createdAt: Date;
     }>;
     getUsage(user: RequestUser): Promise<{
         plan: {
-            id: string;
             name: string;
+            id: string;
             createdAt: Date;
             slug: string;
             priceMonthlyCents: number;
@@ -46,16 +46,9 @@ export declare class UsersController {
     changePlan(user: RequestUser, dto: ChangePlanDto): Promise<{
         applied: true;
         user: {
-            id: string;
-            email: string;
-            badgeToken: string | null;
-            name: string | null;
-            role: import(".prisma/client").$Enums.Role;
-            githubUsername: string | null;
-            createdAt: Date;
             plan: {
-                id: string;
                 name: string;
+                id: string;
                 createdAt: Date;
                 slug: string;
                 priceMonthlyCents: number;
@@ -63,14 +56,21 @@ export declare class UsersController {
                 monthlyAuditLimit: number | null;
                 repositoryScan: boolean;
             };
+            email: string;
+            name: string | null;
+            id: string;
+            badgeToken: string | null;
+            role: import(".prisma/client").$Enums.Role;
+            githubUsername: string | null;
+            createdAt: Date;
         };
         request?: undefined;
     } | {
         applied: false;
         request: {
             requestedPlan: {
-                id: string;
                 name: string;
+                id: string;
                 createdAt: Date;
                 slug: string;
                 priceMonthlyCents: number;
@@ -79,17 +79,17 @@ export declare class UsersController {
                 repositoryScan: boolean;
             };
             reviewedBy: {
-                id: string;
                 email: string;
                 name: string | null;
+                id: string;
             } | null;
         } & {
             id: string;
             createdAt: Date;
+            userId: string;
             status: import(".prisma/client").$Enums.PlanRequestStatus;
             note: string | null;
             reviewedAt: Date | null;
-            userId: string;
             requestedPlanId: string;
             reviewedById: string | null;
         };
@@ -97,8 +97,8 @@ export declare class UsersController {
     }>;
     listMyPlanRequests(user: RequestUser): Promise<({
         requestedPlan: {
-            id: string;
             name: string;
+            id: string;
             createdAt: Date;
             slug: string;
             priceMonthlyCents: number;
@@ -107,17 +107,17 @@ export declare class UsersController {
             repositoryScan: boolean;
         };
         reviewedBy: {
-            id: string;
             email: string;
             name: string | null;
+            id: string;
         } | null;
     } & {
         id: string;
         createdAt: Date;
+        userId: string;
         status: import(".prisma/client").$Enums.PlanRequestStatus;
         note: string | null;
         reviewedAt: Date | null;
-        userId: string;
         requestedPlanId: string;
         reviewedById: string | null;
     })[]>;

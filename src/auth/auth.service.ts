@@ -40,7 +40,7 @@ export class AuthService {
       include: { plan: true },
     });
 
-    return this.buildSession(user.id, user.email, user);
+    return this.buildSession(user);
   }
 
   async login(dto: LoginDto) {
@@ -50,18 +50,21 @@ export class AuthService {
     });
     if (!user) throw new UnauthorizedException('Invalid email or password');
 
+    if (!user.passwordHash) {
+      throw new UnauthorizedException(
+        'This account uses GitHub/GitLab login — sign in that way instead of with a password.',
+      );
+    }
+
     const valid = await bcrypt.compare(dto.password, user.passwordHash);
     if (!valid) throw new UnauthorizedException('Invalid email or password');
 
-    return this.buildSession(user.id, user.email, user);
+    return this.buildSession(user);
   }
 
-  private buildSession(
-    id: string,
-    email: string,
-    user: { id: string; email: string; name: string | null; createdAt: Date; plan: unknown; role: Role },
-  ) {
-    const payload: JwtPayload = { sub: id, email };
+  /** Shared by password login/signup and the OAuth login-code exchange (see OAuthController). */
+  buildSession(user: { id: string; email: string; name: string | null; createdAt: Date; plan: unknown; role: Role }) {
+    const payload: JwtPayload = { sub: user.id, email: user.email };
     return {
       accessToken: this.jwt.sign(payload),
       user: {

@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { json } from 'express';
+import cookieParser = require('cookie-parser');
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -23,6 +24,8 @@ async function bootstrap() {
     },
   });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+  // Only used to read the short-lived OAuth CSRF-state cookie (see OAuthController) — no sessions.
+  app.use(cookieParser());
   app.use(
     json({
       limit: '5mb', // large pasted files

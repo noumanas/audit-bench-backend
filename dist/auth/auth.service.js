@@ -40,7 +40,7 @@ let AuthService = class AuthService {
             data: { email: dto.email, passwordHash, name: dto.name, planId: plan.id, role },
             include: { plan: true },
         });
-        return this.buildSession(user.id, user.email, user);
+        return this.buildSession(user);
     }
     async login(dto) {
         const user = await this.prisma.user.findUnique({
@@ -49,13 +49,16 @@ let AuthService = class AuthService {
         });
         if (!user)
             throw new common_1.UnauthorizedException('Invalid email or password');
+        if (!user.passwordHash) {
+            throw new common_1.UnauthorizedException('This account uses GitHub/GitLab login — sign in that way instead of with a password.');
+        }
         const valid = await bcrypt.compare(dto.password, user.passwordHash);
         if (!valid)
             throw new common_1.UnauthorizedException('Invalid email or password');
-        return this.buildSession(user.id, user.email, user);
+        return this.buildSession(user);
     }
-    buildSession(id, email, user) {
-        const payload = { sub: id, email };
+    buildSession(user) {
+        const payload = { sub: user.id, email: user.email };
         return {
             accessToken: this.jwt.sign(payload),
             user: {

@@ -7,6 +7,7 @@ export declare class ReportController {
         id: string;
         createdAt: Date;
         userId: string;
+        provider: string;
         aiInvoked: boolean;
         fromCache: boolean;
         verdict: import(".prisma/client").$Enums.Verdict;
@@ -14,7 +15,6 @@ export declare class ReportController {
         findings: import("@prisma/client/runtime/library").JsonValue;
         stage1: import("@prisma/client/runtime/library").JsonValue | null;
         filename: string;
-        provider: string;
         language: string | null;
         codeSize: number;
         kind: string;
@@ -34,12 +34,12 @@ export declare class ReportController {
         error: string | null;
         id: string;
         createdAt: Date;
-        status: import(".prisma/client").$Enums.ScanStatus;
         userId: string;
+        provider: string;
+        status: import(".prisma/client").$Enums.ScanStatus;
         aiInvoked: boolean;
         verdict: import(".prisma/client").$Enums.Verdict | null;
         summary: string | null;
-        provider: string;
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
         pullRequestUrl: string | null;

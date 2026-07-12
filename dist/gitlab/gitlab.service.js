@@ -16,6 +16,7 @@ const config_1 = require("@nestjs/config");
 const prisma_service_1 = require("../prisma/prisma.service");
 const diff_ranges_1 = require("../common/diff-ranges");
 const pr_feedback_service_1 = require("../pr-feedback/pr-feedback.service");
+const gitlab_url_1 = require("../common/gitlab-url");
 let GitlabService = class GitlabService {
     prisma;
     config;
@@ -32,14 +33,42 @@ let GitlabService = class GitlabService {
         return this.config.get('GITLAB_BASE_URL') || 'https://gitlab.com/api/v4';
     }
     authHeaders(token) {
-        return { 'PRIVATE-TOKEN': token, 'User-Agent': 'ai-code-auditor' };
+        return { Authorization: `Bearer ${token}`, 'User-Agent': 'ai-code-auditor' };
     }
     async requireToken(userId) {
         const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
         if (!user.gitlabToken) {
             throw new common_1.BadRequestException('Connect a GitLab account first');
         }
+        if (user.gitlabRefreshToken && user.gitlabTokenExpiresAt && user.gitlabTokenExpiresAt.getTime() - Date.now() < 60_000) {
+            return this.refreshAccessToken(userId, user.gitlabRefreshToken);
+        }
         return user.gitlabToken;
+    }
+    async refreshAccessToken(userId, refreshToken) {
+        const clientId = this.config.get('GITLAB_OAUTH_CLIENT_ID');
+        const clientSecret = this.config.get('GITLAB_OAUTH_CLIENT_SECRET');
+        if (!clientId || !clientSecret) {
+            return (await this.prisma.user.findUniqueOrThrow({ where: { id: userId } })).gitlabToken;
+        }
+        const res = await fetch(`${(0, gitlab_url_1.gitlabInstanceUrl)((k) => this.config.get(k))}/oauth/token`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: 'refresh_token' }),
+        });
+        if (!res.ok) {
+            throw new common_1.BadRequestException('Your GitLab session expired and could not be refreshed — reconnect GitLab.');
+        }
+        const data = await res.json();
+        await this.prisma.user.update({
+            where: { id: userId },
+            data: {
+                gitlabToken: data.access_token,
+                gitlabRefreshToken: data.refresh_token ?? refreshToken,
+                gitlabTokenExpiresAt: data.expires_in ? new Date(Date.now() + data.expires_in * 1000) : null,
+            },
+        });
+        return data.access_token;
     }
     async connect(userId, token) {
         const res = await fetch(`${this.baseUrl()}/user`, { headers: this.authHeaders(token) });

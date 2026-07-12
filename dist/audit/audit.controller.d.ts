@@ -9,14 +9,14 @@ export declare class AuditController {
         createdAt: Date;
         userId: string;
         provider: string;
+        aiInvoked: boolean;
+        fromCache: boolean;
         verdict: import(".prisma/client").$Enums.Verdict;
         summary: string;
-        aiInvoked: boolean;
-        language: string | null;
         findings: import("@prisma/client/runtime/library").JsonValue;
         stage1: import("@prisma/client/runtime/library").JsonValue | null;
-        fromCache: boolean;
         filename: string;
+        language: string | null;
         codeSize: number;
     }>;
     findRecent(user: RequestUser, limit?: string): Promise<{
@@ -24,14 +24,14 @@ export declare class AuditController {
         createdAt: Date;
         userId: string;
         provider: string;
+        aiInvoked: boolean;
+        fromCache: boolean;
         verdict: import(".prisma/client").$Enums.Verdict;
         summary: string;
-        aiInvoked: boolean;
-        language: string | null;
         findings: import("@prisma/client/runtime/library").JsonValue;
         stage1: import("@prisma/client/runtime/library").JsonValue | null;
-        fromCache: boolean;
         filename: string;
+        language: string | null;
         codeSize: number;
     }[]>;
     findOne(user: RequestUser, id: string): Promise<{
@@ -39,14 +39,14 @@ export declare class AuditController {
         createdAt: Date;
         userId: string;
         provider: string;
+        aiInvoked: boolean;
+        fromCache: boolean;
         verdict: import(".prisma/client").$Enums.Verdict;
         summary: string;
-        aiInvoked: boolean;
-        language: string | null;
         findings: import("@prisma/client/runtime/library").JsonValue;
         stage1: import("@prisma/client/runtime/library").JsonValue | null;
-        fromCache: boolean;
         filename: string;
+        language: string | null;
         codeSize: number;
     }>;
 }

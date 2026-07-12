@@ -6,6 +6,8 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './jwt.strategy';
 import { requireJwtSecret } from './jwt-secret';
+import { OAuthService } from './oauth/oauth.service';
+import { OAuthController } from './oauth/oauth.controller';
 
 @Module({
   imports: [
@@ -23,8 +25,8 @@ import { requireJwtSecret } from './jwt-secret';
       }),
     }),
   ],
-  controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
+  controllers: [AuthController, OAuthController],
+  providers: [AuthService, JwtStrategy, OAuthService],
   exports: [JwtModule],
 })
 export class AuthModule {}

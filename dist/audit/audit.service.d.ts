@@ -15,14 +15,14 @@ export declare class AuditService {
         createdAt: Date;
         userId: string;
         provider: string;
+        aiInvoked: boolean;
+        fromCache: boolean;
         verdict: import(".prisma/client").$Enums.Verdict;
         summary: string;
-        aiInvoked: boolean;
-        language: string | null;
         findings: Prisma.JsonValue;
         stage1: Prisma.JsonValue | null;
-        fromCache: boolean;
         filename: string;
+        language: string | null;
         codeSize: number;
     }>;
     findOne(userId: string, id: string): Promise<{
@@ -30,14 +30,14 @@ export declare class AuditService {
         createdAt: Date;
         userId: string;
         provider: string;
+        aiInvoked: boolean;
+        fromCache: boolean;
         verdict: import(".prisma/client").$Enums.Verdict;
         summary: string;
-        aiInvoked: boolean;
-        language: string | null;
         findings: Prisma.JsonValue;
         stage1: Prisma.JsonValue | null;
-        fromCache: boolean;
         filename: string;
+        language: string | null;
         codeSize: number;
     }>;
     findRecent(userId: string, limit?: number): Promise<{
@@ -45,14 +45,14 @@ export declare class AuditService {
         createdAt: Date;
         userId: string;
         provider: string;
+        aiInvoked: boolean;
+        fromCache: boolean;
         verdict: import(".prisma/client").$Enums.Verdict;
         summary: string;
-        aiInvoked: boolean;
-        language: string | null;
         findings: Prisma.JsonValue;
         stage1: Prisma.JsonValue | null;
-        fromCache: boolean;
         filename: string;
+        language: string | null;
         codeSize: number;
     }[]>;
 }
