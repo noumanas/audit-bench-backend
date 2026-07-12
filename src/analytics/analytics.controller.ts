@@ -16,12 +16,17 @@ export class AnalyticsController {
   constructor(private readonly analyticsService: AnalyticsService) {}
 
   @Get('overview')
-  overview(@CurrentUser() user: RequestUser, @Query('days') days?: string) {
-    return this.analyticsService.overview(user.id, parseWindowDays(days, 30));
+  overview(@CurrentUser() user: RequestUser, @Query('days') days?: string, @Query('repo') repo?: string) {
+    return this.analyticsService.overview(user.id, parseWindowDays(days, 30), repo || undefined);
   }
 
   @Get('trend')
-  trend(@CurrentUser() user: RequestUser, @Query('days') days?: string) {
-    return this.analyticsService.trend(user.id, parseWindowDays(days, 30));
+  trend(@CurrentUser() user: RequestUser, @Query('days') days?: string, @Query('repo') repo?: string) {
+    return this.analyticsService.trend(user.id, parseWindowDays(days, 30), repo || undefined);
+  }
+
+  @Get('repos')
+  repos(@CurrentUser() user: RequestUser) {
+    return this.analyticsService.repos(user.id);
   }
 }

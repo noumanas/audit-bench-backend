@@ -28,11 +28,14 @@ let AnalyticsController = class AnalyticsController {
     constructor(analyticsService) {
         this.analyticsService = analyticsService;
     }
-    overview(user, days) {
-        return this.analyticsService.overview(user.id, parseWindowDays(days, 30));
+    overview(user, days, repo) {
+        return this.analyticsService.overview(user.id, parseWindowDays(days, 30), repo || undefined);
     }
-    trend(user, days) {
-        return this.analyticsService.trend(user.id, parseWindowDays(days, 30));
+    trend(user, days, repo) {
+        return this.analyticsService.trend(user.id, parseWindowDays(days, 30), repo || undefined);
+    }
+    repos(user) {
+        return this.analyticsService.repos(user.id);
     }
 };
 exports.AnalyticsController = AnalyticsController;
@@ -40,18 +43,27 @@ __decorate([
     (0, common_1.Get)('overview'),
     __param(0, (0, current_user_decorator_1.CurrentUser)()),
     __param(1, (0, common_1.Query)('days')),
+    __param(2, (0, common_1.Query)('repo')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object, String]),
+    __metadata("design:paramtypes", [Object, String, String]),
     __metadata("design:returntype", void 0)
 ], AnalyticsController.prototype, "overview", null);
 __decorate([
     (0, common_1.Get)('trend'),
     __param(0, (0, current_user_decorator_1.CurrentUser)()),
     __param(1, (0, common_1.Query)('days')),
+    __param(2, (0, common_1.Query)('repo')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object, String]),
+    __metadata("design:paramtypes", [Object, String, String]),
     __metadata("design:returntype", void 0)
 ], AnalyticsController.prototype, "trend", null);
+__decorate([
+    (0, common_1.Get)('repos'),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", void 0)
+], AnalyticsController.prototype, "repos", null);
 exports.AnalyticsController = AnalyticsController = __decorate([
     (0, common_1.Controller)('analytics'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),

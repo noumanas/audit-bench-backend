@@ -14,6 +14,7 @@ interface ResourceScore {
   createdAt: Date;
   label: string;
   kind: 'audit' | 'scan';
+  sourceType: string | null;
   verdict: string | null;
   findings: Finding[];
   security: number;
@@ -24,6 +25,7 @@ interface ResourceScore {
 }
 
 const SEVERITY_RANK: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1 };
+const PR_REVIEW_SOURCE_TYPES = new Set(['github_pr', 'gitlab_mr']);
 
 function average(values: number[]): number {
   if (values.length === 0) return 100;
@@ -38,16 +40,27 @@ function startOfDayUtc(d: Date): string {
 export class AnalyticsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  private async loadResourceScores(userId: string, since: Date): Promise<ResourceScore[]> {
+  private async loadResourceScores(userId: string, since: Date, repoFilter?: string): Promise<ResourceScore[]> {
+    // A repo filter only makes sense against repo-linked scans/reviews — a
+    // pasted single-file audit has no repo to match against, so it's
+    // excluded entirely rather than shown against every filter.
     const [audits, scanJobs] = await Promise.all([
-      this.prisma.audit.findMany({
-        where: { userId, createdAt: { gte: since } },
-        select: { filename: true, verdict: true, findings: true, createdAt: true },
-      }),
+      repoFilter
+        ? Promise.resolve([])
+        : this.prisma.audit.findMany({
+            where: { userId, createdAt: { gte: since } },
+            select: { filename: true, verdict: true, findings: true, createdAt: true },
+          }),
       this.prisma.scanJob.findMany({
-        where: { userId, createdAt: { gte: since }, status: 'completed' },
+        where: {
+          userId,
+          createdAt: { gte: since },
+          status: 'completed',
+          ...(repoFilter ? { sourceName: { contains: repoFilter, mode: 'insensitive' } } : {}),
+        },
         select: {
           sourceName: true,
+          sourceType: true,
           verdict: true,
           createdAt: true,
           secrets: true,
@@ -65,7 +78,8 @@ export class AnalyticsService {
       return {
         createdAt: a.createdAt,
         label: a.filename,
-        kind: 'audit',
+        kind: 'audit' as const,
+        sourceType: null,
         verdict: a.verdict,
         findings,
         security: scoreForCategories(findings, ['Security']),
@@ -98,7 +112,8 @@ export class AnalyticsService {
       return {
         createdAt: s.createdAt,
         label: s.sourceName,
-        kind: 'scan',
+        kind: 'scan' as const,
+        sourceType: s.sourceType,
         verdict: s.verdict,
         findings,
         security,
@@ -152,12 +167,26 @@ export class AnalyticsService {
     };
   }
 
-  async overview(userId: string, windowDays: number): Promise<AnalyticsOverview> {
+  async repos(userId: string): Promise<string[]> {
+    const rows = await this.prisma.scanJob.findMany({
+      where: { userId },
+      distinct: ['sourceName'],
+      select: { sourceName: true },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+    return rows.map((r) => r.sourceName);
+  }
+
+  async overview(userId: string, windowDays: number, repoFilter?: string): Promise<AnalyticsOverview> {
     const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
     const [resources, totals] = await Promise.all([
-      this.loadResourceScores(userId, since),
+      this.loadResourceScores(userId, since, repoFilter),
       this.usageTotals(userId, since),
     ]);
+
+    const activeRepositories = new Set(resources.filter((r) => r.kind === 'scan').map((r) => r.label)).size;
+    const prReviewCount = resources.filter((r) => r.sourceType && PR_REVIEW_SOURCE_TYPES.has(r.sourceType)).length;
 
     const verdictBreakdown = { pass: 0, needs_work: 0, do_not_ship: 0 };
     for (const r of resources) {
@@ -202,13 +231,23 @@ export class AnalyticsService {
       .sort((a, b) => b.count - a.count || SEVERITY_RANK[b.maxSeverity] - SEVERITY_RANK[a.maxSeverity])
       .slice(0, 6);
 
-    return { windowDays, totals, verdictBreakdown, scores, riskiest, topIssues };
+    return {
+      windowDays,
+      repoFilter: repoFilter ?? null,
+      totals,
+      activeRepositories,
+      prReviewCount,
+      verdictBreakdown,
+      scores,
+      riskiest,
+      topIssues,
+    };
   }
 
-  async trend(userId: string, windowDays: number): Promise<AnalyticsTrend> {
+  async trend(userId: string, windowDays: number, repoFilter?: string): Promise<AnalyticsTrend> {
     const since = new Date(Date.now() - (windowDays - 1) * 24 * 60 * 60 * 1000);
     const sinceStart = new Date(Date.UTC(since.getUTCFullYear(), since.getUTCMonth(), since.getUTCDate()));
-    const resources = await this.loadResourceScores(userId, sinceStart);
+    const resources = await this.loadResourceScores(userId, sinceStart, repoFilter);
 
     const buckets = new Map<string, ResourceScore[]>();
     for (let i = 0; i < windowDays; i++) {

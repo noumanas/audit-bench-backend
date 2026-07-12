@@ -5,6 +5,7 @@ export declare class AnalyticsService {
     constructor(prisma: PrismaService);
     private loadResourceScores;
     private usageTotals;
-    overview(userId: string, windowDays: number): Promise<AnalyticsOverview>;
-    trend(userId: string, windowDays: number): Promise<AnalyticsTrend>;
+    repos(userId: string): Promise<string[]>;
+    overview(userId: string, windowDays: number, repoFilter?: string): Promise<AnalyticsOverview>;
+    trend(userId: string, windowDays: number, repoFilter?: string): Promise<AnalyticsTrend>;
 }

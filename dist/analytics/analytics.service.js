@@ -14,6 +14,7 @@ const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../prisma/prisma.service");
 const scoring_1 = require("./scoring");
 const SEVERITY_RANK = { critical: 4, high: 3, medium: 2, low: 1 };
+const PR_REVIEW_SOURCE_TYPES = new Set(['github_pr', 'gitlab_mr']);
 function average(values) {
     if (values.length === 0)
         return 100;
@@ -27,16 +28,24 @@ let AnalyticsService = class AnalyticsService {
     constructor(prisma) {
         this.prisma = prisma;
     }
-    async loadResourceScores(userId, since) {
+    async loadResourceScores(userId, since, repoFilter) {
         const [audits, scanJobs] = await Promise.all([
-            this.prisma.audit.findMany({
-                where: { userId, createdAt: { gte: since } },
-                select: { filename: true, verdict: true, findings: true, createdAt: true },
-            }),
+            repoFilter
+                ? Promise.resolve([])
+                : this.prisma.audit.findMany({
+                    where: { userId, createdAt: { gte: since } },
+                    select: { filename: true, verdict: true, findings: true, createdAt: true },
+                }),
             this.prisma.scanJob.findMany({
-                where: { userId, createdAt: { gte: since }, status: 'completed' },
+                where: {
+                    userId,
+                    createdAt: { gte: since },
+                    status: 'completed',
+                    ...(repoFilter ? { sourceName: { contains: repoFilter, mode: 'insensitive' } } : {}),
+                },
                 select: {
                     sourceName: true,
+                    sourceType: true,
                     verdict: true,
                     createdAt: true,
                     secrets: true,
@@ -54,6 +63,7 @@ let AnalyticsService = class AnalyticsService {
                 createdAt: a.createdAt,
                 label: a.filename,
                 kind: 'audit',
+                sourceType: null,
                 verdict: a.verdict,
                 findings,
                 security: (0, scoring_1.scoreForCategories)(findings, ['Security']),
@@ -80,6 +90,7 @@ let AnalyticsService = class AnalyticsService {
                 createdAt: s.createdAt,
                 label: s.sourceName,
                 kind: 'scan',
+                sourceType: s.sourceType,
                 verdict: s.verdict,
                 findings,
                 security,
@@ -119,12 +130,24 @@ let AnalyticsService = class AnalyticsService {
             cacheSavingsPct: totalRuns ? (0, scoring_1.clampScore)(((cachedHits + localOnlySkips) / totalRuns) * 100) : 0,
         };
     }
-    async overview(userId, windowDays) {
+    async repos(userId) {
+        const rows = await this.prisma.scanJob.findMany({
+            where: { userId },
+            distinct: ['sourceName'],
+            select: { sourceName: true },
+            orderBy: { createdAt: 'desc' },
+            take: 50,
+        });
+        return rows.map((r) => r.sourceName);
+    }
+    async overview(userId, windowDays, repoFilter) {
         const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
         const [resources, totals] = await Promise.all([
-            this.loadResourceScores(userId, since),
+            this.loadResourceScores(userId, since, repoFilter),
             this.usageTotals(userId, since),
         ]);
+        const activeRepositories = new Set(resources.filter((r) => r.kind === 'scan').map((r) => r.label)).size;
+        const prReviewCount = resources.filter((r) => r.sourceType && PR_REVIEW_SOURCE_TYPES.has(r.sourceType)).length;
         const verdictBreakdown = { pass: 0, needs_work: 0, do_not_ship: 0 };
         for (const r of resources) {
             if (r.verdict && r.verdict in verdictBreakdown) {
@@ -166,12 +189,22 @@ let AnalyticsService = class AnalyticsService {
         const topIssues = [...grouped.values()]
             .sort((a, b) => b.count - a.count || SEVERITY_RANK[b.maxSeverity] - SEVERITY_RANK[a.maxSeverity])
             .slice(0, 6);
-        return { windowDays, totals, verdictBreakdown, scores, riskiest, topIssues };
+        return {
+            windowDays,
+            repoFilter: repoFilter ?? null,
+            totals,
+            activeRepositories,
+            prReviewCount,
+            verdictBreakdown,
+            scores,
+            riskiest,
+            topIssues,
+        };
     }
-    async trend(userId, windowDays) {
+    async trend(userId, windowDays, repoFilter) {
         const since = new Date(Date.now() - (windowDays - 1) * 24 * 60 * 60 * 1000);
         const sinceStart = new Date(Date.UTC(since.getUTCFullYear(), since.getUTCMonth(), since.getUTCDate()));
-        const resources = await this.loadResourceScores(userId, sinceStart);
+        const resources = await this.loadResourceScores(userId, sinceStart, repoFilter);
         const buckets = new Map();
         for (let i = 0; i < windowDays; i++) {
             buckets.set(startOfDayUtc(new Date(sinceStart.getTime() + i * 24 * 60 * 60 * 1000)), []);

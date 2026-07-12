@@ -37,7 +37,12 @@ export interface TopIssue {
 
 export interface AnalyticsOverview {
   windowDays: number;
+  repoFilter: string | null;
   totals: UsageTotals;
+  // Distinct repos scanned in this window (repo scans + PR/MR reviews) —
+  // single-file pasted audits aren't tied to a repo, so don't count here.
+  activeRepositories: number;
+  prReviewCount: number;
   verdictBreakdown: VerdictBreakdown;
   scores: ScoreSet;
   riskiest: RiskiestItem[];
