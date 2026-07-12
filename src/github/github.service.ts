@@ -5,6 +5,7 @@ import { GithubPrDetails, GithubPrFile, GithubRepoSummary } from './github.types
 import { parseChangedRanges } from '../common/diff-ranges';
 import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
 import { PrContext, PrFeedback, PrPublisher } from '../pr-feedback/pr-feedback.types';
+import { TokenCryptoService } from '../common/token-crypto.service';
 
 const GITHUB_API = 'https://api.github.com';
 
@@ -13,6 +14,7 @@ export class GithubService implements OnModuleInit, PrPublisher {
   constructor(
     private readonly prisma: PrismaService,
     private readonly prFeedback: PrFeedbackService,
+    private readonly tokenCrypto: TokenCryptoService,
   ) {}
 
   onModuleInit() {
@@ -33,7 +35,7 @@ export class GithubService implements OnModuleInit, PrPublisher {
     if (!user.githubToken) {
       throw new BadRequestException('Connect a GitHub account first');
     }
-    return user.githubToken;
+    return this.tokenCrypto.decrypt(user.githubToken);
   }
 
   async connect(userId: string, token: string) {
@@ -49,7 +51,7 @@ export class GithubService implements OnModuleInit, PrPublisher {
 
     await this.prisma.user.update({
       where: { id: userId },
-      data: { githubToken: token, githubUsername: profile.login },
+      data: { githubToken: this.tokenCrypto.encrypt(token), githubUsername: profile.login },
     });
 
     return { username: profile.login as string };

@@ -15,13 +15,16 @@ const crypto = require("crypto");
 const prisma_service_1 = require("../prisma/prisma.service");
 const diff_ranges_1 = require("../common/diff-ranges");
 const pr_feedback_service_1 = require("../pr-feedback/pr-feedback.service");
+const token_crypto_service_1 = require("../common/token-crypto.service");
 const GITHUB_API = 'https://api.github.com';
 let GithubService = class GithubService {
     prisma;
     prFeedback;
-    constructor(prisma, prFeedback) {
+    tokenCrypto;
+    constructor(prisma, prFeedback, tokenCrypto) {
         this.prisma = prisma;
         this.prFeedback = prFeedback;
+        this.tokenCrypto = tokenCrypto;
     }
     onModuleInit() {
         this.prFeedback.register('github', this);
@@ -39,7 +42,7 @@ let GithubService = class GithubService {
         if (!user.githubToken) {
             throw new common_1.BadRequestException('Connect a GitHub account first');
         }
-        return user.githubToken;
+        return this.tokenCrypto.decrypt(user.githubToken);
     }
     async connect(userId, token) {
         const res = await fetch(`${GITHUB_API}/user`, { headers: this.authHeaders(token) });
@@ -51,7 +54,7 @@ let GithubService = class GithubService {
         const profile = await res.json();
         await this.prisma.user.update({
             where: { id: userId },
-            data: { githubToken: token, githubUsername: profile.login },
+            data: { githubToken: this.tokenCrypto.encrypt(token), githubUsername: profile.login },
         });
         return { username: profile.login };
     }
@@ -296,7 +299,8 @@ exports.GithubService = GithubService;
 exports.GithubService = GithubService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
-        pr_feedback_service_1.PrFeedbackService])
+        pr_feedback_service_1.PrFeedbackService,
+        token_crypto_service_1.TokenCryptoService])
 ], GithubService);
 function severityLabel(severity) {
     const icons = { critical: '🔴 Critical', high: '🟠 High', medium: '🟡 Medium', low: '🔵 Low' };

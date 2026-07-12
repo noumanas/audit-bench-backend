@@ -29,6 +29,7 @@ export declare class RepositoryController {
         dependencyVulnerabilities: import("@prisma/client/runtime/library").JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
+        updatedAt: Date;
         completedAt: Date | null;
     }>;
     findRecent(user: RequestUser, limit?: string): Promise<{
@@ -57,6 +58,7 @@ export declare class RepositoryController {
         dependencyVulnerabilities: import("@prisma/client/runtime/library").JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
+        updatedAt: Date;
         completedAt: Date | null;
     }[]>;
     findOne(user: RequestUser, id: string): Promise<{
@@ -98,6 +100,7 @@ export declare class RepositoryController {
         dependencyVulnerabilities: import("@prisma/client/runtime/library").JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
+        updatedAt: Date;
         completedAt: Date | null;
     }>;
 }

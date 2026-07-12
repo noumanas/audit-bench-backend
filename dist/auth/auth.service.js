@@ -15,7 +15,7 @@ const config_1 = require("@nestjs/config");
 const jwt_1 = require("@nestjs/jwt");
 const bcrypt = require("bcryptjs");
 const prisma_service_1 = require("../prisma/prisma.service");
-const SALT_ROUNDS = 10;
+const SALT_ROUNDS = 12;
 const DEFAULT_PLAN_SLUG = 'free';
 let AuthService = class AuthService {
     prisma;
@@ -55,6 +55,10 @@ let AuthService = class AuthService {
         const valid = await bcrypt.compare(dto.password, user.passwordHash);
         if (!valid)
             throw new common_1.UnauthorizedException('Invalid email or password');
+        if (bcrypt.getRounds(user.passwordHash) < SALT_ROUNDS) {
+            const upgradedHash = await bcrypt.hash(dto.password, SALT_ROUNDS);
+            await this.prisma.user.update({ where: { id: user.id }, data: { passwordHash: upgradedHash } });
+        }
         return this.buildSession(user);
     }
     buildSession(user) {

@@ -8,10 +8,14 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AppModule = void 0;
 const common_1 = require("@nestjs/common");
+const core_1 = require("@nestjs/core");
 const config_1 = require("@nestjs/config");
+const throttler_1 = require("@nestjs/throttler");
+const schedule_1 = require("@nestjs/schedule");
 const app_controller_1 = require("./app.controller");
 const app_service_1 = require("./app.service");
 const prisma_module_1 = require("./prisma/prisma.module");
+const token_crypto_module_1 = require("./common/token-crypto.module");
 const auth_module_1 = require("./auth/auth.module");
 const users_module_1 = require("./users/users.module");
 const plans_module_1 = require("./plans/plans.module");
@@ -33,7 +37,10 @@ exports.AppModule = AppModule = __decorate([
     (0, common_1.Module)({
         imports: [
             config_1.ConfigModule.forRoot({ isGlobal: true }),
+            throttler_1.ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 60 }]),
+            schedule_1.ScheduleModule.forRoot(),
             prisma_module_1.PrismaModule,
+            token_crypto_module_1.TokenCryptoModule,
             auth_module_1.AuthModule,
             users_module_1.UsersModule,
             plans_module_1.PlansModule,
@@ -50,7 +57,7 @@ exports.AppModule = AppModule = __decorate([
             fix_module_1.FixModule,
         ],
         controllers: [app_controller_1.AppController],
-        providers: [app_service_1.AppService],
+        providers: [app_service_1.AppService, { provide: core_1.APP_GUARD, useClass: throttler_1.ThrottlerGuard }],
     })
 ], AppModule);
 //# sourceMappingURL=app.module.js.map

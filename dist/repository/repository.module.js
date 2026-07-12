@@ -10,6 +10,7 @@ exports.RepositoryModule = void 0;
 const common_1 = require("@nestjs/common");
 const repository_service_1 = require("./repository.service");
 const repository_controller_1 = require("./repository.controller");
+const scan_job_sweep_service_1 = require("./scan-job-sweep.service");
 const llm_module_1 = require("../llm/llm.module");
 const quota_module_1 = require("../quota/quota.module");
 const pipeline_module_1 = require("../audit/pipeline.module");
@@ -21,7 +22,7 @@ exports.RepositoryModule = RepositoryModule = __decorate([
     (0, common_1.Module)({
         imports: [llm_module_1.LlmModule, quota_module_1.QuotaModule, pipeline_module_1.PipelineModule, pr_feedback_module_1.PrFeedbackModule],
         controllers: [repository_controller_1.RepositoryController],
-        providers: [repository_service_1.RepositoryService],
+        providers: [repository_service_1.RepositoryService, scan_job_sweep_service_1.ScanJobSweepService],
         exports: [repository_service_1.RepositoryService],
     })
 ], RepositoryModule);

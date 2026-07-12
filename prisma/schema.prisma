@@ -239,10 +239,15 @@ model ScanJob {
   aiInvoked   Boolean    @default(true)
   error       String?
   createdAt   DateTime   @default(now())
+  // Bumped on every status/progress write during processScan — used by
+  // ScanJobSweepService to tell "still actively running" apart from "the
+  // process died mid-scan and this will never move again."
+  updatedAt   DateTime   @updatedAt
   completedAt DateTime?
   files       ScanFile[]
 
   @@index([userId])
+  @@index([status, updatedAt])
 }
 
 model ScanFile {

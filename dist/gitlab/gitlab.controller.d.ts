@@ -44,6 +44,7 @@ export declare class GitlabController {
         dependencyVulnerabilities: import("@prisma/client/runtime/library").JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
+        updatedAt: Date;
         completedAt: Date | null;
     }>;
     reviewMr(user: RequestUser, dto: ReviewMrDto): Promise<{
@@ -72,6 +73,7 @@ export declare class GitlabController {
         dependencyVulnerabilities: import("@prisma/client/runtime/library").JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
+        updatedAt: Date;
         completedAt: Date | null;
     }>;
 }

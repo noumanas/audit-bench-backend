@@ -3,10 +3,12 @@ import { PrismaService } from '../prisma/prisma.service';
 import { GithubPrDetails, GithubRepoSummary } from './github.types';
 import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
 import { PrContext, PrFeedback, PrPublisher } from '../pr-feedback/pr-feedback.types';
+import { TokenCryptoService } from '../common/token-crypto.service';
 export declare class GithubService implements OnModuleInit, PrPublisher {
     private readonly prisma;
     private readonly prFeedback;
-    constructor(prisma: PrismaService, prFeedback: PrFeedbackService);
+    private readonly tokenCrypto;
+    constructor(prisma: PrismaService, prFeedback: PrFeedbackService, tokenCrypto: TokenCryptoService);
     onModuleInit(): void;
     private authHeaders;
     private requireToken;

@@ -56,6 +56,7 @@ export declare class ReportController {
         dependencyVulnerabilities: import("@prisma/client/runtime/library").JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
+        updatedAt: Date;
         completedAt: Date | null;
         kind: string;
     }>;

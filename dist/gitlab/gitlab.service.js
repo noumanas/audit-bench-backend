@@ -17,14 +17,17 @@ const prisma_service_1 = require("../prisma/prisma.service");
 const diff_ranges_1 = require("../common/diff-ranges");
 const pr_feedback_service_1 = require("../pr-feedback/pr-feedback.service");
 const gitlab_url_1 = require("../common/gitlab-url");
+const token_crypto_service_1 = require("../common/token-crypto.service");
 let GitlabService = class GitlabService {
     prisma;
     config;
     prFeedback;
-    constructor(prisma, config, prFeedback) {
+    tokenCrypto;
+    constructor(prisma, config, prFeedback, tokenCrypto) {
         this.prisma = prisma;
         this.config = config;
         this.prFeedback = prFeedback;
+        this.tokenCrypto = tokenCrypto;
     }
     onModuleInit() {
         this.prFeedback.register('gitlab', this);
@@ -41,15 +44,16 @@ let GitlabService = class GitlabService {
             throw new common_1.BadRequestException('Connect a GitLab account first');
         }
         if (user.gitlabRefreshToken && user.gitlabTokenExpiresAt && user.gitlabTokenExpiresAt.getTime() - Date.now() < 60_000) {
-            return this.refreshAccessToken(userId, user.gitlabRefreshToken);
+            return this.refreshAccessToken(userId, this.tokenCrypto.decrypt(user.gitlabRefreshToken));
         }
-        return user.gitlabToken;
+        return this.tokenCrypto.decrypt(user.gitlabToken);
     }
     async refreshAccessToken(userId, refreshToken) {
         const clientId = this.config.get('GITLAB_OAUTH_CLIENT_ID');
         const clientSecret = this.config.get('GITLAB_OAUTH_CLIENT_SECRET');
         if (!clientId || !clientSecret) {
-            return (await this.prisma.user.findUniqueOrThrow({ where: { id: userId } })).gitlabToken;
+            const stale = (await this.prisma.user.findUniqueOrThrow({ where: { id: userId } })).gitlabToken;
+            return this.tokenCrypto.decrypt(stale);
         }
         const res = await fetch(`${(0, gitlab_url_1.gitlabInstanceUrl)((k) => this.config.get(k))}/oauth/token`, {
             method: 'POST',
@@ -63,8 +67,8 @@ let GitlabService = class GitlabService {
         await this.prisma.user.update({
             where: { id: userId },
             data: {
-                gitlabToken: data.access_token,
-                gitlabRefreshToken: data.refresh_token ?? refreshToken,
+                gitlabToken: this.tokenCrypto.encrypt(data.access_token),
+                gitlabRefreshToken: data.refresh_token ? this.tokenCrypto.encrypt(data.refresh_token) : this.tokenCrypto.encrypt(refreshToken),
                 gitlabTokenExpiresAt: data.expires_in ? new Date(Date.now() + data.expires_in * 1000) : null,
             },
         });
@@ -80,7 +84,7 @@ let GitlabService = class GitlabService {
         const profile = await res.json();
         await this.prisma.user.update({
             where: { id: userId },
-            data: { gitlabToken: token, gitlabUsername: profile.username },
+            data: { gitlabToken: this.tokenCrypto.encrypt(token), gitlabUsername: profile.username },
         });
         return { username: profile.username };
     }
@@ -302,7 +306,8 @@ exports.GitlabService = GitlabService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         config_1.ConfigService,
-        pr_feedback_service_1.PrFeedbackService])
+        pr_feedback_service_1.PrFeedbackService,
+        token_crypto_service_1.TokenCryptoService])
 ], GitlabService);
 function severityLabel(severity) {
     const icons = { critical: '🔴 Critical', high: '🟠 High', medium: '🟡 Medium', low: '🔵 Low' };

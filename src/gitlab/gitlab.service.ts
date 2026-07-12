@@ -7,6 +7,7 @@ import { parseChangedRanges } from '../common/diff-ranges';
 import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
 import { PrContext, PrFeedback, PrPublisher } from '../pr-feedback/pr-feedback.types';
 import { gitlabInstanceUrl } from '../common/gitlab-url';
+import { TokenCryptoService } from '../common/token-crypto.service';
 
 @Injectable()
 export class GitlabService implements OnModuleInit, PrPublisher {
@@ -14,6 +15,7 @@ export class GitlabService implements OnModuleInit, PrPublisher {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly prFeedback: PrFeedbackService,
+    private readonly tokenCrypto: TokenCryptoService,
   ) {}
 
   onModuleInit() {
@@ -39,18 +41,20 @@ export class GitlabService implements OnModuleInit, PrPublisher {
     // OAuth access tokens (unlike a pasted PAT) expire — refresh proactively
     // so callers never have to handle a mid-request 401 themselves.
     if (user.gitlabRefreshToken && user.gitlabTokenExpiresAt && user.gitlabTokenExpiresAt.getTime() - Date.now() < 60_000) {
-      return this.refreshAccessToken(userId, user.gitlabRefreshToken);
+      return this.refreshAccessToken(userId, this.tokenCrypto.decrypt(user.gitlabRefreshToken));
     }
-    return user.gitlabToken;
+    return this.tokenCrypto.decrypt(user.gitlabToken);
   }
 
+  /** `refreshToken` must already be decrypted — see the one call site above. */
   private async refreshAccessToken(userId: string, refreshToken: string): Promise<string> {
     const clientId = this.config.get<string>('GITLAB_OAUTH_CLIENT_ID');
     const clientSecret = this.config.get<string>('GITLAB_OAUTH_CLIENT_SECRET');
     if (!clientId || !clientSecret) {
       // Shouldn't happen — a refresh token only exists if OAuth login issued
       // one — but fall back to the (possibly stale) stored token rather than crash.
-      return (await this.prisma.user.findUniqueOrThrow({ where: { id: userId } })).gitlabToken as string;
+      const stale = (await this.prisma.user.findUniqueOrThrow({ where: { id: userId } })).gitlabToken;
+      return this.tokenCrypto.decrypt(stale as string);
     }
 
     const res = await fetch(`${gitlabInstanceUrl((k) => this.config.get<string>(k))}/oauth/token`, {
@@ -66,8 +70,8 @@ export class GitlabService implements OnModuleInit, PrPublisher {
     await this.prisma.user.update({
       where: { id: userId },
       data: {
-        gitlabToken: data.access_token,
-        gitlabRefreshToken: data.refresh_token ?? refreshToken,
+        gitlabToken: this.tokenCrypto.encrypt(data.access_token),
+        gitlabRefreshToken: data.refresh_token ? this.tokenCrypto.encrypt(data.refresh_token) : this.tokenCrypto.encrypt(refreshToken),
         gitlabTokenExpiresAt: data.expires_in ? new Date(Date.now() + data.expires_in * 1000) : null,
       },
     });
@@ -87,7 +91,7 @@ export class GitlabService implements OnModuleInit, PrPublisher {
 
     await this.prisma.user.update({
       where: { id: userId },
-      data: { gitlabToken: token, gitlabUsername: profile.username },
+      data: { gitlabToken: this.tokenCrypto.encrypt(token), gitlabUsername: profile.username },
     });
 
     return { username: profile.username as string };

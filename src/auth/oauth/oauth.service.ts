@@ -4,6 +4,7 @@ import * as crypto from 'crypto';
 import { Role } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { gitlabInstanceUrl } from '../../common/gitlab-url';
+import { TokenCryptoService } from '../../common/token-crypto.service';
 import { OAuthProfile, OAuthProvider, OAuthTokenSet } from './oauth.types';
 
 const DEFAULT_PLAN_SLUG = 'free';
@@ -14,6 +15,7 @@ export class OAuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly tokenCrypto: TokenCryptoService,
   ) {}
 
   redirectUri(provider: OAuthProvider): string {
@@ -85,11 +87,11 @@ export class OAuthService {
   private async findOrCreateUser(provider: OAuthProvider, profile: OAuthProfile, tokens: OAuthTokenSet) {
     const tokenFields =
       provider === 'github'
-        ? { githubToken: tokens.accessToken, githubUsername: profile.username }
+        ? { githubToken: this.tokenCrypto.encrypt(tokens.accessToken), githubUsername: profile.username }
         : {
-            gitlabToken: tokens.accessToken,
+            gitlabToken: this.tokenCrypto.encrypt(tokens.accessToken),
             gitlabUsername: profile.username,
-            gitlabRefreshToken: tokens.refreshToken,
+            gitlabRefreshToken: tokens.refreshToken ? this.tokenCrypto.encrypt(tokens.refreshToken) : null,
             gitlabTokenExpiresAt: tokens.expiresAt,
           };
     const providerLabel = provider === 'github' ? 'GitHub' : 'GitLab';

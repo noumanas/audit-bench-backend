@@ -4,11 +4,13 @@ import { PrismaService } from '../prisma/prisma.service';
 import { GitlabMrDetails, GitlabProjectSummary } from './gitlab.types';
 import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
 import { PrContext, PrFeedback, PrPublisher } from '../pr-feedback/pr-feedback.types';
+import { TokenCryptoService } from '../common/token-crypto.service';
 export declare class GitlabService implements OnModuleInit, PrPublisher {
     private readonly prisma;
     private readonly config;
     private readonly prFeedback;
-    constructor(prisma: PrismaService, config: ConfigService, prFeedback: PrFeedbackService);
+    private readonly tokenCrypto;
+    constructor(prisma: PrismaService, config: ConfigService, prFeedback: PrFeedbackService, tokenCrypto: TokenCryptoService);
     onModuleInit(): void;
     private baseUrl;
     private authHeaders;

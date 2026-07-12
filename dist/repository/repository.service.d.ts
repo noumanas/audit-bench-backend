@@ -45,6 +45,7 @@ export declare class RepositoryService {
         dependencyVulnerabilities: Prisma.JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
+        updatedAt: Date;
         completedAt: Date | null;
     }>;
     createScanJobFromBuffer(userId: string, zipBuffer: Buffer, sourceName: string, provider?: string, sourceType?: ScanSourceType, repoRef?: RepoRef): Promise<{
@@ -73,6 +74,7 @@ export declare class RepositoryService {
         dependencyVulnerabilities: Prisma.JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
+        updatedAt: Date;
         completedAt: Date | null;
     }>;
     createDiffReview(userId: string, files: ScannedFile[], meta: {
@@ -107,6 +109,7 @@ export declare class RepositoryService {
         dependencyVulnerabilities: Prisma.JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
+        updatedAt: Date;
         completedAt: Date | null;
     }>;
     private gateAndCreateJob;
@@ -152,6 +155,7 @@ export declare class RepositoryService {
         dependencyVulnerabilities: Prisma.JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
+        updatedAt: Date;
         completedAt: Date | null;
     }>;
     findRecent(userId: string, limit?: number): Promise<{
@@ -180,6 +184,7 @@ export declare class RepositoryService {
         dependencyVulnerabilities: Prisma.JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
+        updatedAt: Date;
         completedAt: Date | null;
     }[]>;
 }

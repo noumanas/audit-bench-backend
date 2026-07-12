@@ -8,7 +8,10 @@ import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
 import { JwtPayload } from './types';
 
-const SALT_ROUNDS = 10;
+// Bumped from 10 → 12 per current OWASP guidance. Existing hashes at the old
+// cost remain valid (bcrypt encodes its own cost factor) — login() upgrades
+// them opportunistically rather than forcing a mass reset.
+const SALT_ROUNDS = 12;
 const DEFAULT_PLAN_SLUG = 'free';
 
 @Injectable()
@@ -58,6 +61,11 @@ export class AuthService {
 
     const valid = await bcrypt.compare(dto.password, user.passwordHash);
     if (!valid) throw new UnauthorizedException('Invalid email or password');
+
+    if (bcrypt.getRounds(user.passwordHash) < SALT_ROUNDS) {
+      const upgradedHash = await bcrypt.hash(dto.password, SALT_ROUNDS);
+      await this.prisma.user.update({ where: { id: user.id }, data: { passwordHash: upgradedHash } });
+    }
 
     return this.buildSession(user);
   }

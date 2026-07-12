@@ -44,6 +44,7 @@ export declare class GithubController {
         dependencyVulnerabilities: import("@prisma/client/runtime/library").JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
+        updatedAt: Date;
         completedAt: Date | null;
     }>;
     reviewPr(user: RequestUser, dto: ReviewPrDto): Promise<{
@@ -72,6 +73,7 @@ export declare class GithubController {
         dependencyVulnerabilities: import("@prisma/client/runtime/library").JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
+        updatedAt: Date;
         completedAt: Date | null;
     }>;
 }
