@@ -3,6 +3,7 @@ import { FixService } from './fix.service';
 import { CommitFixDto } from './dto/commit-fix.dto';
 import { RecheckFixDto } from './dto/recheck-fix.dto';
 import { AiFixDto } from './dto/ai-fix.dto';
+import { AiFixAllDto } from './dto/ai-fix-all.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { RequestUser } from '../auth/types';
@@ -30,5 +31,10 @@ export class FixController {
   @Post('ai')
   aiFix(@CurrentUser() user: RequestUser, @Param('scanJobId') scanJobId: string, @Body() dto: AiFixDto) {
     return this.fixService.aiFix(user, scanJobId, dto.path, dto.content, dto.finding);
+  }
+
+  @Post('ai/all')
+  aiFixAll(@CurrentUser() user: RequestUser, @Param('scanJobId') scanJobId: string, @Body() dto: AiFixAllDto) {
+    return this.fixService.aiFixAll(user, scanJobId, dto.path, dto.content, dto.findings);
   }
 }
