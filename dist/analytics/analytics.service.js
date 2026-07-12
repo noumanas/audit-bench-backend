@@ -13,6 +13,7 @@ exports.AnalyticsService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../prisma/prisma.service");
 const scoring_1 = require("./scoring");
+const workspace_scope_1 = require("../common/workspace-scope");
 const SEVERITY_RANK = { critical: 4, high: 3, medium: 2, low: 1 };
 const PR_REVIEW_SOURCE_TYPES = new Set(['github_pr', 'gitlab_mr']);
 function average(values) {
@@ -28,17 +29,18 @@ let AnalyticsService = class AnalyticsService {
     constructor(prisma) {
         this.prisma = prisma;
     }
-    async loadResourceScores(userId, since, repoFilter) {
+    async loadResourceScores(actor, since, repoFilter) {
+        const scope = (0, workspace_scope_1.workspaceWhere)(actor);
         const [audits, scanJobs] = await Promise.all([
             repoFilter
                 ? Promise.resolve([])
                 : this.prisma.audit.findMany({
-                    where: { userId, createdAt: { gte: since } },
+                    where: { ...scope, createdAt: { gte: since } },
                     select: { filename: true, verdict: true, findings: true, createdAt: true },
                 }),
             this.prisma.scanJob.findMany({
                 where: {
-                    userId,
+                    ...scope,
                     createdAt: { gte: since },
                     status: 'completed',
                     ...(repoFilter ? { sourceName: { contains: repoFilter, mode: 'insensitive' } } : {}),
@@ -102,20 +104,21 @@ let AnalyticsService = class AnalyticsService {
         });
         return [...auditScores, ...scanScores];
     }
-    async usageTotals(userId, since) {
+    async usageTotals(actor, since) {
+        const scope = (0, workspace_scope_1.workspaceWhere)(actor);
         const [auditFresh, auditCached, auditSkipped, scanFileFresh, scanFileCached, scanFileSkipped, auditCount, scanCount,] = await Promise.all([
-            this.prisma.audit.count({ where: { userId, createdAt: { gte: since }, aiInvoked: true, fromCache: false } }),
-            this.prisma.audit.count({ where: { userId, createdAt: { gte: since }, fromCache: true } }),
-            this.prisma.audit.count({ where: { userId, createdAt: { gte: since }, aiInvoked: false, fromCache: false } }),
+            this.prisma.audit.count({ where: { ...scope, createdAt: { gte: since }, aiInvoked: true, fromCache: false } }),
+            this.prisma.audit.count({ where: { ...scope, createdAt: { gte: since }, fromCache: true } }),
+            this.prisma.audit.count({ where: { ...scope, createdAt: { gte: since }, aiInvoked: false, fromCache: false } }),
             this.prisma.scanFile.count({
-                where: { scanJob: { userId }, createdAt: { gte: since }, aiInvoked: true, fromCache: false },
+                where: { scanJob: scope, createdAt: { gte: since }, aiInvoked: true, fromCache: false },
             }),
-            this.prisma.scanFile.count({ where: { scanJob: { userId }, createdAt: { gte: since }, fromCache: true } }),
+            this.prisma.scanFile.count({ where: { scanJob: scope, createdAt: { gte: since }, fromCache: true } }),
             this.prisma.scanFile.count({
-                where: { scanJob: { userId }, createdAt: { gte: since }, aiInvoked: false, fromCache: false },
+                where: { scanJob: scope, createdAt: { gte: since }, aiInvoked: false, fromCache: false },
             }),
-            this.prisma.audit.count({ where: { userId, createdAt: { gte: since } } }),
-            this.prisma.scanJob.count({ where: { userId, createdAt: { gte: since } } }),
+            this.prisma.audit.count({ where: { ...scope, createdAt: { gte: since } } }),
+            this.prisma.scanJob.count({ where: { ...scope, createdAt: { gte: since } } }),
         ]);
         const freshAiCalls = auditFresh + scanFileFresh;
         const cachedHits = auditCached + scanFileCached;
@@ -130,9 +133,9 @@ let AnalyticsService = class AnalyticsService {
             cacheSavingsPct: totalRuns ? (0, scoring_1.clampScore)(((cachedHits + localOnlySkips) / totalRuns) * 100) : 0,
         };
     }
-    async repos(userId) {
+    async repos(actor) {
         const rows = await this.prisma.scanJob.findMany({
-            where: { userId },
+            where: (0, workspace_scope_1.workspaceWhere)(actor),
             distinct: ['sourceName'],
             select: { sourceName: true },
             orderBy: { createdAt: 'desc' },
@@ -140,11 +143,11 @@ let AnalyticsService = class AnalyticsService {
         });
         return rows.map((r) => r.sourceName);
     }
-    async overview(userId, windowDays, repoFilter) {
+    async overview(actor, windowDays, repoFilter) {
         const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
         const [resources, totals] = await Promise.all([
-            this.loadResourceScores(userId, since, repoFilter),
-            this.usageTotals(userId, since),
+            this.loadResourceScores(actor, since, repoFilter),
+            this.usageTotals(actor, since),
         ]);
         const activeRepositories = new Set(resources.filter((r) => r.kind === 'scan').map((r) => r.label)).size;
         const prReviewCount = resources.filter((r) => r.sourceType && PR_REVIEW_SOURCE_TYPES.has(r.sourceType)).length;
@@ -201,10 +204,10 @@ let AnalyticsService = class AnalyticsService {
             topIssues,
         };
     }
-    async trend(userId, windowDays, repoFilter) {
+    async trend(actor, windowDays, repoFilter) {
         const since = new Date(Date.now() - (windowDays - 1) * 24 * 60 * 60 * 1000);
         const sinceStart = new Date(Date.UTC(since.getUTCFullYear(), since.getUTCMonth(), since.getUTCDate()));
-        const resources = await this.loadResourceScores(userId, sinceStart, repoFilter);
+        const resources = await this.loadResourceScores(actor, sinceStart, repoFilter);
         const buckets = new Map();
         for (let i = 0; i < windowDays; i++) {
             buckets.set(startOfDayUtc(new Date(sinceStart.getTime() + i * 24 * 60 * 60 * 1000)), []);

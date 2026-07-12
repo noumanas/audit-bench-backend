@@ -29,13 +29,13 @@ let AnalyticsController = class AnalyticsController {
         this.analyticsService = analyticsService;
     }
     overview(user, days, repo) {
-        return this.analyticsService.overview(user.id, parseWindowDays(days, 30), repo || undefined);
+        return this.analyticsService.overview(user, parseWindowDays(days, 30), repo || undefined);
     }
     trend(user, days, repo) {
-        return this.analyticsService.trend(user.id, parseWindowDays(days, 30), repo || undefined);
+        return this.analyticsService.trend(user, parseWindowDays(days, 30), repo || undefined);
     }
     repos(user) {
-        return this.analyticsService.repos(user.id);
+        return this.analyticsService.repos(user);
     }
 };
 exports.AnalyticsController = AnalyticsController;

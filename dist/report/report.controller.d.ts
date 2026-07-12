@@ -6,6 +6,7 @@ export declare class ReportController {
     findOne(user: RequestUser, id: string): Promise<{
         id: string;
         createdAt: Date;
+        organizationId: string | null;
         userId: string;
         provider: string;
         aiInvoked: boolean;
@@ -34,6 +35,7 @@ export declare class ReportController {
         error: string | null;
         id: string;
         createdAt: Date;
+        organizationId: string | null;
         userId: string;
         provider: string;
         status: import(".prisma/client").$Enums.ScanStatus;

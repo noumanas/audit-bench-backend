@@ -38,14 +38,14 @@ let AuthService = class AuthService {
         const role = superAdminEmail && superAdminEmail.toLowerCase() === dto.email.toLowerCase() ? 'super_admin' : 'user';
         const user = await this.prisma.user.create({
             data: { email: dto.email, passwordHash, name: dto.name, planId: plan.id, role },
-            include: { plan: true },
+            include: { plan: true, organization: true },
         });
         return this.buildSession(user);
     }
     async login(dto) {
         const user = await this.prisma.user.findUnique({
             where: { email: dto.email },
-            include: { plan: true },
+            include: { plan: true, organization: true },
         });
         if (!user)
             throw new common_1.UnauthorizedException('Invalid email or password');
@@ -75,6 +75,10 @@ let AuthService = class AuthService {
                 createdAt: user.createdAt,
                 plan: user.plan,
                 role: user.role,
+                organization: user.organization
+                    ? { id: user.organization.id, name: user.organization.name, slug: user.organization.slug }
+                    : null,
+                orgRole: user.organization ? user.orgRole : null,
             },
         };
     }

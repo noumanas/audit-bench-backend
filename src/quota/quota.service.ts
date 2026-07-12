@@ -32,8 +32,18 @@ export class QuotaService {
   private loadUserWithPlan(db: Db, userId: string) {
     return db.user.findUniqueOrThrow({
       where: { id: userId },
-      include: { plan: true },
+      include: { plan: true, organization: { include: { plan: true } } },
     });
+  }
+
+  /**
+   * A user in an organization draws from the org's pooled plan/quota, not
+   * their own — their personal `plan` becomes dormant the moment they join
+   * a team (see AuthService/UsersService, which still keep it up to date so
+   * it's ready to use again if they ever leave).
+   */
+  private effectivePlan(user: { plan: { dailyAuditLimit: number | null; monthlyAuditLimit: number | null; repositoryScan: boolean; name: string }; organization: { plan: typeof user.plan } | null }) {
+    return user.organization ? user.organization.plan : user.plan;
   }
 
   /**
@@ -44,28 +54,39 @@ export class QuotaService {
    * `fromCache: false` here; `ScanJob.aiInvoked` already means "at least
    * one fresh call happened" (see RepositoryService), so it needs no such
    * pairing. A Stage-1-only ("clean") run, or a cache hit, costs nothing.
+   *
+   * `scopeWhere` is `{ userId }` for a personal account or `{ organizationId }`
+   * for a team member — team usage is pooled across every member's runs.
    */
-  private async countUsage(db: Db, userId: string, since: Date): Promise<number> {
+  private async countUsage(
+    db: Db,
+    scopeWhere: { userId: string } | { organizationId: string },
+    since: Date,
+  ): Promise<number> {
     const [audits, scans] = await Promise.all([
-      db.audit.count({ where: { userId, createdAt: { gte: since }, aiInvoked: true, fromCache: false } }),
-      db.scanJob.count({ where: { userId, createdAt: { gte: since }, aiInvoked: true } }),
+      db.audit.count({ where: { ...scopeWhere, createdAt: { gte: since }, aiInvoked: true, fromCache: false } }),
+      db.scanJob.count({ where: { ...scopeWhere, createdAt: { gte: since }, aiInvoked: true } }),
     ]);
     return audits + scans;
   }
 
   async getUsage(userId: string, db: Db = this.prisma) {
     const user = await this.loadUserWithPlan(db, userId);
+    const plan = this.effectivePlan(user);
+    const scopeWhere = user.organizationId ? { organizationId: user.organizationId } : { userId };
     const [dailyUsed, monthlyUsed] = await Promise.all([
-      this.countUsage(db, userId, startOfDay()),
-      this.countUsage(db, userId, startOfMonth()),
+      this.countUsage(db, scopeWhere, startOfDay()),
+      this.countUsage(db, scopeWhere, startOfMonth()),
     ]);
 
     return {
-      plan: user.plan,
+      plan,
+      scope: user.organizationId ? ('organization' as const) : ('personal' as const),
+      organizationName: user.organization?.name ?? null,
       dailyUsed,
-      dailyLimit: user.plan.dailyAuditLimit,
+      dailyLimit: plan.dailyAuditLimit,
       monthlyUsed,
-      monthlyLimit: user.plan.monthlyAuditLimit,
+      monthlyLimit: plan.monthlyAuditLimit,
       dailyResetsAt: startOfNextDay(),
       monthlyResetsAt: startOfNextMonth(),
     };
@@ -112,10 +133,9 @@ export class QuotaService {
    */
   async assertPlanAllowsRepositoryScan(userId: string, db: Db = this.prisma): Promise<void> {
     const user = await this.loadUserWithPlan(db, userId);
-    if (!user.plan.repositoryScan) {
-      throw new ForbiddenException(
-        `Repository scanning isn't included in the ${user.plan.name} plan. Upgrade to Pro or higher.`,
-      );
+    const plan = this.effectivePlan(user);
+    if (!plan.repositoryScan) {
+      throw new ForbiddenException(`Repository scanning isn't included in the ${plan.name} plan. Upgrade to Pro or higher.`);
     }
   }
 

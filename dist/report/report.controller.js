@@ -17,6 +17,7 @@ const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../prisma/prisma.service");
 const jwt_auth_guard_1 = require("../auth/jwt-auth.guard");
 const current_user_decorator_1 = require("../auth/current-user.decorator");
+const workspace_scope_1 = require("../common/workspace-scope");
 let ReportController = class ReportController {
     prisma;
     constructor(prisma) {
@@ -24,10 +25,10 @@ let ReportController = class ReportController {
     }
     async findOne(user, id) {
         const audit = await this.prisma.audit.findUnique({ where: { id } });
-        if (audit && audit.userId === user.id)
+        if (audit && (0, workspace_scope_1.canViewResource)(user, audit))
             return { kind: 'audit', ...audit };
         const scan = await this.prisma.scanJob.findUnique({ where: { id }, include: { files: true } });
-        if (scan && scan.userId === user.id)
+        if (scan && (0, workspace_scope_1.canViewResource)(user, scan))
             return { kind: 'repository', ...scan };
         throw new common_1.NotFoundException(`Report ${id} not found`);
     }

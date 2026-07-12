@@ -5,18 +5,17 @@ export declare class QuotaService {
     private readonly prisma;
     constructor(prisma: PrismaService);
     private loadUserWithPlan;
+    private effectivePlan;
     private countUsage;
     getUsage(userId: string, db?: Db): Promise<{
         plan: {
-            name: string;
-            id: string;
-            createdAt: Date;
-            slug: string;
-            priceMonthlyCents: number;
             dailyAuditLimit: number | null;
             monthlyAuditLimit: number | null;
             repositoryScan: boolean;
+            name: string;
         };
+        scope: "organization" | "personal";
+        organizationName: string | null;
         dailyUsed: number;
         dailyLimit: number | null;
         monthlyUsed: number;

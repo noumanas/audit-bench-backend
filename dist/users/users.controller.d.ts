@@ -17,6 +17,11 @@ export declare class UsersController {
             monthlyAuditLimit: number | null;
             repositoryScan: boolean;
         };
+        organization: {
+            name: string;
+            id: string;
+            slug: string;
+        } | null;
         email: string;
         name: string | null;
         id: string;
@@ -24,18 +29,17 @@ export declare class UsersController {
         role: import(".prisma/client").$Enums.Role;
         githubUsername: string | null;
         createdAt: Date;
+        orgRole: import(".prisma/client").$Enums.OrgRole | null;
     }>;
     getUsage(user: RequestUser): Promise<{
         plan: {
-            name: string;
-            id: string;
-            createdAt: Date;
-            slug: string;
-            priceMonthlyCents: number;
             dailyAuditLimit: number | null;
             monthlyAuditLimit: number | null;
             repositoryScan: boolean;
+            name: string;
         };
+        scope: "organization" | "personal";
+        organizationName: string | null;
         dailyUsed: number;
         dailyLimit: number | null;
         monthlyUsed: number;
@@ -56,6 +60,11 @@ export declare class UsersController {
                 monthlyAuditLimit: number | null;
                 repositoryScan: boolean;
             };
+            organization: {
+                name: string;
+                id: string;
+                slug: string;
+            } | null;
             email: string;
             name: string | null;
             id: string;
@@ -63,11 +72,16 @@ export declare class UsersController {
             role: import(".prisma/client").$Enums.Role;
             githubUsername: string | null;
             createdAt: Date;
+            orgRole: import(".prisma/client").$Enums.OrgRole | null;
         };
         request?: undefined;
     } | {
         applied: false;
         request: {
+            organization: {
+                name: string;
+                id: string;
+            } | null;
             requestedPlan: {
                 name: string;
                 id: string;
@@ -86,6 +100,7 @@ export declare class UsersController {
         } & {
             id: string;
             createdAt: Date;
+            organizationId: string | null;
             userId: string;
             status: import(".prisma/client").$Enums.PlanRequestStatus;
             note: string | null;
@@ -96,6 +111,10 @@ export declare class UsersController {
         user?: undefined;
     }>;
     listMyPlanRequests(user: RequestUser): Promise<({
+        organization: {
+            name: string;
+            id: string;
+        } | null;
         requestedPlan: {
             name: string;
             id: string;
@@ -114,6 +133,7 @@ export declare class UsersController {
     } & {
         id: string;
         createdAt: Date;
+        organizationId: string | null;
         userId: string;
         status: import(".prisma/client").$Enums.PlanRequestStatus;
         note: string | null;

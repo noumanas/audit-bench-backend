@@ -2,7 +2,7 @@ import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/co
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
-import { Role } from '@prisma/client';
+import { OrgRole, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
@@ -40,7 +40,7 @@ export class AuthService {
 
     const user = await this.prisma.user.create({
       data: { email: dto.email, passwordHash, name: dto.name, planId: plan.id, role },
-      include: { plan: true },
+      include: { plan: true, organization: true },
     });
 
     return this.buildSession(user);
@@ -49,7 +49,7 @@ export class AuthService {
   async login(dto: LoginDto) {
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
-      include: { plan: true },
+      include: { plan: true, organization: true },
     });
     if (!user) throw new UnauthorizedException('Invalid email or password');
 
@@ -79,6 +79,9 @@ export class AuthService {
     plan: unknown;
     role: Role;
     isActive: boolean;
+    organizationId: string | null;
+    orgRole: OrgRole | null;
+    organization: { id: string; name: string; slug: string } | null;
   }) {
     if (!user.isActive) {
       throw new UnauthorizedException('This account has been suspended. Contact an administrator.');
@@ -94,6 +97,13 @@ export class AuthService {
         createdAt: user.createdAt,
         plan: user.plan,
         role: user.role,
+        // Flat shape (organization + top-level orgRole) matches GET /me
+        // (see UsersService.SAFE_USER_SELECT) so refreshUser() and the
+        // login/signup response are interchangeable on the frontend.
+        organization: user.organization
+          ? { id: user.organization.id, name: user.organization.name, slug: user.organization.slug }
+          : null,
+        orgRole: user.organization ? user.orgRole : null,
       },
     };
   }

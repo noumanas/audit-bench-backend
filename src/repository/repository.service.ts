@@ -23,6 +23,7 @@ import { Prisma, ScanSourceType } from '@prisma/client';
 import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
 import { PrContext, PrFeedback } from '../pr-feedback/pr-feedback.types';
 import { RepoRef } from '../common/repo-ref.types';
+import { WorkspaceActor, workspaceWhere, canViewResource } from '../common/workspace-scope';
 
 function selectFilesToAnalyze(files: ScannedFile[], max: number): ScannedFile[] {
   const analyzable = files.filter((f) => {
@@ -70,13 +71,13 @@ export class RepositoryService {
     private readonly prFeedback: PrFeedbackService,
   ) {}
 
-  async createScanJob(userId: string, file: Express.Multer.File, provider?: string) {
-    return this.createScanJobFromBuffer(userId, file.buffer, file.originalname, provider);
+  async createScanJob(actor: WorkspaceActor, file: Express.Multer.File, provider?: string) {
+    return this.createScanJobFromBuffer(actor, file.buffer, file.originalname, provider);
   }
 
   /** Shared by the zip-upload controller and the GitHub/GitLab repo-import flows. */
   async createScanJobFromBuffer(
-    userId: string,
+    actor: WorkspaceActor,
     zipBuffer: Buffer,
     sourceName: string,
     provider?: string,
@@ -85,7 +86,7 @@ export class RepositoryService {
     // scanned ref and open a PR/MR once the user commits a fix.
     repoRef?: RepoRef,
   ) {
-    await this.quota.assertPlanAllowsRepositoryScan(userId);
+    await this.quota.assertPlanAllowsRepositoryScan(actor.id);
 
     const providerName = this.llm.resolveProvider(provider);
     const maxFileSize = this.config.get<number>('MAX_FILE_SIZE_BYTES') || 200_000;
@@ -101,7 +102,7 @@ export class RepositoryService {
     const filesToAnalyze = selectFilesToAnalyze(files, maxScanFiles);
     const repoContext = `Detected framework: ${framework || 'unknown'}. Repository has ${files.length} files total; ${filesToAnalyze.length} selected for review.`;
 
-    const job = await this.gateAndCreateJob(userId, filesToAnalyze, providerName, {
+    const job = await this.gateAndCreateJob(actor, filesToAnalyze, providerName, {
       sourceName,
       sourceType,
       repoRef: repoRef as unknown as Prisma.InputJsonValue,
@@ -128,7 +129,7 @@ export class RepositoryService {
    * runs since it's per-file.
    */
   async createDiffReview(
-    userId: string,
+    actor: WorkspaceActor,
     files: ScannedFile[],
     meta: {
       sourceName: string;
@@ -139,7 +140,7 @@ export class RepositoryService {
       prContext?: PrContext;
     },
   ) {
-    await this.quota.assertPlanAllowsRepositoryScan(userId);
+    await this.quota.assertPlanAllowsRepositoryScan(actor.id);
 
     const providerName = this.llm.resolveProvider(meta.provider);
     const maxFileSize = this.config.get<number>('MAX_FILE_SIZE_BYTES') || 200_000;
@@ -155,7 +156,7 @@ export class RepositoryService {
     const secrets = scanSecrets(analyzable);
     const repoContext = `Reviewing a pull/merge request — only the lines this PR/MR actually changed are in scope for each file. ${analyzable.length} file(s) changed.`;
 
-    const job = await this.gateAndCreateJob(userId, analyzable, providerName, {
+    const job = await this.gateAndCreateJob(actor, analyzable, providerName, {
       sourceName: meta.sourceName,
       sourceType: meta.sourceType,
       pullRequestUrl: meta.pullRequestUrl,
@@ -169,7 +170,7 @@ export class RepositoryService {
   }
 
   private async gateAndCreateJob(
-    userId: string,
+    actor: WorkspaceActor,
     files: ScannedFile[],
     providerName: LlmProviderName,
     jobDataBase: JobDataBase,
@@ -180,11 +181,18 @@ export class RepositoryService {
     // and one that's already at its limit isn't blocked from attempting a
     // scan that might cost nothing. See QuotaService for the full rationale.
     const willInvokeAi = await this.anyFileNeedsFreshAiCall(files, providerName);
-    const jobData = { userId, status: 'queued' as const, provider: providerName, ...jobDataBase };
+    const jobData = {
+      userId: actor.id,
+      // Same team-visibility stamp as Audit — see AuditService.runAudit.
+      organizationId: actor.organizationId,
+      status: 'queued' as const,
+      provider: providerName,
+      ...jobDataBase,
+    };
 
     return willInvokeAi
       ? this.quota.withQuotaCheck(
-          (db) => this.quota.assertCanRunAudit(userId, db),
+          (db) => this.quota.assertCanRunAudit(actor.id, db),
           (db) => db.scanJob.create({ data: jobData }),
         )
       : this.prisma.scanJob.create({ data: jobData });
@@ -315,18 +323,18 @@ export class RepositoryService {
     return origin ? `${origin}/app/repository/${jobId}` : undefined;
   }
 
-  async findOne(userId: string, id: string) {
+  async findOne(actor: WorkspaceActor, id: string) {
     const job = await this.prisma.scanJob.findUnique({
       where: { id },
       include: { files: true },
     });
-    if (!job || job.userId !== userId) throw new NotFoundException(`Scan ${id} not found`);
+    if (!job || !canViewResource(actor, job)) throw new NotFoundException(`Scan ${id} not found`);
     return job;
   }
 
-  async findRecent(userId: string, limit = 20) {
+  async findRecent(actor: WorkspaceActor, limit = 20) {
     return this.prisma.scanJob.findMany({
-      where: { userId },
+      where: workspaceWhere(actor),
       orderBy: { createdAt: 'desc' },
       take: limit,
     });

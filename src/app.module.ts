@@ -21,6 +21,8 @@ import { AdminModule } from './admin/admin.module';
 import { BadgeModule } from './badge/badge.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { FixModule } from './fix/fix.module';
+import { EmailModule } from './email/email.module';
+import { OrganizationModule } from './organization/organization.module';
 
 @Module({
   imports: [
@@ -31,6 +33,8 @@ import { FixModule } from './fix/fix.module';
     ScheduleModule.forRoot(),
     PrismaModule,
     TokenCryptoModule,
+    EmailModule,
+    OrganizationModule,
     AuthModule,
     UsersModule,
     PlansModule,

@@ -31,13 +31,13 @@ let RepositoryController = class RepositoryController {
         if (!file.originalname.toLowerCase().endsWith('.zip')) {
             throw new common_1.BadRequestException('Only .zip archives are supported');
         }
-        return this.repositoryService.createScanJob(user.id, file, provider);
+        return this.repositoryService.createScanJob(user, file, provider);
     }
     findRecent(user, limit) {
-        return this.repositoryService.findRecent(user.id, limit ? Number(limit) : undefined);
+        return this.repositoryService.findRecent(user, limit ? Number(limit) : undefined);
     }
     findOne(user, id) {
-        return this.repositoryService.findOne(user.id, id);
+        return this.repositoryService.findOne(user, id);
     }
 };
 exports.RepositoryController = RepositoryController;

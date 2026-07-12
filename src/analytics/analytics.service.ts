@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import type { Finding } from '../common/finding.schema';
 import { clampScore, scoreForCategories, extraSecurityDeduction, extraDebtDeduction } from './scoring';
+import { WorkspaceActor, workspaceWhere } from '../common/workspace-scope';
 import type {
   AnalyticsOverview,
   AnalyticsTrend,
@@ -40,7 +41,8 @@ function startOfDayUtc(d: Date): string {
 export class AnalyticsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  private async loadResourceScores(userId: string, since: Date, repoFilter?: string): Promise<ResourceScore[]> {
+  private async loadResourceScores(actor: WorkspaceActor, since: Date, repoFilter?: string): Promise<ResourceScore[]> {
+    const scope = workspaceWhere(actor);
     // A repo filter only makes sense against repo-linked scans/reviews — a
     // pasted single-file audit has no repo to match against, so it's
     // excluded entirely rather than shown against every filter.
@@ -48,12 +50,12 @@ export class AnalyticsService {
       repoFilter
         ? Promise.resolve([])
         : this.prisma.audit.findMany({
-            where: { userId, createdAt: { gte: since } },
+            where: { ...scope, createdAt: { gte: since } },
             select: { filename: true, verdict: true, findings: true, createdAt: true },
           }),
       this.prisma.scanJob.findMany({
         where: {
-          userId,
+          ...scope,
           createdAt: { gte: since },
           status: 'completed',
           ...(repoFilter ? { sourceName: { contains: repoFilter, mode: 'insensitive' } } : {}),
@@ -127,7 +129,8 @@ export class AnalyticsService {
     return [...auditScores, ...scanScores];
   }
 
-  private async usageTotals(userId: string, since: Date) {
+  private async usageTotals(actor: WorkspaceActor, since: Date) {
+    const scope = workspaceWhere(actor);
     const [
       auditFresh,
       auditCached,
@@ -138,18 +141,18 @@ export class AnalyticsService {
       auditCount,
       scanCount,
     ] = await Promise.all([
-      this.prisma.audit.count({ where: { userId, createdAt: { gte: since }, aiInvoked: true, fromCache: false } }),
-      this.prisma.audit.count({ where: { userId, createdAt: { gte: since }, fromCache: true } }),
-      this.prisma.audit.count({ where: { userId, createdAt: { gte: since }, aiInvoked: false, fromCache: false } }),
+      this.prisma.audit.count({ where: { ...scope, createdAt: { gte: since }, aiInvoked: true, fromCache: false } }),
+      this.prisma.audit.count({ where: { ...scope, createdAt: { gte: since }, fromCache: true } }),
+      this.prisma.audit.count({ where: { ...scope, createdAt: { gte: since }, aiInvoked: false, fromCache: false } }),
       this.prisma.scanFile.count({
-        where: { scanJob: { userId }, createdAt: { gte: since }, aiInvoked: true, fromCache: false },
+        where: { scanJob: scope, createdAt: { gte: since }, aiInvoked: true, fromCache: false },
       }),
-      this.prisma.scanFile.count({ where: { scanJob: { userId }, createdAt: { gte: since }, fromCache: true } }),
+      this.prisma.scanFile.count({ where: { scanJob: scope, createdAt: { gte: since }, fromCache: true } }),
       this.prisma.scanFile.count({
-        where: { scanJob: { userId }, createdAt: { gte: since }, aiInvoked: false, fromCache: false },
+        where: { scanJob: scope, createdAt: { gte: since }, aiInvoked: false, fromCache: false },
       }),
-      this.prisma.audit.count({ where: { userId, createdAt: { gte: since } } }),
-      this.prisma.scanJob.count({ where: { userId, createdAt: { gte: since } } }),
+      this.prisma.audit.count({ where: { ...scope, createdAt: { gte: since } } }),
+      this.prisma.scanJob.count({ where: { ...scope, createdAt: { gte: since } } }),
     ]);
 
     const freshAiCalls = auditFresh + scanFileFresh;
@@ -167,9 +170,9 @@ export class AnalyticsService {
     };
   }
 
-  async repos(userId: string): Promise<string[]> {
+  async repos(actor: WorkspaceActor): Promise<string[]> {
     const rows = await this.prisma.scanJob.findMany({
-      where: { userId },
+      where: workspaceWhere(actor),
       distinct: ['sourceName'],
       select: { sourceName: true },
       orderBy: { createdAt: 'desc' },
@@ -178,11 +181,11 @@ export class AnalyticsService {
     return rows.map((r) => r.sourceName);
   }
 
-  async overview(userId: string, windowDays: number, repoFilter?: string): Promise<AnalyticsOverview> {
+  async overview(actor: WorkspaceActor, windowDays: number, repoFilter?: string): Promise<AnalyticsOverview> {
     const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
     const [resources, totals] = await Promise.all([
-      this.loadResourceScores(userId, since, repoFilter),
-      this.usageTotals(userId, since),
+      this.loadResourceScores(actor, since, repoFilter),
+      this.usageTotals(actor, since),
     ]);
 
     const activeRepositories = new Set(resources.filter((r) => r.kind === 'scan').map((r) => r.label)).size;
@@ -244,10 +247,10 @@ export class AnalyticsService {
     };
   }
 
-  async trend(userId: string, windowDays: number, repoFilter?: string): Promise<AnalyticsTrend> {
+  async trend(actor: WorkspaceActor, windowDays: number, repoFilter?: string): Promise<AnalyticsTrend> {
     const since = new Date(Date.now() - (windowDays - 1) * 24 * 60 * 60 * 1000);
     const sinceStart = new Date(Date.UTC(since.getUTCFullYear(), since.getUTCMonth(), since.getUTCDate()));
-    const resources = await this.loadResourceScores(userId, sinceStart, repoFilter);
+    const resources = await this.loadResourceScores(actor, sinceStart, repoFilter);
 
     const buckets = new Map<string, ResourceScore[]>();
     for (let i = 0; i < windowDays; i++) {

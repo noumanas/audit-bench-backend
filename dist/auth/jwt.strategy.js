@@ -32,7 +32,7 @@ let JwtStrategy = class JwtStrategy extends (0, passport_1.PassportStrategy)(pas
             throw new common_1.UnauthorizedException('User no longer exists');
         if (!user.isActive)
             throw new common_1.UnauthorizedException('This account has been suspended.');
-        return { id: user.id, email: user.email, role: user.role };
+        return { id: user.id, email: user.email, role: user.role, organizationId: user.organizationId };
     }
 };
 exports.JwtStrategy = JwtStrategy;

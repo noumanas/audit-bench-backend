@@ -13,16 +13,16 @@ export class FixController {
 
   @Get('content')
   getFileContent(@CurrentUser() user: RequestUser, @Param('scanJobId') scanJobId: string, @Query('path') path: string) {
-    return this.fixService.getFileContent(user.id, scanJobId, path);
+    return this.fixService.getFileContent(user, scanJobId, path);
   }
 
   @Post('commit')
   commitFix(@CurrentUser() user: RequestUser, @Param('scanJobId') scanJobId: string, @Body() dto: CommitFixDto) {
-    return this.fixService.commitFix(user.id, scanJobId, dto.path, dto.content, dto.message);
+    return this.fixService.commitFix(user, scanJobId, dto.path, dto.content, dto.message);
   }
 
   @Post('recheck')
   recheckFix(@CurrentUser() user: RequestUser, @Param('scanJobId') scanJobId: string, @Body() dto: RecheckFixDto) {
-    return this.fixService.recheckFix(user.id, scanJobId, dto.path, dto.content);
+    return this.fixService.recheckFix(user, scanJobId, dto.path, dto.content);
   }
 }

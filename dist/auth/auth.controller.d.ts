@@ -13,6 +13,12 @@ export declare class AuthController {
             createdAt: Date;
             plan: unknown;
             role: import(".prisma/client").$Enums.Role;
+            organization: {
+                id: string;
+                name: string;
+                slug: string;
+            } | null;
+            orgRole: import(".prisma/client").$Enums.OrgRole | null;
         };
     }>;
     login(dto: LoginDto): Promise<{
@@ -24,6 +30,12 @@ export declare class AuthController {
             createdAt: Date;
             plan: unknown;
             role: import(".prisma/client").$Enums.Role;
+            organization: {
+                id: string;
+                name: string;
+                slug: string;
+            } | null;
+            orgRole: import(".prisma/client").$Enums.OrgRole | null;
         };
     }>;
 }

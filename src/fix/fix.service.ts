@@ -11,6 +11,7 @@ import { detectLanguage } from '../common/language';
 import { worstVerdict } from '../common/verdict';
 import { LlmProviderName } from '../common/types';
 import { CommitFixResult, RecheckFixResult } from './fix.types';
+import { WorkspaceActor, canViewResource } from '../common/workspace-scope';
 
 const DEFAULT_MESSAGE = (path: string) => `audit/bench: apply suggested fix for ${path}`;
 
@@ -24,14 +25,20 @@ export class FixService {
     private readonly quota: QuotaService,
   ) {}
 
-  private async loadJob(userId: string, scanJobId: string) {
+  // Visibility follows the same team rule as the rest of the workspace
+  // (see workspace-scope.ts) — but every git-provider call below still
+  // authenticates as the ACTING user's own token, never a shared one, so a
+  // teammate without repo access there fails naturally at GitHub/GitLab's
+  // own permission layer rather than needing an extra check here.
+  private async loadJob(actor: WorkspaceActor, scanJobId: string) {
     const job = await this.prisma.scanJob.findUnique({ where: { id: scanJobId } });
-    if (!job || job.userId !== userId) throw new NotFoundException(`Scan ${scanJobId} not found`);
+    if (!job || !canViewResource(actor, job)) throw new NotFoundException(`Scan ${scanJobId} not found`);
     return job;
   }
 
-  async getFileContent(userId: string, scanJobId: string, path: string): Promise<{ content: string }> {
-    const job = await this.loadJob(userId, scanJobId);
+  async getFileContent(actor: WorkspaceActor, scanJobId: string, path: string): Promise<{ content: string }> {
+    const userId = actor.id;
+    const job = await this.loadJob(actor, scanJobId);
     const prContext = job.prContext as unknown as PrContext | null;
     const repoRef = job.repoRef as unknown as RepoRef | null;
 
@@ -57,8 +64,9 @@ export class FixService {
     );
   }
 
-  async commitFix(userId: string, scanJobId: string, path: string, content: string, message?: string): Promise<CommitFixResult> {
-    const job = await this.loadJob(userId, scanJobId);
+  async commitFix(actor: WorkspaceActor, scanJobId: string, path: string, content: string, message?: string): Promise<CommitFixResult> {
+    const userId = actor.id;
+    const job = await this.loadJob(actor, scanJobId);
     const prContext = job.prContext as unknown as PrContext | null;
     const repoRef = job.repoRef as unknown as RepoRef | null;
     const commitMessage = message?.trim() || DEFAULT_MESSAGE(path);
@@ -154,8 +162,9 @@ export class FixService {
    * other single-file review) and folded back into this scan's own
    * ScanFile/verdict so the report reflects the recheck too.
    */
-  async recheckFix(userId: string, scanJobId: string, path: string, content: string): Promise<RecheckFixResult> {
-    const job = await this.loadJob(userId, scanJobId);
+  async recheckFix(actor: WorkspaceActor, scanJobId: string, path: string, content: string): Promise<RecheckFixResult> {
+    const userId = actor.id;
+    const job = await this.loadJob(actor, scanJobId);
     const providerName = job.provider as LlmProviderName;
     const language = detectLanguage(path);
 
@@ -172,6 +181,7 @@ export class FixService {
 
     const auditData = {
       userId,
+      organizationId: actor.organizationId,
       filename: path,
       language,
       provider: providerName,

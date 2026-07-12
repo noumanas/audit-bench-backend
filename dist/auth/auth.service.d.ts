@@ -1,6 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { Role } from '@prisma/client';
+import { OrgRole, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
@@ -18,6 +18,12 @@ export declare class AuthService {
             createdAt: Date;
             plan: unknown;
             role: import(".prisma/client").$Enums.Role;
+            organization: {
+                id: string;
+                name: string;
+                slug: string;
+            } | null;
+            orgRole: import(".prisma/client").$Enums.OrgRole | null;
         };
     }>;
     login(dto: LoginDto): Promise<{
@@ -29,6 +35,12 @@ export declare class AuthService {
             createdAt: Date;
             plan: unknown;
             role: import(".prisma/client").$Enums.Role;
+            organization: {
+                id: string;
+                name: string;
+                slug: string;
+            } | null;
+            orgRole: import(".prisma/client").$Enums.OrgRole | null;
         };
     }>;
     buildSession(user: {
@@ -39,6 +51,13 @@ export declare class AuthService {
         plan: unknown;
         role: Role;
         isActive: boolean;
+        organizationId: string | null;
+        orgRole: OrgRole | null;
+        organization: {
+            id: string;
+            name: string;
+            slug: string;
+        } | null;
     }): {
         accessToken: string;
         user: {
@@ -48,6 +67,12 @@ export declare class AuthService {
             createdAt: Date;
             plan: unknown;
             role: import(".prisma/client").$Enums.Role;
+            organization: {
+                id: string;
+                name: string;
+                slug: string;
+            } | null;
+            orgRole: import(".prisma/client").$Enums.OrgRole | null;
         };
     };
 }

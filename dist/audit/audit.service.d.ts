@@ -4,15 +4,17 @@ import { QuotaService } from '../quota/quota.service';
 import { PipelineService } from './pipeline.service';
 import { CreateAuditDto } from './dto/create-audit.dto';
 import { Prisma } from '@prisma/client';
+import { WorkspaceActor } from '../common/workspace-scope';
 export declare class AuditService {
     private readonly prisma;
     private readonly llm;
     private readonly quota;
     private readonly pipeline;
     constructor(prisma: PrismaService, llm: LlmService, quota: QuotaService, pipeline: PipelineService);
-    runAudit(userId: string, dto: CreateAuditDto): Promise<{
+    runAudit(actor: WorkspaceActor, dto: CreateAuditDto): Promise<{
         id: string;
         createdAt: Date;
+        organizationId: string | null;
         userId: string;
         provider: string;
         aiInvoked: boolean;
@@ -25,9 +27,10 @@ export declare class AuditService {
         language: string | null;
         codeSize: number;
     }>;
-    findOne(userId: string, id: string): Promise<{
+    findOne(actor: WorkspaceActor, id: string): Promise<{
         id: string;
         createdAt: Date;
+        organizationId: string | null;
         userId: string;
         provider: string;
         aiInvoked: boolean;
@@ -40,9 +43,10 @@ export declare class AuditService {
         language: string | null;
         codeSize: number;
     }>;
-    findRecent(userId: string, limit?: number): Promise<{
+    findRecent(actor: WorkspaceActor, limit?: number): Promise<{
         id: string;
         createdAt: Date;
+        organizationId: string | null;
         userId: string;
         provider: string;
         aiInvoked: boolean;

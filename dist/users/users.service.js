@@ -22,9 +22,12 @@ const SAFE_USER_SELECT = {
     role: true,
     githubUsername: true,
     badgeToken: true,
+    orgRole: true,
+    organization: { select: { id: true, name: true, slug: true } },
 };
 const PLAN_REQUEST_INCLUDE = {
     requestedPlan: true,
+    organization: { select: { id: true, name: true } },
     reviewedBy: { select: { id: true, email: true, name: true } },
 };
 function isSelfServicePlan(plan) {
@@ -48,7 +51,32 @@ let UsersService = class UsersService {
         const plan = await this.prisma.plan.findUnique({ where: { slug } });
         if (!plan)
             throw new common_1.BadRequestException(`Unknown plan "${slug}"`);
-        const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+        const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId }, include: { organization: true } });
+        if (user.organizationId) {
+            if (user.orgRole !== 'owner' && user.orgRole !== 'admin') {
+                throw new common_1.ForbiddenException('Only an organization owner or admin can change the team plan');
+            }
+            const org = user.organization;
+            if (org.planId === plan.id) {
+                throw new common_1.ConflictException(`Your organization is already on the ${plan.name} plan`);
+            }
+            if (isSelfServicePlan(plan)) {
+                await this.prisma.organization.update({ where: { id: org.id }, data: { planId: plan.id } });
+                const updated = await this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: SAFE_USER_SELECT });
+                return { applied: true, user: updated };
+            }
+            const pendingOrgRequest = await this.prisma.planRequest.findFirst({
+                where: { organizationId: org.id, status: 'pending' },
+            });
+            if (pendingOrgRequest) {
+                throw new common_1.ConflictException('Your organization already has a pending plan request awaiting review');
+            }
+            const orgRequest = await this.prisma.planRequest.create({
+                data: { userId, organizationId: org.id, requestedPlanId: plan.id },
+                include: PLAN_REQUEST_INCLUDE,
+            });
+            return { applied: false, request: orgRequest };
+        }
         if (user.planId === plan.id) {
             throw new common_1.ConflictException(`You're already on the ${plan.name} plan`);
         }
@@ -73,8 +101,9 @@ let UsersService = class UsersService {
         return { applied: false, request };
     }
     async listMyPlanRequests(userId) {
+        const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
         return this.prisma.planRequest.findMany({
-            where: { userId },
+            where: user.organizationId ? { organizationId: user.organizationId } : { userId },
             include: PLAN_REQUEST_INCLUDE,
             orderBy: { createdAt: 'desc' },
         });

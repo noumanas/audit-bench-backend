@@ -12,16 +12,16 @@ export class AuditController {
 
   @Post()
   create(@CurrentUser() user: RequestUser, @Body() dto: CreateAuditDto) {
-    return this.auditService.runAudit(user.id, dto);
+    return this.auditService.runAudit(user, dto);
   }
 
   @Get()
   findRecent(@CurrentUser() user: RequestUser, @Query('limit') limit?: string) {
-    return this.auditService.findRecent(user.id, limit ? Number(limit) : undefined);
+    return this.auditService.findRecent(user, limit ? Number(limit) : undefined);
   }
 
   @Get(':id')
   findOne(@CurrentUser() user: RequestUser, @Param('id') id: string) {
-    return this.auditService.findOne(user.id, id);
+    return this.auditService.findOne(user, id);
   }
 }

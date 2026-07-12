@@ -47,7 +47,7 @@ export class GithubController {
     const ref = dto.ref || defaultBranch;
     const zipBuffer = await this.githubService.downloadRepoZip(user.id, dto.owner, dto.repo, dto.ref);
     return this.repositoryService.createScanJobFromBuffer(
-      user.id,
+      user,
       zipBuffer,
       `${dto.owner}/${dto.repo}`,
       dto.provider,
@@ -64,7 +64,7 @@ export class GithubController {
       dto.repo,
       dto.pullNumber,
     );
-    return this.repositoryService.createDiffReview(user.id, files, {
+    return this.repositoryService.createDiffReview(user, files, {
       sourceName: `${dto.owner}/${dto.repo}#${dto.pullNumber}`,
       sourceType: 'github_pr',
       pullRequestUrl: url,

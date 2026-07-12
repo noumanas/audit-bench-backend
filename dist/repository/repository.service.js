@@ -31,6 +31,7 @@ const secrets_scanner_1 = require("../analysis/secrets-scanner");
 const dependency_audit_1 = require("../analysis/dependency-audit");
 const verdict_1 = require("../common/verdict");
 const pr_feedback_service_1 = require("../pr-feedback/pr-feedback.service");
+const workspace_scope_1 = require("../common/workspace-scope");
 function selectFilesToAnalyze(files, max) {
     const analyzable = files.filter((f) => {
         const ext = f.path.split('.').pop()?.toLowerCase();
@@ -60,11 +61,11 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
         this.cache = cache;
         this.prFeedback = prFeedback;
     }
-    async createScanJob(userId, file, provider) {
-        return this.createScanJobFromBuffer(userId, file.buffer, file.originalname, provider);
+    async createScanJob(actor, file, provider) {
+        return this.createScanJobFromBuffer(actor, file.buffer, file.originalname, provider);
     }
-    async createScanJobFromBuffer(userId, zipBuffer, sourceName, provider, sourceType = 'zip', repoRef) {
-        await this.quota.assertPlanAllowsRepositoryScan(userId);
+    async createScanJobFromBuffer(actor, zipBuffer, sourceName, provider, sourceType = 'zip', repoRef) {
+        await this.quota.assertPlanAllowsRepositoryScan(actor.id);
         const providerName = this.llm.resolveProvider(provider);
         const maxFileSize = this.config.get('MAX_FILE_SIZE_BYTES') || 200_000;
         const maxScanFiles = this.config.get('MAX_SCAN_FILES') || 40;
@@ -77,7 +78,7 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
         const dependencyVulnerabilities = await (0, dependency_audit_1.auditDependencies)(files);
         const filesToAnalyze = selectFilesToAnalyze(files, maxScanFiles);
         const repoContext = `Detected framework: ${framework || 'unknown'}. Repository has ${files.length} files total; ${filesToAnalyze.length} selected for review.`;
-        const job = await this.gateAndCreateJob(userId, filesToAnalyze, providerName, {
+        const job = await this.gateAndCreateJob(actor, filesToAnalyze, providerName, {
             sourceName,
             sourceType,
             repoRef: repoRef,
@@ -93,8 +94,8 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
         void this.processScan(job.id, filesToAnalyze, providerName, repoContext);
         return job;
     }
-    async createDiffReview(userId, files, meta) {
-        await this.quota.assertPlanAllowsRepositoryScan(userId);
+    async createDiffReview(actor, files, meta) {
+        await this.quota.assertPlanAllowsRepositoryScan(actor.id);
         const providerName = this.llm.resolveProvider(meta.provider);
         const maxFileSize = this.config.get('MAX_FILE_SIZE_BYTES') || 200_000;
         const maxScanFiles = this.config.get('MAX_SCAN_FILES') || 40;
@@ -106,7 +107,7 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
             .slice(0, maxScanFiles);
         const secrets = (0, secrets_scanner_1.scanSecrets)(analyzable);
         const repoContext = `Reviewing a pull/merge request — only the lines this PR/MR actually changed are in scope for each file. ${analyzable.length} file(s) changed.`;
-        const job = await this.gateAndCreateJob(userId, analyzable, providerName, {
+        const job = await this.gateAndCreateJob(actor, analyzable, providerName, {
             sourceName: meta.sourceName,
             sourceType: meta.sourceType,
             pullRequestUrl: meta.pullRequestUrl,
@@ -117,11 +118,17 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
         void this.processScan(job.id, analyzable, providerName, repoContext);
         return job;
     }
-    async gateAndCreateJob(userId, files, providerName, jobDataBase) {
+    async gateAndCreateJob(actor, files, providerName, jobDataBase) {
         const willInvokeAi = await this.anyFileNeedsFreshAiCall(files, providerName);
-        const jobData = { userId, status: 'queued', provider: providerName, ...jobDataBase };
+        const jobData = {
+            userId: actor.id,
+            organizationId: actor.organizationId,
+            status: 'queued',
+            provider: providerName,
+            ...jobDataBase,
+        };
         return willInvokeAi
-            ? this.quota.withQuotaCheck((db) => this.quota.assertCanRunAudit(userId, db), (db) => db.scanJob.create({ data: jobData }))
+            ? this.quota.withQuotaCheck((db) => this.quota.assertCanRunAudit(actor.id, db), (db) => db.scanJob.create({ data: jobData }))
             : this.prisma.scanJob.create({ data: jobData });
     }
     async anyFileNeedsFreshAiCall(files, providerName) {
@@ -237,18 +244,18 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
         const origin = (this.config.get('FRONTEND_ORIGIN') || '').split(',')[0]?.trim();
         return origin ? `${origin}/app/repository/${jobId}` : undefined;
     }
-    async findOne(userId, id) {
+    async findOne(actor, id) {
         const job = await this.prisma.scanJob.findUnique({
             where: { id },
             include: { files: true },
         });
-        if (!job || job.userId !== userId)
+        if (!job || !(0, workspace_scope_1.canViewResource)(actor, job))
             throw new common_1.NotFoundException(`Scan ${id} not found`);
         return job;
     }
-    async findRecent(userId, limit = 20) {
+    async findRecent(actor, limit = 20) {
         return this.prisma.scanJob.findMany({
-            where: { userId },
+            where: (0, workspace_scope_1.workspaceWhere)(actor),
             orderBy: { createdAt: 'desc' },
             take: limit,
         });

@@ -7,6 +7,7 @@ export declare class AuditController {
     create(user: RequestUser, dto: CreateAuditDto): Promise<{
         id: string;
         createdAt: Date;
+        organizationId: string | null;
         userId: string;
         provider: string;
         aiInvoked: boolean;
@@ -22,6 +23,7 @@ export declare class AuditController {
     findRecent(user: RequestUser, limit?: string): Promise<{
         id: string;
         createdAt: Date;
+        organizationId: string | null;
         userId: string;
         provider: string;
         aiInvoked: boolean;
@@ -37,6 +39,7 @@ export declare class AuditController {
     findOne(user: RequestUser, id: string): Promise<{
         id: string;
         createdAt: Date;
+        organizationId: string | null;
         userId: string;
         provider: string;
         aiInvoked: boolean;

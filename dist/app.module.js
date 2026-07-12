@@ -30,6 +30,8 @@ const admin_module_1 = require("./admin/admin.module");
 const badge_module_1 = require("./badge/badge.module");
 const webhooks_module_1 = require("./webhooks/webhooks.module");
 const fix_module_1 = require("./fix/fix.module");
+const email_module_1 = require("./email/email.module");
+const organization_module_1 = require("./organization/organization.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -41,6 +43,8 @@ exports.AppModule = AppModule = __decorate([
             schedule_1.ScheduleModule.forRoot(),
             prisma_module_1.PrismaModule,
             token_crypto_module_1.TokenCryptoModule,
+            email_module_1.EmailModule,
+            organization_module_1.OrganizationModule,
             auth_module_1.AuthModule,
             users_module_1.UsersModule,
             plans_module_1.PlansModule,

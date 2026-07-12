@@ -7,6 +7,7 @@ export declare class RepositoryController {
         error: string | null;
         id: string;
         createdAt: Date;
+        organizationId: string | null;
         userId: string;
         provider: string;
         status: import(".prisma/client").$Enums.ScanStatus;
@@ -36,6 +37,7 @@ export declare class RepositoryController {
         error: string | null;
         id: string;
         createdAt: Date;
+        organizationId: string | null;
         userId: string;
         provider: string;
         status: import(".prisma/client").$Enums.ScanStatus;
@@ -78,6 +80,7 @@ export declare class RepositoryController {
         error: string | null;
         id: string;
         createdAt: Date;
+        organizationId: string | null;
         userId: string;
         provider: string;
         status: import(".prisma/client").$Enums.ScanStatus;

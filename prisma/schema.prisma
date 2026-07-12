@@ -45,18 +45,78 @@ enum PlanRequestStatus {
   rejected
 }
 
+// Org-level permissions — distinct from the platform-wide `Role` enum
+// (user/admin/super_admin), which governs access to the internal admin
+// panel and has nothing to do with team membership.
+enum OrgRole {
+  owner
+  admin
+  member
+}
+
+enum InviteStatus {
+  pending
+  accepted
+  revoked
+  expired
+}
+
 model Plan {
-  id                String        @id @default(uuid())
-  slug              String        @unique // "free" | "pro" | "team" | "enterprise"
+  id                String         @id @default(uuid())
+  slug              String         @unique // "free" | "pro" | "team" | "enterprise"
   name              String
-  priceMonthlyCents Int           @default(0)
+  priceMonthlyCents Int            @default(0)
   // null = unlimited
   dailyAuditLimit   Int?
   monthlyAuditLimit Int?
-  repositoryScan    Boolean       @default(true)
-  createdAt         DateTime      @default(now())
+  repositoryScan    Boolean        @default(true)
+  createdAt         DateTime       @default(now())
   users             User[]
+  organizations     Organization[]
   planRequests      PlanRequest[]
+}
+
+// A shared workspace: members see each other's audits/scans/analytics and
+// draw from one pooled plan/quota (see QuotaService, AnalyticsService,
+// AuditService, RepositoryService — all branch on User.organizationId).
+// Deliberately one-org-per-user in this version — no org switcher, no
+// nested teams. A user's history from before joining stays personal (see
+// Audit.organizationId / ScanJob.organizationId being nullable + the
+// OR-scope query pattern in workspace-scope.ts) rather than being migrated
+// in, so joining a team never exposes or reassigns someone's past work.
+model Organization {
+  id           String               @id @default(uuid())
+  name         String
+  slug         String               @unique
+  plan         Plan                 @relation(fields: [planId], references: [id])
+  planId       String
+  createdAt    DateTime             @default(now())
+  members      User[]               @relation("OrganizationMembers")
+  invites      OrganizationInvite[]
+  planRequests PlanRequest[]        @relation("PlanRequestsByOrganization")
+  audits       Audit[]
+  scanJobs     ScanJob[]
+}
+
+// Invite by email — the only join path in this version (no public
+// invite-link browsing). `token` is the unguessable part of the accept URL,
+// same pattern as OAuthLoginCode/badgeToken elsewhere in this schema.
+model OrganizationInvite {
+  id             String       @id @default(uuid())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+  email          String
+  role           OrgRole      @default(member)
+  token          String       @unique
+  invitedBy      User         @relation("OrgInvitesSent", fields: [invitedById], references: [id])
+  invitedById    String
+  status         InviteStatus @default(pending)
+  createdAt      DateTime     @default(now())
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+
+  @@index([organizationId])
+  @@index([email])
 }
 
 model User {
@@ -98,6 +158,15 @@ model User {
   webhookConfigs  WebhookConfig[]
   oauthAccounts   OAuthAccount[]
   oauthLoginCodes OAuthLoginCode[]
+  // Nullable — most users are on a personal plan and never join a team.
+  // When set, this user's quota/plan/audits/scans are org-scoped instead of
+  // personal (see QuotaService, AuditService, RepositoryService).
+  organization    Organization?    @relation("OrganizationMembers", fields: [organizationId], references: [id], onDelete: SetNull)
+  organizationId  String?
+  orgRole         OrgRole?
+  sentOrgInvites  OrganizationInvite[] @relation("OrgInvitesSent")
+
+  @@index([organizationId])
 }
 
 // Identifies a user by the provider's own stable account id — never by
@@ -151,8 +220,16 @@ model WebhookConfig {
 // and an admin/super_admin must approve it before the plan actually changes.
 model PlanRequest {
   id              String            @id @default(uuid())
+  // Who filed the request — always set, even for an org-targeted request
+  // (the org owner/admin who clicked "Request"), so the admin panel can
+  // still show who to follow up with.
   user            User              @relation("PlanRequestsByUser", fields: [userId], references: [id], onDelete: Cascade)
   userId          String
+  // Set when this is a request to change the requester's ORGANIZATION plan
+  // rather than their personal one — see UsersService.changePlan, which
+  // branches on whether the requester is in an org.
+  organization    Organization?     @relation("PlanRequestsByOrganization", fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId  String?
   requestedPlan   Plan              @relation(fields: [requestedPlanId], references: [id])
   requestedPlanId String
   status          PlanRequestStatus @default(pending)
@@ -163,6 +240,7 @@ model PlanRequest {
   reviewedAt      DateTime?
 
   @@index([userId])
+  @@index([organizationId])
   @@index([status])
 }
 
@@ -170,6 +248,12 @@ model Audit {
   id        String   @id @default(uuid())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId    String
+  // Set at creation time from User.organizationId — makes this audit
+  // visible to the whole team (see workspace-scope.ts), not just its
+  // creator. Null for personal-account audits, or any audit run before the
+  // creator joined an org (that history stays personal, never migrated in).
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  organizationId String?
   filename  String
   language  String?
   provider  String
@@ -188,6 +272,7 @@ model Audit {
   createdAt DateTime @default(now())
 
   @@index([userId])
+  @@index([organizationId])
 }
 
 // Keyed by a hash of (content + provider + focus areas) so re-auditing
@@ -210,6 +295,9 @@ model ScanJob {
   id           String     @id @default(uuid())
   user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId       String
+  // Same team-visibility rule as Audit.organizationId — see there.
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  organizationId String?
   sourceName   String // original zip filename, "owner/repo", or "owner/repo#12"
   sourceType   ScanSourceType @default(zip)
   pullRequestUrl String? // set for github_pr / gitlab_mr
@@ -251,6 +339,7 @@ model ScanJob {
   files       ScanFile[]
 
   @@index([userId])
+  @@index([organizationId])
   @@index([status, updatedAt])
 }
 

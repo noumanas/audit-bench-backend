@@ -47,7 +47,7 @@ export class GitlabController {
     const ref = dto.ref || defaultBranch;
     const zipBuffer = await this.gitlabService.downloadProjectZip(user.id, dto.projectId, dto.ref);
     return this.repositoryService.createScanJobFromBuffer(
-      user.id,
+      user,
       zipBuffer,
       dto.projectPath || `project ${dto.projectId}`,
       dto.provider,
@@ -63,7 +63,7 @@ export class GitlabController {
       dto.projectId,
       dto.mrIid,
     );
-    return this.repositoryService.createDiffReview(user.id, files, {
+    return this.repositoryService.createDiffReview(user, files, {
       sourceName: `${dto.projectPath || `project ${dto.projectId}`} !${dto.mrIid}`,
       sourceType: 'gitlab_mr',
       pullRequestUrl: url,

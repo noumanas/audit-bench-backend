@@ -16,6 +16,7 @@ const llm_service_1 = require("../llm/llm.service");
 const quota_service_1 = require("../quota/quota.service");
 const pipeline_service_1 = require("./pipeline.service");
 const language_1 = require("../common/language");
+const workspace_scope_1 = require("../common/workspace-scope");
 let AuditService = class AuditService {
     prisma;
     llm;
@@ -27,13 +28,14 @@ let AuditService = class AuditService {
         this.quota = quota;
         this.pipeline = pipeline;
     }
-    async runAudit(userId, dto) {
+    async runAudit(actor, dto) {
         const filename = dto.filename?.trim() || 'untitled';
         const language = (0, language_1.detectLanguage)(filename);
         const providerName = this.llm.resolveProvider(dto.provider);
-        const { result, fromCache } = await this.pipeline.run({ filename, language, code: dto.code, provider: providerName, focusAreas: dto.focusAreas }, { beforeAiCall: () => this.quota.assertCanRunAudit(userId) });
+        const { result, fromCache } = await this.pipeline.run({ filename, language, code: dto.code, provider: providerName, focusAreas: dto.focusAreas }, { beforeAiCall: () => this.quota.assertCanRunAudit(actor.id) });
         const data = {
-            userId,
+            userId: actor.id,
+            organizationId: actor.organizationId,
             filename,
             language,
             provider: providerName,
@@ -49,17 +51,17 @@ let AuditService = class AuditService {
         if (!consumesQuota) {
             return this.prisma.audit.create({ data });
         }
-        return this.quota.withQuotaCheck((db) => this.quota.assertCanRunAudit(userId, db), (db) => db.audit.create({ data }));
+        return this.quota.withQuotaCheck((db) => this.quota.assertCanRunAudit(actor.id, db), (db) => db.audit.create({ data }));
     }
-    async findOne(userId, id) {
+    async findOne(actor, id) {
         const audit = await this.prisma.audit.findUnique({ where: { id } });
-        if (!audit || audit.userId !== userId)
+        if (!audit || !(0, workspace_scope_1.canViewResource)(actor, audit))
             throw new common_1.NotFoundException(`Audit ${id} not found`);
         return audit;
     }
-    async findRecent(userId, limit = 20) {
+    async findRecent(actor, limit = 20) {
         return this.prisma.audit.findMany({
-            where: { userId },
+            where: (0, workspace_scope_1.workspaceWhere)(actor),
             orderBy: { createdAt: 'desc' },
             take: limit,
         });

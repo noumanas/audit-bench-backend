@@ -37,28 +37,35 @@ let QuotaService = class QuotaService {
     loadUserWithPlan(db, userId) {
         return db.user.findUniqueOrThrow({
             where: { id: userId },
-            include: { plan: true },
+            include: { plan: true, organization: { include: { plan: true } } },
         });
     }
-    async countUsage(db, userId, since) {
+    effectivePlan(user) {
+        return user.organization ? user.organization.plan : user.plan;
+    }
+    async countUsage(db, scopeWhere, since) {
         const [audits, scans] = await Promise.all([
-            db.audit.count({ where: { userId, createdAt: { gte: since }, aiInvoked: true, fromCache: false } }),
-            db.scanJob.count({ where: { userId, createdAt: { gte: since }, aiInvoked: true } }),
+            db.audit.count({ where: { ...scopeWhere, createdAt: { gte: since }, aiInvoked: true, fromCache: false } }),
+            db.scanJob.count({ where: { ...scopeWhere, createdAt: { gte: since }, aiInvoked: true } }),
         ]);
         return audits + scans;
     }
     async getUsage(userId, db = this.prisma) {
         const user = await this.loadUserWithPlan(db, userId);
+        const plan = this.effectivePlan(user);
+        const scopeWhere = user.organizationId ? { organizationId: user.organizationId } : { userId };
         const [dailyUsed, monthlyUsed] = await Promise.all([
-            this.countUsage(db, userId, startOfDay()),
-            this.countUsage(db, userId, startOfMonth()),
+            this.countUsage(db, scopeWhere, startOfDay()),
+            this.countUsage(db, scopeWhere, startOfMonth()),
         ]);
         return {
-            plan: user.plan,
+            plan,
+            scope: user.organizationId ? 'organization' : 'personal',
+            organizationName: user.organization?.name ?? null,
             dailyUsed,
-            dailyLimit: user.plan.dailyAuditLimit,
+            dailyLimit: plan.dailyAuditLimit,
             monthlyUsed,
-            monthlyLimit: user.plan.monthlyAuditLimit,
+            monthlyLimit: plan.monthlyAuditLimit,
             dailyResetsAt: startOfNextDay(),
             monthlyResetsAt: startOfNextMonth(),
         };
@@ -82,8 +89,9 @@ let QuotaService = class QuotaService {
     }
     async assertPlanAllowsRepositoryScan(userId, db = this.prisma) {
         const user = await this.loadUserWithPlan(db, userId);
-        if (!user.plan.repositoryScan) {
-            throw new common_1.ForbiddenException(`Repository scanning isn't included in the ${user.plan.name} plan. Upgrade to Pro or higher.`);
+        const plan = this.effectivePlan(user);
+        if (!plan.repositoryScan) {
+            throw new common_1.ForbiddenException(`Repository scanning isn't included in the ${plan.name} plan. Upgrade to Pro or higher.`);
         }
     }
     async assertCanScanRepository(userId, db = this.prisma) {

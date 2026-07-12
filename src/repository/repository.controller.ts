@@ -40,16 +40,16 @@ export class RepositoryController {
     if (!file.originalname.toLowerCase().endsWith('.zip')) {
       throw new BadRequestException('Only .zip archives are supported');
     }
-    return this.repositoryService.createScanJob(user.id, file, provider);
+    return this.repositoryService.createScanJob(user, file, provider);
   }
 
   @Get()
   findRecent(@CurrentUser() user: RequestUser, @Query('limit') limit?: string) {
-    return this.repositoryService.findRecent(user.id, limit ? Number(limit) : undefined);
+    return this.repositoryService.findRecent(user, limit ? Number(limit) : undefined);
   }
 
   @Get(':id')
   findOne(@CurrentUser() user: RequestUser, @Param('id') id: string) {
-    return this.repositoryService.findOne(user.id, id);
+    return this.repositoryService.findOne(user, id);
   }
 }

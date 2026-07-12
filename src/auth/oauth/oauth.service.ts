@@ -62,7 +62,10 @@ export class OAuthService {
       throw new BadRequestException('This login link has expired or already been used — try signing in again.');
     }
     await this.prisma.oAuthLoginCode.update({ where: { id: record.id }, data: { usedAt: new Date() } });
-    return this.prisma.user.findUniqueOrThrow({ where: { id: record.userId }, include: { plan: true } });
+    return this.prisma.user.findUniqueOrThrow({
+      where: { id: record.userId },
+      include: { plan: true, organization: true },
+    });
   }
 
   private requireClientId(provider: OAuthProvider): string {

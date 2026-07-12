@@ -12,4 +12,8 @@ export interface RequestUser {
   // than trusted from the JWT payload, so a role change takes effect on the
   // user's very next request instead of waiting for their token to expire.
   role: Role;
+  // Same freshness guarantee as `role` — set the moment a user joins/leaves
+  // an org, not just at their next login. `null` outside any organization;
+  // satisfies WorkspaceActor (see common/workspace-scope.ts) directly.
+  organizationId: string | null;
 }

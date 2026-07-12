@@ -9,6 +9,7 @@ import { Prisma, ScanSourceType } from '@prisma/client';
 import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
 import { PrContext } from '../pr-feedback/pr-feedback.types';
 import { RepoRef } from '../common/repo-ref.types';
+import { WorkspaceActor } from '../common/workspace-scope';
 export declare class RepositoryService {
     private readonly prisma;
     private readonly llm;
@@ -19,10 +20,11 @@ export declare class RepositoryService {
     private readonly prFeedback;
     private readonly logger;
     constructor(prisma: PrismaService, llm: LlmService, config: ConfigService, quota: QuotaService, pipeline: PipelineService, cache: AuditCacheService, prFeedback: PrFeedbackService);
-    createScanJob(userId: string, file: Express.Multer.File, provider?: string): Promise<{
+    createScanJob(actor: WorkspaceActor, file: Express.Multer.File, provider?: string): Promise<{
         error: string | null;
         id: string;
         createdAt: Date;
+        organizationId: string | null;
         userId: string;
         provider: string;
         status: import(".prisma/client").$Enums.ScanStatus;
@@ -48,10 +50,11 @@ export declare class RepositoryService {
         updatedAt: Date;
         completedAt: Date | null;
     }>;
-    createScanJobFromBuffer(userId: string, zipBuffer: Buffer, sourceName: string, provider?: string, sourceType?: ScanSourceType, repoRef?: RepoRef): Promise<{
+    createScanJobFromBuffer(actor: WorkspaceActor, zipBuffer: Buffer, sourceName: string, provider?: string, sourceType?: ScanSourceType, repoRef?: RepoRef): Promise<{
         error: string | null;
         id: string;
         createdAt: Date;
+        organizationId: string | null;
         userId: string;
         provider: string;
         status: import(".prisma/client").$Enums.ScanStatus;
@@ -77,7 +80,7 @@ export declare class RepositoryService {
         updatedAt: Date;
         completedAt: Date | null;
     }>;
-    createDiffReview(userId: string, files: ScannedFile[], meta: {
+    createDiffReview(actor: WorkspaceActor, files: ScannedFile[], meta: {
         sourceName: string;
         sourceType: 'github_pr' | 'gitlab_mr';
         pullRequestUrl: string;
@@ -87,6 +90,7 @@ export declare class RepositoryService {
         error: string | null;
         id: string;
         createdAt: Date;
+        organizationId: string | null;
         userId: string;
         provider: string;
         status: import(".prisma/client").$Enums.ScanStatus;
@@ -116,7 +120,7 @@ export declare class RepositoryService {
     private anyFileNeedsFreshAiCall;
     private processScan;
     private buildScanUrl;
-    findOne(userId: string, id: string): Promise<{
+    findOne(actor: WorkspaceActor, id: string): Promise<{
         files: {
             id: string;
             createdAt: Date;
@@ -133,6 +137,7 @@ export declare class RepositoryService {
         error: string | null;
         id: string;
         createdAt: Date;
+        organizationId: string | null;
         userId: string;
         provider: string;
         status: import(".prisma/client").$Enums.ScanStatus;
@@ -158,10 +163,11 @@ export declare class RepositoryService {
         updatedAt: Date;
         completedAt: Date | null;
     }>;
-    findRecent(userId: string, limit?: number): Promise<{
+    findRecent(actor: WorkspaceActor, limit?: number): Promise<{
         error: string | null;
         id: string;
         createdAt: Date;
+        organizationId: string | null;
         userId: string;
         provider: string;
         status: import(".prisma/client").$Enums.ScanStatus;

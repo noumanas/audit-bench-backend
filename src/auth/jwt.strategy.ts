@@ -23,6 +23,6 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
     if (!user) throw new UnauthorizedException('User no longer exists');
     if (!user.isActive) throw new UnauthorizedException('This account has been suspended.');
-    return { id: user.id, email: user.email, role: user.role };
+    return { id: user.id, email: user.email, role: user.role, organizationId: user.organizationId };
   }
 }

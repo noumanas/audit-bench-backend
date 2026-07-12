@@ -21,6 +21,7 @@ const SAFE_USER_SELECT = {
 
 const PLAN_REQUEST_INCLUDE = {
   user: { select: { id: true, email: true, name: true } },
+  organization: { select: { id: true, name: true } },
   requestedPlan: true,
   reviewedBy: { select: { id: true, email: true, name: true } },
 } as const;
@@ -53,8 +54,14 @@ export class AdminService {
       throw new ConflictException('This request has already been reviewed');
     }
 
+    // Org-targeted request (see PlanRequest.organizationId) updates the
+    // organization's shared plan; otherwise this is the requester's own.
+    const planUpdate = request.organizationId
+      ? this.prisma.organization.update({ where: { id: request.organizationId }, data: { planId: request.requestedPlanId } })
+      : this.prisma.user.update({ where: { id: request.userId }, data: { planId: request.requestedPlanId } });
+
     const [, updatedRequest] = await this.prisma.$transaction([
-      this.prisma.user.update({ where: { id: request.userId }, data: { planId: request.requestedPlanId } }),
+      planUpdate,
       this.prisma.planRequest.update({
         where: { id: requestId },
         data: { status: 'approved', reviewedById: adminId, reviewedAt: new Date() },

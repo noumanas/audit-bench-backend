@@ -24,13 +24,13 @@ let AuditController = class AuditController {
         this.auditService = auditService;
     }
     create(user, dto) {
-        return this.auditService.runAudit(user.id, dto);
+        return this.auditService.runAudit(user, dto);
     }
     findRecent(user, limit) {
-        return this.auditService.findRecent(user.id, limit ? Number(limit) : undefined);
+        return this.auditService.findRecent(user, limit ? Number(limit) : undefined);
     }
     findOne(user, id) {
-        return this.auditService.findOne(user.id, id);
+        return this.auditService.findOne(user, id);
     }
 };
 exports.AuditController = AuditController;

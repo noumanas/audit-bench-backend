@@ -47,11 +47,11 @@ let GithubController = class GithubController {
         const { defaultBranch } = await this.githubService.getRepoMeta(user.id, dto.owner, dto.repo);
         const ref = dto.ref || defaultBranch;
         const zipBuffer = await this.githubService.downloadRepoZip(user.id, dto.owner, dto.repo, dto.ref);
-        return this.repositoryService.createScanJobFromBuffer(user.id, zipBuffer, `${dto.owner}/${dto.repo}`, dto.provider, 'github_repo', { kind: 'github', owner: dto.owner, repo: dto.repo, ref, defaultBranch });
+        return this.repositoryService.createScanJobFromBuffer(user, zipBuffer, `${dto.owner}/${dto.repo}`, dto.provider, 'github_repo', { kind: 'github', owner: dto.owner, repo: dto.repo, ref, defaultBranch });
     }
     async reviewPr(user, dto) {
         const { files, url, headSha, headRef, baseRef } = await this.githubService.fetchPrFiles(user.id, dto.owner, dto.repo, dto.pullNumber);
-        return this.repositoryService.createDiffReview(user.id, files, {
+        return this.repositoryService.createDiffReview(user, files, {
             sourceName: `${dto.owner}/${dto.repo}#${dto.pullNumber}`,
             sourceType: 'github_pr',
             pullRequestUrl: url,

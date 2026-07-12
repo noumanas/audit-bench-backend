@@ -6,6 +6,7 @@ import { PipelineService } from './pipeline.service';
 import { detectLanguage } from '../common/language';
 import { CreateAuditDto } from './dto/create-audit.dto';
 import { Prisma } from '@prisma/client';
+import { WorkspaceActor, workspaceWhere, canViewResource } from '../common/workspace-scope';
 
 @Injectable()
 export class AuditService {
@@ -16,7 +17,7 @@ export class AuditService {
     private readonly pipeline: PipelineService,
   ) {}
 
-  async runAudit(userId: string, dto: CreateAuditDto) {
+  async runAudit(actor: WorkspaceActor, dto: CreateAuditDto) {
     const filename = dto.filename?.trim() || 'untitled';
     const language = detectLanguage(filename);
     const providerName = this.llm.resolveProvider(dto.provider);
@@ -26,11 +27,14 @@ export class AuditService {
     // before that call, not for every request.
     const { result, fromCache } = await this.pipeline.run(
       { filename, language, code: dto.code, provider: providerName, focusAreas: dto.focusAreas },
-      { beforeAiCall: () => this.quota.assertCanRunAudit(userId) },
+      { beforeAiCall: () => this.quota.assertCanRunAudit(actor.id) },
     );
 
     const data = {
-      userId,
+      userId: actor.id,
+      // Stamped at creation time so teammates can see this audit too (see
+      // workspace-scope.ts) — null outside any organization.
+      organizationId: actor.organizationId,
       filename,
       language,
       provider: providerName,
@@ -53,20 +57,20 @@ export class AuditService {
     // the race where concurrent requests could all pass that stale check
     // and all insert.
     return this.quota.withQuotaCheck(
-      (db) => this.quota.assertCanRunAudit(userId, db),
+      (db) => this.quota.assertCanRunAudit(actor.id, db),
       (db) => db.audit.create({ data }),
     );
   }
 
-  async findOne(userId: string, id: string) {
+  async findOne(actor: WorkspaceActor, id: string) {
     const audit = await this.prisma.audit.findUnique({ where: { id } });
-    if (!audit || audit.userId !== userId) throw new NotFoundException(`Audit ${id} not found`);
+    if (!audit || !canViewResource(actor, audit)) throw new NotFoundException(`Audit ${id} not found`);
     return audit;
   }
 
-  async findRecent(userId: string, limit = 20) {
+  async findRecent(actor: WorkspaceActor, limit = 20) {
     return this.prisma.audit.findMany({
-      where: { userId },
+      where: workspaceWhere(actor),
       orderBy: { createdAt: 'desc' },
       take: limit,
     });
