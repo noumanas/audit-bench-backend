@@ -14,3 +14,10 @@ export interface RecheckFixResult {
   /** True once the file has 0 findings, or the new verdict is a clean pass. */
   resolved: boolean;
 }
+
+export interface AiFixResult {
+  /** The full file content with the targeted finding fixed — replaces the editor's content wholesale. */
+  fixedCode: string;
+  /** 1-2 sentence summary of what changed, shown to the user before they commit. */
+  explanation: string;
+}

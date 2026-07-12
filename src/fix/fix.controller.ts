@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/co
 import { FixService } from './fix.service';
 import { CommitFixDto } from './dto/commit-fix.dto';
 import { RecheckFixDto } from './dto/recheck-fix.dto';
+import { AiFixDto } from './dto/ai-fix.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { RequestUser } from '../auth/types';
@@ -24,5 +25,10 @@ export class FixController {
   @Post('recheck')
   recheckFix(@CurrentUser() user: RequestUser, @Param('scanJobId') scanJobId: string, @Body() dto: RecheckFixDto) {
     return this.fixService.recheckFix(user, scanJobId, dto.path, dto.content);
+  }
+
+  @Post('ai')
+  aiFix(@CurrentUser() user: RequestUser, @Param('scanJobId') scanJobId: string, @Body() dto: AiFixDto) {
+    return this.fixService.aiFix(user, scanJobId, dto.path, dto.content, dto.finding);
   }
 }

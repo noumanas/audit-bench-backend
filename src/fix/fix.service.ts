@@ -5,12 +5,15 @@ import { GithubService } from '../github/github.service';
 import { GitlabService } from '../gitlab/gitlab.service';
 import { PipelineService } from '../audit/pipeline.service';
 import { QuotaService } from '../quota/quota.service';
+import { LlmService } from '../llm/llm.service';
 import { PrContext } from '../pr-feedback/pr-feedback.types';
 import { RepoRef } from '../common/repo-ref.types';
 import { detectLanguage } from '../common/language';
 import { worstVerdict } from '../common/verdict';
 import { LlmProviderName } from '../common/types';
-import { CommitFixResult, RecheckFixResult } from './fix.types';
+import { findingSchema } from '../common/finding.schema';
+import { CommitFixResult, RecheckFixResult, AiFixResult } from './fix.types';
+import { buildAiFixPrompt, aiFixResultSchema } from './ai-fix-prompt';
 import { WorkspaceActor, canViewResource } from '../common/workspace-scope';
 
 const DEFAULT_MESSAGE = (path: string) => `audit/bench: apply suggested fix for ${path}`;
@@ -23,6 +26,7 @@ export class FixService {
     private readonly gitlab: GitlabService,
     private readonly pipeline: PipelineService,
     private readonly quota: QuotaService,
+    private readonly llm: LlmService,
   ) {}
 
   // Visibility follows the same team rule as the rest of the workspace
@@ -226,5 +230,64 @@ export class FixService {
       after: { verdict: result.verdict, findings: result.findings },
       resolved: result.findings.length === 0 || result.verdict === 'pass',
     };
+  }
+
+  /**
+   * Applies ONE specific finding's fix via a direct LLM call, rather than
+   * asking the user to hand-edit the suggested fix themselves — a paid-plan
+   * feature gated the same way repo scanning itself is (see
+   * QuotaService.assertPlanAllowsRepositoryScan). Returns the whole updated
+   * file so the editor can be swapped over wholesale; nothing is committed
+   * here — the user still reviews and hits "Commit fix" separately.
+   */
+  async aiFix(
+    actor: WorkspaceActor,
+    scanJobId: string,
+    path: string,
+    content: string,
+    rawFinding: Record<string, unknown>,
+  ): Promise<AiFixResult> {
+    const job = await this.loadJob(actor, scanJobId);
+    await this.quota.assertPlanAllowsRepositoryScan(actor.id);
+
+    let finding;
+    try {
+      finding = findingSchema.parse(rawFinding);
+    } catch {
+      throw new BadRequestException('Invalid finding payload');
+    }
+
+    const providerName = job.provider as LlmProviderName;
+    const language = detectLanguage(path);
+    const prompt = buildAiFixPrompt({ filename: path, language: language ?? undefined, code: content, finding });
+
+    const applyFix = async () => this.llm.completeStructured(providerName, prompt, aiFixResultSchema);
+
+    const auditData = () => ({
+      userId: actor.id,
+      organizationId: actor.organizationId,
+      filename: path,
+      language,
+      provider: providerName,
+      verdict: 'pass' as const,
+      summary: `AI-generated fix for "${finding.title}" in ${path} (scan ${scanJobId}).`,
+      findings: [] as unknown as Prisma.InputJsonValue,
+      stage1: Prisma.JsonNull,
+      aiInvoked: true,
+      fromCache: false,
+      codeSize: content.length,
+    });
+
+    // Fail fast before spending the LLM call, then re-check atomically with
+    // the row insert that actually records the usage — same two-step
+    // pattern as AuditService.runAudit / RepositoryService.gateAndCreateJob.
+    await this.quota.assertCanRunAudit(actor.id);
+    const result = await applyFix();
+    await this.quota.withQuotaCheck(
+      (db) => this.quota.assertCanRunAudit(actor.id, db),
+      (db) => db.audit.create({ data: auditData() }),
+    );
+
+    return result;
   }
 }

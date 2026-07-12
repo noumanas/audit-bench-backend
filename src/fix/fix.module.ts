@@ -5,9 +5,10 @@ import { GithubModule } from '../github/github.module';
 import { GitlabModule } from '../gitlab/gitlab.module';
 import { PipelineModule } from '../audit/pipeline.module';
 import { QuotaModule } from '../quota/quota.module';
+import { LlmModule } from '../llm/llm.module';
 
 @Module({
-  imports: [GithubModule, GitlabModule, PipelineModule, QuotaModule],
+  imports: [GithubModule, GitlabModule, PipelineModule, QuotaModule, LlmModule],
   controllers: [FixController],
   providers: [FixService],
 })
