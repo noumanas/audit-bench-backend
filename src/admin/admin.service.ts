@@ -16,6 +16,7 @@ const SAFE_USER_SELECT = {
   plan: true,
   role: true,
   githubUsername: true,
+  isActive: true,
 } as const;
 
 const PLAN_REQUEST_INCLUDE = {
@@ -87,6 +88,40 @@ export class AdminService {
     return this.prisma.user.update({
       where: { id: targetUserId },
       data: { role },
+      select: SAFE_USER_SELECT,
+    });
+  }
+
+  async updateUserStatus(actingAdminId: string, targetUserId: string, isActive: boolean) {
+    if (actingAdminId === targetUserId) {
+      throw new ForbiddenException('You cannot suspend your own account');
+    }
+    const target = await this.prisma.user.findUnique({ where: { id: targetUserId } });
+    if (!target) throw new NotFoundException('User not found');
+
+    return this.prisma.user.update({
+      where: { id: targetUserId },
+      data: { isActive },
+      select: SAFE_USER_SELECT,
+    });
+  }
+
+  async updateUserProfile(targetUserId: string, data: { name?: string; planId?: string }) {
+    if (data.name === undefined && data.planId === undefined) {
+      throw new BadRequestException('Nothing to update');
+    }
+
+    const target = await this.prisma.user.findUnique({ where: { id: targetUserId } });
+    if (!target) throw new NotFoundException('User not found');
+
+    if (data.planId) {
+      const plan = await this.prisma.plan.findUnique({ where: { id: data.planId } });
+      if (!plan) throw new BadRequestException('Unknown plan');
+    }
+
+    return this.prisma.user.update({
+      where: { id: targetUserId },
+      data: { name: data.name, planId: data.planId },
       select: SAFE_USER_SELECT,
     });
   }

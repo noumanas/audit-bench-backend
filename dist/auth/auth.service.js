@@ -62,6 +62,9 @@ let AuthService = class AuthService {
         return this.buildSession(user);
     }
     buildSession(user) {
+        if (!user.isActive) {
+            throw new common_1.UnauthorizedException('This account has been suspended. Contact an administrator.');
+        }
         const payload = { sub: user.id, email: user.email };
         return {
             accessToken: this.jwt.sign(payload),

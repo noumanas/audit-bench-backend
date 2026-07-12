@@ -71,7 +71,19 @@ export class AuthService {
   }
 
   /** Shared by password login/signup and the OAuth login-code exchange (see OAuthController). */
-  buildSession(user: { id: string; email: string; name: string | null; createdAt: Date; plan: unknown; role: Role }) {
+  buildSession(user: {
+    id: string;
+    email: string;
+    name: string | null;
+    createdAt: Date;
+    plan: unknown;
+    role: Role;
+    isActive: boolean;
+  }) {
+    if (!user.isActive) {
+      throw new UnauthorizedException('This account has been suspended. Contact an administrator.');
+    }
+
     const payload: JwtPayload = { sub: user.id, email: user.email };
     return {
       accessToken: this.jwt.sign(payload),

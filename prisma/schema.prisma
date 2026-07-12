@@ -69,6 +69,10 @@ model User {
   plan            Plan          @relation(fields: [planId], references: [id])
   planId          String
   role            Role          @default(user)
+  // Flipped off by an admin to lock the account out immediately (checked at
+  // login and on every authenticated request via JwtStrategy) without
+  // deleting any of the user's data.
+  isActive        Boolean       @default(true)
   // Personal Access Tokens for repo listing/scanning — plaintext in this
   // dev-scoped build; a real deployment would encrypt these at rest.
   githubToken     String?

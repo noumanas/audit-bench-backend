@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -7,6 +7,8 @@ import { RequestUser } from '../auth/types';
 import { AdminService } from './admin.service';
 import { RejectPlanRequestDto } from './dto/reject-plan-request.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
+import { UpdateStatusDto } from './dto/update-status.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
 
 @Controller('admin')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -39,5 +41,18 @@ export class AdminController {
   @Roles('super_admin')
   updateRole(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() dto: UpdateRoleDto) {
     return this.adminService.updateUserRole(user.id, id, dto.role);
+  }
+
+  // Suspending an account gates login/access the same way role does, so it
+  // gets the same super_admin-only restriction — overrides the class-level @Roles.
+  @Post('users/:id/status')
+  @Roles('super_admin')
+  updateStatus(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() dto: UpdateStatusDto) {
+    return this.adminService.updateUserStatus(user.id, id, dto.isActive);
+  }
+
+  @Patch('users/:id')
+  updateProfile(@Param('id') id: string, @Body() dto: UpdateUserDto) {
+    return this.adminService.updateUserProfile(id, dto);
   }
 }

@@ -38,6 +38,7 @@ export declare class AuthService {
         createdAt: Date;
         plan: unknown;
         role: Role;
+        isActive: boolean;
     }): {
         accessToken: string;
         user: {
