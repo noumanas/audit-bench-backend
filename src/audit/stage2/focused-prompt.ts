@@ -2,16 +2,16 @@ import { FunctionRisk, FunctionUnit } from '../stage1/types';
 
 const RESPONSE_SHAPE = `{
   "verdict": "pass" | "needs_work" | "do_not_ship",
-  "summary": "2-3 sentence overall assessment of the flagged functions",
+  "summary": "2-3 sentence overall assessment of the flagged functions, in plain language",
   "findings": [
     {
       "severity": "critical" | "high" | "medium" | "low",
       "category": "Security" | "Logic" | "Performance" | "Architecture" | "Maintainability",
-      "title": "short title",
+      "title": "a short, plain-language summary of the actual problem — no unexplained jargon or acronyms (avoid things like 'SSRF', 'prototype pollution', 'anti-pattern', 'race condition'); say what happens in everyday words, e.g. 'The server can be tricked into fetching internal URLs' instead of 'SSRF vulnerability'",
       "line": <the real file line number given for that function's snippet, offset by where the issue occurs — or null>,
-      "description": "what is wrong and why it matters",
-      "rootCause": "the underlying mistake that produced this issue",
-      "suggestedFix": "concrete, actionable fix",
+      "description": "what is wrong and why it matters, written so a junior developer or non-technical reader can follow it — if you use a technical term, explain what it means in the same sentence",
+      "rootCause": "the underlying mistake that produced this issue, in plain language",
+      "suggestedFix": "concrete, actionable fix, described in plain language",
       "examplePatch": "a short code snippet showing the fix, or null",
       "confidence": <number between 0 and 1 — how sure you are this is a real, exploitable/impactful issue>
     }
@@ -73,5 +73,7 @@ ${sections.join('\n\n')}
 Return ONLY a JSON object, no markdown fences, no preamble, with this exact shape:
 ${RESPONSE_SHAPE}
 
-Only report real, specific issues in the functions shown — don't invent problems, and don't comment on code you weren't shown. If none of the flagged functions actually have a real issue on closer inspection, return an empty findings array with verdict "pass".`;
+Only report real, specific issues in the functions shown — don't invent problems, and don't comment on code you weren't shown. If none of the flagged functions actually have a real issue on closer inspection, return an empty findings array with verdict "pass".
+
+Write every finding in plain, simple language — this is read by developers at every experience level, not just security specialists. Avoid unexplained acronyms and jargon (SSRF, CSRF, XSS, prototype pollution, anti-pattern, race condition, etc.); describe what actually happens and why it's a problem in everyday words instead of just naming the category of bug. Stay technically precise — just say it plainly.`;
 }
