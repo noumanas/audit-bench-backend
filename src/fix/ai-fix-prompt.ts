@@ -71,17 +71,21 @@ function findingBlock(finding: Finding, index: number): string {
  * automatically instead of requiring N clicks.
  */
 export function buildAiFixAllPrompt(opts: AiFixAllPromptOptions): string {
-  return `You are a senior engineer applying a batch of specific, already-identified fixes to a real file. Apply ALL of the findings below — don't skip any, don't refactor unrelated code, don't change formatting/style elsewhere, and don't fix issues that aren't listed even if you notice them.
+  return `You are a senior engineer fixing a batch of specific, already-identified problems in a real file. Your job is not to make a plausible attempt — every single finding listed below MUST end up fully and correctly resolved. A fix that only touches the cited line but leaves the underlying problem reachable another way is a failure, not a partial success.
 
 File: ${opts.filename}${opts.language ? ` (${opts.language})` : ''}
 
-Findings to fix (${opts.findings.length} total):
+Findings to fix — all ${opts.findings.length} must be resolved, none skipped:
 ${opts.findings.map(findingBlock).join('\n\n')}
 
 Current full file content:
 \`\`\`
 ${opts.code}
 \`\`\`
+
+For each finding, treat "Root cause" as the thing that must actually stop being true — "Suggested fix" is a starting hint, not a literal recipe to copy verbatim. If the same root cause appears more than once in the file (e.g. the same unsafe pattern repeated, or the same missing check needed in more than one branch), fix every occurrence, not just the line that happened to be cited. Do not refactor unrelated code, change formatting/style elsewhere, or fix anything that isn't in the list above even if you notice it.
+
+Before writing your final answer, go finding-by-finding and check: can the exact scenario that finding describes still happen anywhere in your fixed version? If yes for any of them, keep fixing until the answer is no for all of them — do not submit a fix you haven't verified this way.
 
 Return ONLY a JSON object, no markdown fences, no preamble, with this exact shape:
 ${RESPONSE_SHAPE}
