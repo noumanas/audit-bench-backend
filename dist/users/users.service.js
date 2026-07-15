@@ -13,6 +13,7 @@ exports.UsersService = void 0;
 const common_1 = require("@nestjs/common");
 const crypto = require("crypto");
 const prisma_service_1 = require("../prisma/prisma.service");
+const api_key_util_1 = require("../auth/api-key.util");
 const SAFE_USER_SELECT = {
     id: true,
     email: true,
@@ -118,6 +119,17 @@ let UsersService = class UsersService {
         const badgeToken = crypto.randomBytes(24).toString('hex');
         await this.prisma.user.update({ where: { id: userId }, data: { badgeToken } });
         return badgeToken;
+    }
+    async getApiKey(userId) {
+        const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+        if (user.apiKey)
+            return user.apiKey;
+        return this.rotateApiKey(userId);
+    }
+    async rotateApiKey(userId) {
+        const apiKey = (0, api_key_util_1.generateApiKey)();
+        await this.prisma.user.update({ where: { id: userId }, data: { apiKey } });
+        return apiKey;
     }
 };
 exports.UsersService = UsersService;

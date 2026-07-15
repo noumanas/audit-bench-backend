@@ -44,6 +44,12 @@ let UsersController = class UsersController {
     async rotateBadgeToken(user) {
         return { badgeToken: await this.usersService.rotateBadgeToken(user.id) };
     }
+    async getApiKey(user) {
+        return { apiKey: await this.usersService.getApiKey(user.id) };
+    }
+    async rotateApiKey(user) {
+        return { apiKey: await this.usersService.rotateApiKey(user.id) };
+    }
 };
 exports.UsersController = UsersController;
 __decorate([
@@ -89,6 +95,20 @@ __decorate([
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "rotateBadgeToken", null);
+__decorate([
+    (0, common_1.Get)('api-key'),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], UsersController.prototype, "getApiKey", null);
+__decorate([
+    (0, common_1.Post)('api-key/rotate'),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], UsersController.prototype, "rotateApiKey", null);
 exports.UsersController = UsersController = __decorate([
     (0, common_1.Controller)('me'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),

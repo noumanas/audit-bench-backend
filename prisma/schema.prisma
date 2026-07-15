@@ -148,6 +148,11 @@ model User {
   // `id` so a leaked badge URL can't be used to look up the account by id
   // and can be rotated independently. Generated on first request.
   badgeToken      String?       @unique
+  // Long-lived credential for the CLI/CI (see auth/api-key.util.ts,
+  // JwtAuthGuard) — grants full API access as this user, unlike badgeToken
+  // (read-only, meant to be public). Prefixed "abk_" so JwtAuthGuard can
+  // tell it apart from a real JWT without attempting to verify it as one.
+  apiKey          String?       @unique
   createdAt       DateTime      @default(now())
   audits          Audit[]
   scanJobs        ScanJob[]

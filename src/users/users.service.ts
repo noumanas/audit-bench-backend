@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { generateApiKey } from '../auth/api-key.util';
 
 // Explicit allow-list — never spread a raw User row to a client. That row
 // carries passwordHash and plaintext GitHub/GitLab PATs, neither of which
@@ -137,5 +138,23 @@ export class UsersService {
     const badgeToken = crypto.randomBytes(24).toString('hex');
     await this.prisma.user.update({ where: { id: userId }, data: { badgeToken } });
     return badgeToken;
+  }
+
+  /**
+   * Get-or-create, same shape as the badge token — except the key itself is
+   * a real credential (grants full API access as this user, for the
+   * CLI/CI), so unlike badgeToken it's deliberately left out of
+   * SAFE_USER_SELECT and only ever returned from these two dedicated routes.
+   */
+  async getApiKey(userId: string): Promise<string> {
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    if (user.apiKey) return user.apiKey;
+    return this.rotateApiKey(userId);
+  }
+
+  async rotateApiKey(userId: string): Promise<string> {
+    const apiKey = generateApiKey();
+    await this.prisma.user.update({ where: { id: userId }, data: { apiKey } });
+    return apiKey;
   }
 }

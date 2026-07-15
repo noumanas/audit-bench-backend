@@ -147,4 +147,10 @@ export declare class UsersController {
     rotateBadgeToken(user: RequestUser): Promise<{
         badgeToken: string;
     }>;
+    getApiKey(user: RequestUser): Promise<{
+        apiKey: string;
+    }>;
+    rotateApiKey(user: RequestUser): Promise<{
+        apiKey: string;
+    }>;
 }

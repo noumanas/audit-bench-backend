@@ -45,4 +45,14 @@ export class UsersController {
   async rotateBadgeToken(@CurrentUser() user: RequestUser) {
     return { badgeToken: await this.usersService.rotateBadgeToken(user.id) };
   }
+
+  @Get('api-key')
+  async getApiKey(@CurrentUser() user: RequestUser) {
+    return { apiKey: await this.usersService.getApiKey(user.id) };
+  }
+
+  @Post('api-key/rotate')
+  async rotateApiKey(@CurrentUser() user: RequestUser) {
+    return { apiKey: await this.usersService.rotateApiKey(user.id) };
+  }
 }

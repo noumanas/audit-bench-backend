@@ -123,4 +123,6 @@ export declare class UsersService {
     })[]>;
     getBadgeToken(userId: string): Promise<string>;
     rotateBadgeToken(userId: string): Promise<string>;
+    getApiKey(userId: string): Promise<string>;
+    rotateApiKey(userId: string): Promise<string>;
 }
