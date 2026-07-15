@@ -5,9 +5,15 @@ function detectFramework(files) {
     const byPath = new Map(files.map((f) => [f.path, f]));
     const packageJson = byPath.get('package.json');
     if (packageJson) {
+        let pkg = null;
         try {
-            const pkg = JSON.parse(packageJson.content);
-            const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+            pkg = JSON.parse(packageJson.content);
+        }
+        catch {
+            pkg = null;
+        }
+        if (pkg) {
+            const deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
             if (deps['next'])
                 return 'Next.js';
             if (deps['@nestjs/core'])
@@ -25,25 +31,23 @@ function detectFramework(files) {
             if (deps['react'])
                 return 'React';
         }
-        catch {
-        }
     }
-    if (files.some((f) => /(^|\/)deno\.jsonc?$/.test(f.path)))
+    if (files.some((f) => /(^|\/)deno\.jsonc?$/.test(f.path.replace(/\\/g, '/'))))
         return 'Deno';
-    if (files.some((f) => /(^|\/)supabase\/config\.toml$/.test(f.path)))
+    if (files.some((f) => /(^|\/)supabase\/config\.toml$/.test(f.path.replace(/\\/g, '/'))))
         return 'Supabase';
-    if (files.some((f) => /(^|\/)firebase\.json$/.test(f.path)))
+    if (files.some((f) => /(^|\/)firebase\.json$/.test(f.path.replace(/\\/g, '/'))))
         return 'Firebase';
-    if (files.some((f) => /(^|\/)composer\.json$/.test(f.path)))
+    if (files.some((f) => /(^|\/)composer\.json$/.test(f.path.replace(/\\/g, '/'))))
         return 'Laravel';
-    if (files.some((f) => /(^|\/)(pom\.xml|build\.gradle)$/.test(f.path)))
+    if (files.some((f) => /(^|\/)(pom\.xml|build\.gradle)$/.test(f.path.replace(/\\/g, '/'))))
         return 'Spring Boot';
-    if (files.some((f) => /(^|\/)manage\.py$/.test(f.path)))
+    if (files.some((f) => /(^|\/)manage\.py$/.test(f.path.replace(/\\/g, '/'))))
         return 'Django';
-    if (files.some((f) => /(^|\/)requirements\.txt$/.test(f.path) &&
+    if (files.some((f) => /(^|\/)requirements\.txt$/.test(f.path.replace(/\\/g, '/')) &&
         /fastapi/i.test(f.content)))
         return 'FastAPI';
-    if (files.some((f) => /(^|\/)requirements\.txt$/.test(f.path)))
+    if (files.some((f) => /(^|\/)requirements\.txt$/.test(f.path.replace(/\\/g, '/'))))
         return 'Python';
     return undefined;
 }

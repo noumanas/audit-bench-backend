@@ -319,7 +319,12 @@ export class FixService {
     const language = detectLanguage(path);
     const prompt = buildAiFixAllPrompt({ filename: path, language: language ?? undefined, code: content, findings });
 
-    const applyFix = async () => this.llm.completeStructured(providerName, prompt, aiFixResultSchema);
+    // Fixing several findings correctly in one pass is a harder task than
+    // reviewing or fixing just one — worth the stronger model whenever one's
+    // configured, not just conditionally like the review pipeline's escalation.
+    const useEscalation = this.llm.hasEscalationModel(providerName);
+    const applyFix = async () =>
+      this.llm.completeStructured(providerName, prompt, aiFixResultSchema, { escalate: useEscalation });
 
     const auditData = () => ({
       userId: actor.id,
