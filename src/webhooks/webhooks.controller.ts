@@ -1,10 +1,11 @@
-import { Body, Controller, Delete, Get, Headers, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Headers, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import { WebhooksService } from './webhooks.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { RequestUser } from '../auth/types';
 import { CreateWebhookConfigDto } from './dto/create-webhook-config.dto';
+import { UpdateWebhookConfigDto } from './dto/update-webhook-config.dto';
 
 @Controller('webhooks')
 export class WebhooksController {
@@ -19,7 +20,13 @@ export class WebhooksController {
   @UseGuards(JwtAuthGuard)
   @Post('configs')
   createConfig(@CurrentUser() user: RequestUser, @Body() dto: CreateWebhookConfigDto) {
-    return this.webhooksService.createConfig(user.id, dto.provider, dto.repoIdentifier);
+    return this.webhooksService.createConfig(user.id, dto.provider, dto.repoIdentifier, dto.autoReview);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('configs/:id')
+  updateConfig(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() dto: UpdateWebhookConfigDto) {
+    return this.webhooksService.updateConfig(user.id, id, dto.autoReview);
   }
 
   @UseGuards(JwtAuthGuard)

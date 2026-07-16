@@ -215,6 +215,11 @@ model WebhookConfig {
   // GitLab: the numeric project id, as a string (matches project.id).
   repoIdentifier String
   secret         String
+  // When true, opening/updating a PR or MR automatically runs a diff-scoped
+  // review (no @auditbench mention needed) — this is what makes review
+  // "continuous" instead of purely on-demand. The mention-triggered Q&A
+  // chat in webhooks.service.ts works regardless of this flag.
+  autoReview     Boolean  @default(true)
   createdAt      DateTime @default(now())
 
   @@unique([provider, repoIdentifier])

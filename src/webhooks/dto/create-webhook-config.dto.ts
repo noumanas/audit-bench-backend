@@ -1,4 +1,4 @@
-import { IsIn, IsString, MinLength } from 'class-validator';
+import { IsBoolean, IsIn, IsOptional, IsString, MinLength } from 'class-validator';
 
 export class CreateWebhookConfigDto {
   @IsIn(['github', 'gitlab'])
@@ -8,4 +8,9 @@ export class CreateWebhookConfigDto {
   @IsString()
   @MinLength(1)
   repoIdentifier!: string;
+
+  // Defaults to true — set false to keep only the @auditbench mention chat.
+  @IsOptional()
+  @IsBoolean()
+  autoReview?: boolean;
 }
