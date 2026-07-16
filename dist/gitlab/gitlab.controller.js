@@ -43,6 +43,9 @@ let GitlabController = class GitlabController {
     listBranches(user, projectId) {
         return this.gitlabService.listBranches(user.id, projectId);
     }
+    listMergeRequests(user, projectId) {
+        return this.gitlabService.listMergeRequests(user.id, projectId);
+    }
     async scan(user, dto) {
         const { defaultBranch } = await this.gitlabService.getProjectMeta(user.id, dto.projectId);
         const ref = dto.ref || defaultBranch;
@@ -98,6 +101,14 @@ __decorate([
     __metadata("design:paramtypes", [Object, Number]),
     __metadata("design:returntype", void 0)
 ], GitlabController.prototype, "listBranches", null);
+__decorate([
+    (0, common_1.Get)('projects/:projectId/merge_requests'),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Param)('projectId', common_1.ParseIntPipe)),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Number]),
+    __metadata("design:returntype", void 0)
+], GitlabController.prototype, "listMergeRequests", null);
 __decorate([
     (0, common_1.Post)('scan'),
     __param(0, (0, current_user_decorator_1.CurrentUser)()),

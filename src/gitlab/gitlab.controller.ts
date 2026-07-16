@@ -41,6 +41,11 @@ export class GitlabController {
     return this.gitlabService.listBranches(user.id, projectId);
   }
 
+  @Get('projects/:projectId/merge_requests')
+  listMergeRequests(@CurrentUser() user: RequestUser, @Param('projectId', ParseIntPipe) projectId: number) {
+    return this.gitlabService.listMergeRequests(user.id, projectId);
+  }
+
   @Post('scan')
   async scan(@CurrentUser() user: RequestUser, @Body() dto: ScanProjectDto) {
     const { defaultBranch } = await this.gitlabService.getProjectMeta(user.id, dto.projectId);

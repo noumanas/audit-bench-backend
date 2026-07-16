@@ -11,6 +11,16 @@ export interface GitlabProjectSummary {
   webUrl: string;
 }
 
+export interface GitlabMrSummary {
+  iid: number;
+  title: string;
+  sourceBranch: string;
+  targetBranch: string;
+  draft: boolean;
+  updatedAt: string;
+  webUrl: string;
+}
+
 export interface GitlabMrFile {
   path: string;
   content: string;

@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { GithubPrDetails, GithubPrFile, GithubRepoSummary } from './github.types';
+import { GithubPrDetails, GithubPrFile, GithubPrSummary, GithubRepoSummary } from './github.types';
 import { parseChangedRanges } from '../common/diff-ranges';
 import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
 import { PrContext, PrFeedback, PrPublisher } from '../pr-feedback/pr-feedback.types';
@@ -110,6 +110,33 @@ export class GithubService implements OnModuleInit, PrPublisher {
 
     const branches: any[] = await res.json();
     return branches.map((b) => b.name as string);
+  }
+
+  async listPullRequests(userId: string, owner: string, repo: string): Promise<GithubPrSummary[]> {
+    const token = await this.requireToken(userId);
+
+    const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls?state=open&per_page=100`, {
+      headers: this.authHeaders(token),
+    });
+    if (res.status === 404) {
+      throw new NotFoundException(`Repository ${owner}/${repo} not found or not accessible with this token`);
+    }
+    if (!res.ok) {
+      throw new BadRequestException(`GitHub rejected the request (${res.status})`);
+    }
+
+    const pulls: any[] = await res.json();
+    return pulls.map(
+      (p: any): GithubPrSummary => ({
+        number: p.number,
+        title: p.title,
+        headRef: p.head.ref,
+        baseRef: p.base.ref,
+        draft: Boolean(p.draft),
+        updatedAt: p.updated_at,
+        htmlUrl: p.html_url,
+      }),
+    );
   }
 
   async downloadRepoZip(userId: string, owner: string, repo: string, ref?: string): Promise<Buffer> {

@@ -41,6 +41,11 @@ export class GithubController {
     return this.githubService.listBranches(user.id, owner, repo);
   }
 
+  @Get('repos/:owner/:repo/pulls')
+  listPullRequests(@CurrentUser() user: RequestUser, @Param('owner') owner: string, @Param('repo') repo: string) {
+    return this.githubService.listPullRequests(user.id, owner, repo);
+  }
+
   @Post('scan')
   async scan(@CurrentUser() user: RequestUser, @Body() dto: ScanRepoDto) {
     const { defaultBranch } = await this.githubService.getRepoMeta(user.id, dto.owner, dto.repo);

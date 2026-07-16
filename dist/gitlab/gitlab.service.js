@@ -132,6 +132,28 @@ let GitlabService = class GitlabService {
         const branches = await res.json();
         return branches.map((b) => b.name);
     }
+    async listMergeRequests(userId, projectId) {
+        const token = await this.requireToken(userId);
+        const res = await fetch(`${this.baseUrl()}/projects/${projectId}/merge_requests?state=opened&per_page=100`, {
+            headers: this.authHeaders(token),
+        });
+        if (res.status === 404) {
+            throw new common_1.NotFoundException(`Project ${projectId} not found or not accessible with this token`);
+        }
+        if (!res.ok) {
+            throw new common_1.BadRequestException(`GitLab rejected the request (${res.status})`);
+        }
+        const mrs = await res.json();
+        return mrs.map((m) => ({
+            iid: m.iid,
+            title: m.title,
+            sourceBranch: m.source_branch,
+            targetBranch: m.target_branch,
+            draft: Boolean(m.draft || m.work_in_progress),
+            updatedAt: m.updated_at,
+            webUrl: m.web_url,
+        }));
+    }
     async downloadProjectZip(userId, projectId, ref) {
         const token = await this.requireToken(userId);
         const query = ref ? `?sha=${encodeURIComponent(ref)}` : '';

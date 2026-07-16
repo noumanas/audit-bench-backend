@@ -1,6 +1,6 @@
 import { OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { GithubPrDetails, GithubRepoSummary } from './github.types';
+import { GithubPrDetails, GithubPrSummary, GithubRepoSummary } from './github.types';
 import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
 import { PrContext, PrFeedback, PrPublisher } from '../pr-feedback/pr-feedback.types';
 import { TokenCryptoService } from '../common/token-crypto.service';
@@ -22,6 +22,7 @@ export declare class GithubService implements OnModuleInit, PrPublisher {
     }>;
     listRepos(userId: string): Promise<GithubRepoSummary[]>;
     listBranches(userId: string, owner: string, repo: string): Promise<string[]>;
+    listPullRequests(userId: string, owner: string, repo: string): Promise<GithubPrSummary[]>;
     downloadRepoZip(userId: string, owner: string, repo: string, ref?: string): Promise<Buffer>;
     fetchPrFiles(userId: string, owner: string, repo: string, pullNumber: number): Promise<GithubPrDetails>;
     getRepoMeta(userId: string, owner: string, repo: string): Promise<{

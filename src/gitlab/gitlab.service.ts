@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException, OnModuleInit } from
 import * as crypto from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
-import { GitlabMrDetails, GitlabMrFile, GitlabProjectSummary } from './gitlab.types';
+import { GitlabMrDetails, GitlabMrFile, GitlabMrSummary, GitlabProjectSummary } from './gitlab.types';
 import { parseChangedRanges } from '../common/diff-ranges';
 import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
 import { PrContext, PrFeedback, PrPublisher } from '../pr-feedback/pr-feedback.types';
@@ -149,6 +149,33 @@ export class GitlabService implements OnModuleInit, PrPublisher {
 
     const branches: any[] = await res.json();
     return branches.map((b) => b.name as string);
+  }
+
+  async listMergeRequests(userId: string, projectId: number): Promise<GitlabMrSummary[]> {
+    const token = await this.requireToken(userId);
+
+    const res = await fetch(`${this.baseUrl()}/projects/${projectId}/merge_requests?state=opened&per_page=100`, {
+      headers: this.authHeaders(token),
+    });
+    if (res.status === 404) {
+      throw new NotFoundException(`Project ${projectId} not found or not accessible with this token`);
+    }
+    if (!res.ok) {
+      throw new BadRequestException(`GitLab rejected the request (${res.status})`);
+    }
+
+    const mrs: any[] = await res.json();
+    return mrs.map(
+      (m: any): GitlabMrSummary => ({
+        iid: m.iid,
+        title: m.title,
+        sourceBranch: m.source_branch,
+        targetBranch: m.target_branch,
+        draft: Boolean(m.draft || m.work_in_progress),
+        updatedAt: m.updated_at,
+        webUrl: m.web_url,
+      }),
+    );
   }
 
   async downloadProjectZip(userId: string, projectId: number, ref?: string): Promise<Buffer> {

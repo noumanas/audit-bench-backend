@@ -10,6 +10,15 @@ export interface GithubRepoSummary {
     updatedAt: string;
     htmlUrl: string;
 }
+export interface GithubPrSummary {
+    number: number;
+    title: string;
+    headRef: string;
+    baseRef: string;
+    draft: boolean;
+    updatedAt: string;
+    htmlUrl: string;
+}
 export interface GithubPrFile {
     path: string;
     content: string;

@@ -43,6 +43,9 @@ let GithubController = class GithubController {
     listBranches(user, owner, repo) {
         return this.githubService.listBranches(user.id, owner, repo);
     }
+    listPullRequests(user, owner, repo) {
+        return this.githubService.listPullRequests(user.id, owner, repo);
+    }
     async scan(user, dto) {
         const { defaultBranch } = await this.githubService.getRepoMeta(user.id, dto.owner, dto.repo);
         const ref = dto.ref || defaultBranch;
@@ -99,6 +102,15 @@ __decorate([
     __metadata("design:paramtypes", [Object, String, String]),
     __metadata("design:returntype", void 0)
 ], GithubController.prototype, "listBranches", null);
+__decorate([
+    (0, common_1.Get)('repos/:owner/:repo/pulls'),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Param)('owner')),
+    __param(2, (0, common_1.Param)('repo')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String, String]),
+    __metadata("design:returntype", void 0)
+], GithubController.prototype, "listPullRequests", null);
 __decorate([
     (0, common_1.Post)('scan'),
     __param(0, (0, current_user_decorator_1.CurrentUser)()),

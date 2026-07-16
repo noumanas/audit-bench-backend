@@ -1,7 +1,7 @@
 import { OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
-import { GitlabMrDetails, GitlabProjectSummary } from './gitlab.types';
+import { GitlabMrDetails, GitlabMrSummary, GitlabProjectSummary } from './gitlab.types';
 import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
 import { PrContext, PrFeedback, PrPublisher } from '../pr-feedback/pr-feedback.types';
 import { TokenCryptoService } from '../common/token-crypto.service';
@@ -26,6 +26,7 @@ export declare class GitlabService implements OnModuleInit, PrPublisher {
     }>;
     listProjects(userId: string): Promise<GitlabProjectSummary[]>;
     listBranches(userId: string, projectId: number): Promise<string[]>;
+    listMergeRequests(userId: string, projectId: number): Promise<GitlabMrSummary[]>;
     downloadProjectZip(userId: string, projectId: number, ref?: string): Promise<Buffer>;
     fetchMrFiles(userId: string, projectId: number, mrIid: number): Promise<GitlabMrDetails>;
     private fetchFileContent;
