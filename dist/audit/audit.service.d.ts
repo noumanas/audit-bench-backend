@@ -5,6 +5,7 @@ import { PipelineService } from './pipeline.service';
 import { CreateAuditDto } from './dto/create-audit.dto';
 import { Prisma } from '@prisma/client';
 import { WorkspaceActor } from '../common/workspace-scope';
+import { FindingStatus } from '../common/finding.schema';
 export declare class AuditService {
     private readonly prisma;
     private readonly llm;
@@ -25,6 +26,9 @@ export declare class AuditService {
         stage1: Prisma.JsonValue | null;
         filename: string;
         language: string | null;
+        findingStatuses: Prisma.JsonValue | null;
+        inputTokens: number;
+        outputTokens: number;
         codeSize: number;
     }>;
     findOne(actor: WorkspaceActor, id: string): Promise<{
@@ -41,6 +45,9 @@ export declare class AuditService {
         stage1: Prisma.JsonValue | null;
         filename: string;
         language: string | null;
+        findingStatuses: Prisma.JsonValue | null;
+        inputTokens: number;
+        outputTokens: number;
         codeSize: number;
     }>;
     findRecent(actor: WorkspaceActor, limit?: number): Promise<{
@@ -57,6 +64,28 @@ export declare class AuditService {
         stage1: Prisma.JsonValue | null;
         filename: string;
         language: string | null;
+        findingStatuses: Prisma.JsonValue | null;
+        inputTokens: number;
+        outputTokens: number;
         codeSize: number;
     }[]>;
+    setFindingStatus(actor: WorkspaceActor, auditId: string, findingIndex: number, status: FindingStatus): Promise<{
+        id: string;
+        createdAt: Date;
+        organizationId: string | null;
+        userId: string;
+        provider: string;
+        aiInvoked: boolean;
+        fromCache: boolean;
+        verdict: import(".prisma/client").$Enums.Verdict;
+        summary: string;
+        findings: Prisma.JsonValue;
+        stage1: Prisma.JsonValue | null;
+        filename: string;
+        language: string | null;
+        findingStatuses: Prisma.JsonValue | null;
+        inputTokens: number;
+        outputTokens: number;
+        codeSize: number;
+    }>;
 }

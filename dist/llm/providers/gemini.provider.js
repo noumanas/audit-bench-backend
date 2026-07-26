@@ -42,9 +42,14 @@ let GeminiProvider = class GeminiProvider {
             throw new Error(`Gemini API error (${response.status}): ${text}`);
         }
         const data = await response.json();
-        return (data.candidates?.[0]?.content?.parts
-            ?.map((p) => p.text ?? '')
-            .join('\n') ?? '');
+        const text = data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('\n') ?? '';
+        return {
+            text,
+            usage: {
+                inputTokens: data.usageMetadata?.promptTokenCount ?? 0,
+                outputTokens: data.usageMetadata?.candidatesTokenCount ?? 0,
+            },
+        };
     }
 };
 exports.GeminiProvider = GeminiProvider;

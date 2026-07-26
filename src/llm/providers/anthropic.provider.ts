@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { CompleteOptions, LlmProvider } from '../llm-provider.interface';
+import { CompleteOptions, CompleteResult, LlmProvider } from '../llm-provider.interface';
 
 const MAX_OUTPUT_TOKENS = 2000;
 
@@ -10,7 +10,7 @@ export class AnthropicProvider implements LlmProvider {
 
   constructor(private readonly config: ConfigService) {}
 
-  async complete(prompt: string, opts?: CompleteOptions): Promise<string> {
+  async complete(prompt: string, opts?: CompleteOptions): Promise<CompleteResult> {
     const apiKey = this.config.get<string>('ANTHROPIC_API_KEY');
     if (!apiKey) {
       throw new Error('ANTHROPIC_API_KEY is not configured on the server');
@@ -39,9 +39,17 @@ export class AnthropicProvider implements LlmProvider {
     }
 
     const data = await response.json();
-    return (data.content || [])
+    const text = (data.content || [])
       .map((block: { type: string; text?: string }) => (block.type === 'text' ? block.text : ''))
       .filter(Boolean)
       .join('\n');
+
+    return {
+      text,
+      usage: {
+        inputTokens: data.usage?.input_tokens ?? 0,
+        outputTokens: data.usage?.output_tokens ?? 0,
+      },
+    };
   }
 }

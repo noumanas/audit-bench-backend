@@ -261,7 +261,7 @@ export class FixService {
     const language = detectLanguage(path);
     const prompt = buildAiFixPrompt({ filename: path, language: language ?? undefined, code: content, finding });
 
-    const applyFix = async () => this.llm.completeStructured(providerName, prompt, aiFixResultSchema);
+    const applyFix = async () => (await this.llm.completeStructured(providerName, prompt, aiFixResultSchema)).result;
 
     const auditData = () => ({
       userId: actor.id,
@@ -324,7 +324,7 @@ export class FixService {
     // configured, not just conditionally like the review pipeline's escalation.
     const useEscalation = this.llm.hasEscalationModel(providerName);
     const applyFix = async () =>
-      this.llm.completeStructured(providerName, prompt, aiFixResultSchema, { escalate: useEscalation });
+      (await this.llm.completeStructured(providerName, prompt, aiFixResultSchema, { escalate: useEscalation })).result;
 
     const auditData = () => ({
       userId: actor.id,

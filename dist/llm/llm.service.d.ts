@@ -3,7 +3,11 @@ import { z } from 'zod';
 import { AnthropicProvider } from './providers/anthropic.provider';
 import { OpenAiProvider } from './providers/openai.provider';
 import { GeminiProvider } from './providers/gemini.provider';
-import { LlmProviderName } from '../common/types';
+import { LlmProviderName, TokenUsage } from '../common/types';
+export interface StructuredResult<T> {
+    result: T;
+    usage: TokenUsage;
+}
 export declare class LlmService {
     private readonly config;
     private readonly providers;
@@ -13,5 +17,5 @@ export declare class LlmService {
     completeText(providerName: LlmProviderName, prompt: string): Promise<string>;
     completeStructured<T>(providerName: LlmProviderName, prompt: string, schema: z.ZodType<T>, opts?: {
         escalate?: boolean;
-    }): Promise<T>;
+    }): Promise<StructuredResult<T>>;
 }

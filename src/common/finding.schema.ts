@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 export const findingSchema = z.object({
   severity: z.enum(['critical', 'high', 'medium', 'low']),
-  category: z.enum(['Security', 'Logic', 'Performance', 'Architecture', 'Maintainability']),
+  category: z.enum(['Security', 'Logic', 'Performance', 'Architecture', 'Maintainability', 'Testing']),
   title: z.string().min(1),
   line: z.number().int().nullable().optional().default(null),
   description: z.string().min(1),
@@ -19,3 +19,7 @@ export const auditResultSchema = z.object({
 });
 
 export type Finding = z.infer<typeof findingSchema>;
+
+export const FINDING_STATUSES = ['open', 'in_progress', 'wont_fix'] as const;
+export type FindingStatus = (typeof FINDING_STATUSES)[number];
+export type FindingStatuses = Record<number, FindingStatus>;

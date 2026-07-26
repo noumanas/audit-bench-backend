@@ -15,6 +15,7 @@ const common_1 = require("@nestjs/common");
 const llm_service_1 = require("../llm/llm.service");
 const cache_service_1 = require("./cache.service");
 const finding_schema_1 = require("../common/finding.schema");
+const types_1 = require("../common/types");
 const verdict_1 = require("../common/verdict");
 const run_stage1_1 = require("./stage1/run-stage1");
 const to_findings_1 = require("./stage1/to-findings");
@@ -33,7 +34,7 @@ let PipelineService = PipelineService_1 = class PipelineService {
         const hash = this.cache.hashFor(input.code, input.provider, input.focusAreas, input.changedLineRanges);
         const cached = await this.cache.lookup(hash);
         if (cached) {
-            return { result: cached, fromCache: true };
+            return { result: cached, fromCache: true, usage: types_1.ZERO_USAGE };
         }
         const fullStage1 = await (0, run_stage1_1.runStage1)(input.code, input.filename);
         const stage1 = input.changedLineRanges
@@ -41,6 +42,7 @@ let PipelineService = PipelineService_1 = class PipelineService {
             : fullStage1;
         const baseFindings = (0, to_findings_1.stage1ToFindings)(stage1);
         let result;
+        let usage = types_1.ZERO_USAGE;
         if (stage1.clean) {
             result = {
                 verdict: (0, verdict_1.verdictForSeverities)(baseFindings),
@@ -62,14 +64,18 @@ let PipelineService = PipelineService_1 = class PipelineService {
                 repoContext: input.repoContext,
                 focusAreas: input.focusAreas,
             });
-            let aiResult = await this.llm.completeStructured(input.provider, prompt, finding_schema_1.auditResultSchema);
+            const first = await this.llm.completeStructured(input.provider, prompt, finding_schema_1.auditResultSchema);
+            let aiResult = first.result;
+            usage = (0, types_1.addUsage)(usage, first.usage);
             const needsEscalation = this.llm.hasEscalationModel(input.provider) &&
                 aiResult.findings.some((f) => f.confidence < LOW_CONFIDENCE_THRESHOLD && (f.severity === 'critical' || f.severity === 'high'));
             if (needsEscalation) {
                 try {
-                    aiResult = await this.llm.completeStructured(input.provider, prompt, finding_schema_1.auditResultSchema, {
+                    const escalated = await this.llm.completeStructured(input.provider, prompt, finding_schema_1.auditResultSchema, {
                         escalate: true,
                     });
+                    aiResult = escalated.result;
+                    usage = (0, types_1.addUsage)(usage, escalated.usage);
                 }
                 catch (err) {
                     this.logger.warn(`Escalation pass failed, keeping first-pass result: ${err.message}`);
@@ -85,7 +91,7 @@ let PipelineService = PipelineService_1 = class PipelineService {
             };
         }
         await this.cache.store(hash, result);
-        return { result, fromCache: false };
+        return { result, fromCache: false, usage };
     }
 };
 exports.PipelineService = PipelineService;

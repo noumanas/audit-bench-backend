@@ -1,10 +1,10 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.auditResultSchema = exports.findingSchema = void 0;
+exports.FINDING_STATUSES = exports.auditResultSchema = exports.findingSchema = void 0;
 const zod_1 = require("zod");
 exports.findingSchema = zod_1.z.object({
     severity: zod_1.z.enum(['critical', 'high', 'medium', 'low']),
-    category: zod_1.z.enum(['Security', 'Logic', 'Performance', 'Architecture', 'Maintainability']),
+    category: zod_1.z.enum(['Security', 'Logic', 'Performance', 'Architecture', 'Maintainability', 'Testing']),
     title: zod_1.z.string().min(1),
     line: zod_1.z.number().int().nullable().optional().default(null),
     description: zod_1.z.string().min(1),
@@ -18,4 +18,5 @@ exports.auditResultSchema = zod_1.z.object({
     summary: zod_1.z.string().min(1),
     findings: zod_1.z.array(exports.findingSchema).max(15),
 });
+exports.FINDING_STATUSES = ['open', 'in_progress', 'wont_fix'];
 //# sourceMappingURL=finding.schema.js.map

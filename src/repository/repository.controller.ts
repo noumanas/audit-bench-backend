@@ -4,6 +4,8 @@ import {
   Controller,
   Get,
   Param,
+  ParseIntPipe,
+  Patch,
   Post,
   Query,
   UploadedFile,
@@ -16,6 +18,7 @@ import { RepositoryService } from './repository.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { RequestUser } from '../auth/types';
+import { UpdateFindingStatusDto } from '../audit/dto/update-finding-status.dto';
 
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
@@ -51,5 +54,15 @@ export class RepositoryController {
   @Get(':id')
   findOne(@CurrentUser() user: RequestUser, @Param('id') id: string) {
     return this.repositoryService.findOne(user, id);
+  }
+
+  @Patch('scan-files/:scanFileId/findings/:index')
+  setFindingStatus(
+    @CurrentUser() user: RequestUser,
+    @Param('scanFileId') scanFileId: string,
+    @Param('index', ParseIntPipe) index: number,
+    @Body() dto: UpdateFindingStatusDto,
+  ) {
+    return this.repositoryService.setFindingStatus(user, scanFileId, index, dto.status);
   }
 }

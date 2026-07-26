@@ -29,8 +29,10 @@ const dead_code_1 = require("../analysis/dead-code");
 const duplicate_code_1 = require("../analysis/duplicate-code");
 const secrets_scanner_1 = require("../analysis/secrets-scanner");
 const dependency_audit_1 = require("../analysis/dependency-audit");
+const types_1 = require("../common/types");
 const verdict_1 = require("../common/verdict");
 const pr_feedback_service_1 = require("../pr-feedback/pr-feedback.service");
+const finding_schema_1 = require("../common/finding.schema");
 const workspace_scope_1 = require("../common/workspace-scope");
 function selectFilesToAnalyze(files, max) {
     const analyzable = files.filter((f) => {
@@ -152,7 +154,7 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
             let anyFreshAiInvoked = false;
             const results = await Promise.all(files.map((file) => limit(async () => {
                 try {
-                    const { result, fromCache } = await this.pipeline.run({
+                    const { result, fromCache, usage } = await this.pipeline.run({
                         filename: file.path,
                         language: (0, language_1.detectLanguage)(file.path),
                         code: file.content,
@@ -182,7 +184,7 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
                         where: { id: jobId },
                         data: { filesScanned: { increment: 1 } },
                     });
-                    return { path: file.path, result };
+                    return { path: file.path, result, usage };
                 }
                 catch (err) {
                     this.logger.warn(`Skipping ${file.path}: ${err.message}`);
@@ -193,6 +195,7 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
             const succeeded = succeededByFile.map((r) => r.result);
             const totalFindings = succeeded.reduce((sum, r) => sum + r.findings.length, 0);
             const overallVerdict = succeeded.length ? (0, verdict_1.worstVerdict)(succeeded.map((r) => r.verdict)) : 'pass';
+            const totalUsage = succeededByFile.reduce((sum, r) => (0, types_1.addUsage)(sum, r.usage), types_1.ZERO_USAGE);
             const job = await this.prisma.scanJob.findUniqueOrThrow({ where: { id: jobId } });
             const secretsCount = Array.isArray(job.secrets) ? job.secrets.length : 0;
             let crossFileNote = '';
@@ -213,6 +216,8 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
                     filesFromCache,
                     filesAiSkipped,
                     aiInvoked: anyFreshAiInvoked,
+                    inputTokens: totalUsage.inputTokens,
+                    outputTokens: totalUsage.outputTokens,
                     completedAt: new Date(),
                 },
             });
@@ -252,6 +257,30 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
         if (!job || !(0, workspace_scope_1.canViewResource)(actor, job))
             throw new common_1.NotFoundException(`Scan ${id} not found`);
         return job;
+    }
+    async setFindingStatus(actor, scanFileId, findingIndex, status) {
+        if (!finding_schema_1.FINDING_STATUSES.includes(status)) {
+            throw new common_1.BadRequestException(`status must be one of: ${finding_schema_1.FINDING_STATUSES.join(', ')}`);
+        }
+        const file = await this.prisma.scanFile.findUnique({
+            where: { id: scanFileId },
+            include: { scanJob: true },
+        });
+        if (!file || !(0, workspace_scope_1.canViewResource)(actor, file.scanJob))
+            throw new common_1.NotFoundException(`Scan file ${scanFileId} not found`);
+        const findings = file.findings;
+        if (findingIndex < 0 || findingIndex >= findings.length) {
+            throw new common_1.BadRequestException(`No finding at index ${findingIndex}`);
+        }
+        const statuses = { ...(file.findingStatuses ?? {}) };
+        if (status === 'open')
+            delete statuses[findingIndex];
+        else
+            statuses[findingIndex] = status;
+        return this.prisma.scanFile.update({
+            where: { id: scanFileId },
+            data: { findingStatuses: statuses },
+        });
     }
     async findRecent(actor, limit = 20) {
         return this.prisma.scanJob.findMany({

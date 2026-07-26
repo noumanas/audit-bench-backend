@@ -56,7 +56,7 @@ describe('PipelineService — Stage 1 → AI escalation', () => {
     (runStage1Module.runStage1 as jest.Mock).mockResolvedValue(makeStage1({ clean: true }));
     const beforeAiCall = jest.fn();
 
-    const { result, fromCache } = await pipeline.run(
+    const { result, fromCache, usage } = await pipeline.run(
       { filename: 'a.ts', code: 'const x = 1;', provider: 'openai' },
       { beforeAiCall },
     );
@@ -66,14 +66,18 @@ describe('PipelineService — Stage 1 → AI escalation', () => {
     expect(result.aiInvoked).toBe(false);
     expect(fromCache).toBe(false);
     expect(cache.store).toHaveBeenCalledTimes(1);
+    expect(usage).toEqual({ inputTokens: 0, outputTokens: 0 });
   });
 
   it('escalates to a real AI call when Stage 1 flags something risky', async () => {
     (runStage1Module.runStage1 as jest.Mock).mockResolvedValue(makeStage1({ clean: false }));
-    llm.completeStructured.mockResolvedValue({ verdict: 'needs_work', summary: 'found stuff', findings: [] });
+    llm.completeStructured.mockResolvedValue({
+      result: { verdict: 'needs_work', summary: 'found stuff', findings: [] },
+      usage: { inputTokens: 100, outputTokens: 50 },
+    });
     const beforeAiCall = jest.fn().mockResolvedValue(undefined);
 
-    const { result } = await pipeline.run(
+    const { result, usage } = await pipeline.run(
       { filename: 'a.ts', code: 'const x = 1;', provider: 'openai' },
       { beforeAiCall },
     );
@@ -81,6 +85,7 @@ describe('PipelineService — Stage 1 → AI escalation', () => {
     expect(beforeAiCall).toHaveBeenCalledTimes(1);
     expect(llm.completeStructured).toHaveBeenCalledTimes(1);
     expect(result.aiInvoked).toBe(true);
+    expect(usage).toEqual({ inputTokens: 100, outputTokens: 50 });
   });
 
   it('never touches the AI or the quota gate on a cache hit, even when Stage 1 would otherwise flag it', async () => {
@@ -88,7 +93,7 @@ describe('PipelineService — Stage 1 → AI escalation', () => {
     cache.lookup.mockResolvedValue({ verdict: 'pass', summary: 'cached', findings: [], stage1: null, aiInvoked: false });
     const beforeAiCall = jest.fn();
 
-    const { fromCache } = await pipeline.run(
+    const { fromCache, usage } = await pipeline.run(
       { filename: 'a.ts', code: 'const x = 1;', provider: 'openai' },
       { beforeAiCall },
     );
@@ -96,6 +101,7 @@ describe('PipelineService — Stage 1 → AI escalation', () => {
     expect(fromCache).toBe(true);
     expect(llm.completeStructured).not.toHaveBeenCalled();
     expect(beforeAiCall).not.toHaveBeenCalled();
+    expect(usage).toEqual({ inputTokens: 0, outputTokens: 0 });
   });
 
   it('propagates a quota rejection from beforeAiCall instead of spending on the LLM call', async () => {

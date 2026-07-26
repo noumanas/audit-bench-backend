@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { LlmService } from '../llm/llm.service';
 import { AuditCacheService, CachedAuditResult } from './cache.service';
 import { auditResultSchema } from '../common/finding.schema';
-import { AuditResult, LlmProviderName } from '../common/types';
+import { AuditResult, LlmProviderName, TokenUsage, ZERO_USAGE, addUsage } from '../common/types';
 import { verdictForSeverities, worstVerdict } from '../common/verdict';
 import { LineRange } from '../common/diff-ranges';
 import { runStage1 } from './stage1/run-stage1';
@@ -34,6 +34,8 @@ export interface PipelineOptions {
 export interface PipelineOutput {
   result: CachedAuditResult;
   fromCache: boolean;
+  /** Tokens actually spent on THIS call — zero for a cache hit or a Stage-1-only ("clean") result. */
+  usage: TokenUsage;
 }
 
 const LOW_CONFIDENCE_THRESHOLD = 0.6;
@@ -51,7 +53,7 @@ export class PipelineService {
     const hash = this.cache.hashFor(input.code, input.provider, input.focusAreas, input.changedLineRanges);
     const cached = await this.cache.lookup(hash);
     if (cached) {
-      return { result: cached, fromCache: true };
+      return { result: cached, fromCache: true, usage: ZERO_USAGE };
     }
 
     const fullStage1 = await runStage1(input.code, input.filename);
@@ -61,6 +63,7 @@ export class PipelineService {
     const baseFindings = stage1ToFindings(stage1);
 
     let result: CachedAuditResult;
+    let usage: TokenUsage = ZERO_USAGE;
 
     if (stage1.clean) {
       result = {
@@ -85,7 +88,9 @@ export class PipelineService {
         focusAreas: input.focusAreas,
       });
 
-      let aiResult = await this.llm.completeStructured<AuditResult>(input.provider, prompt, auditResultSchema);
+      const first = await this.llm.completeStructured<AuditResult>(input.provider, prompt, auditResultSchema);
+      let aiResult = first.result;
+      usage = addUsage(usage, first.usage);
 
       const needsEscalation =
         this.llm.hasEscalationModel(input.provider) &&
@@ -95,9 +100,11 @@ export class PipelineService {
 
       if (needsEscalation) {
         try {
-          aiResult = await this.llm.completeStructured<AuditResult>(input.provider, prompt, auditResultSchema, {
+          const escalated = await this.llm.completeStructured<AuditResult>(input.provider, prompt, auditResultSchema, {
             escalate: true,
           });
+          aiResult = escalated.result;
+          usage = addUsage(usage, escalated.usage);
         } catch (err) {
           this.logger.warn(`Escalation pass failed, keeping first-pass result: ${(err as Error).message}`);
         }
@@ -114,6 +121,6 @@ export class PipelineService {
     }
 
     await this.cache.store(hash, result);
-    return { result, fromCache: false };
+    return { result, fromCache: false, usage };
   }
 }

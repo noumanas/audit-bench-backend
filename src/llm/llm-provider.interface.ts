@@ -1,3 +1,5 @@
+import { TokenUsage } from '../common/types';
+
 export interface CompleteOptions {
   /**
    * Use the provider's configured escalation model instead of its default
@@ -7,7 +9,12 @@ export interface CompleteOptions {
   escalate?: boolean;
 }
 
+export interface CompleteResult {
+  text: string;
+  usage: TokenUsage;
+}
+
 export interface LlmProvider {
   readonly name: string;
-  complete(prompt: string, opts?: CompleteOptions): Promise<string>;
+  complete(prompt: string, opts?: CompleteOptions): Promise<CompleteResult>;
 }

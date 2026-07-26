@@ -7,7 +7,8 @@ export type FindingCategory =
   | 'Logic'
   | 'Performance'
   | 'Architecture'
-  | 'Maintainability';
+  | 'Maintainability'
+  | 'Testing';
 
 export interface Finding {
   severity: Severity;
@@ -28,3 +29,14 @@ export interface AuditResult {
 }
 
 export type LlmProviderName = 'anthropic' | 'openai' | 'gemini';
+
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+}
+
+export const ZERO_USAGE: TokenUsage = { inputTokens: 0, outputTokens: 0 };
+
+export function addUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
+  return { inputTokens: a.inputTokens + b.inputTokens, outputTokens: a.outputTokens + b.outputTokens };
+}

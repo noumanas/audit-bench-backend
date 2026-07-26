@@ -44,10 +44,17 @@ let AnthropicProvider = class AnthropicProvider {
             throw new Error(`Anthropic API error (${response.status}): ${text}`);
         }
         const data = await response.json();
-        return (data.content || [])
+        const text = (data.content || [])
             .map((block) => (block.type === 'text' ? block.text : ''))
             .filter(Boolean)
             .join('\n');
+        return {
+            text,
+            usage: {
+                inputTokens: data.usage?.input_tokens ?? 0,
+                outputTokens: data.usage?.output_tokens ?? 0,
+            },
+        };
     }
 };
 exports.AnthropicProvider = AnthropicProvider;

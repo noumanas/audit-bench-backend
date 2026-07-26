@@ -1,5 +1,6 @@
 import { AuditService } from './audit.service';
 import { CreateAuditDto } from './dto/create-audit.dto';
+import { UpdateFindingStatusDto } from './dto/update-finding-status.dto';
 import { RequestUser } from '../auth/types';
 export declare class AuditController {
     private readonly auditService;
@@ -18,6 +19,9 @@ export declare class AuditController {
         stage1: import("@prisma/client/runtime/library").JsonValue | null;
         filename: string;
         language: string | null;
+        findingStatuses: import("@prisma/client/runtime/library").JsonValue | null;
+        inputTokens: number;
+        outputTokens: number;
         codeSize: number;
     }>;
     findRecent(user: RequestUser, limit?: string): Promise<{
@@ -34,6 +38,9 @@ export declare class AuditController {
         stage1: import("@prisma/client/runtime/library").JsonValue | null;
         filename: string;
         language: string | null;
+        findingStatuses: import("@prisma/client/runtime/library").JsonValue | null;
+        inputTokens: number;
+        outputTokens: number;
         codeSize: number;
     }[]>;
     findOne(user: RequestUser, id: string): Promise<{
@@ -50,6 +57,28 @@ export declare class AuditController {
         stage1: import("@prisma/client/runtime/library").JsonValue | null;
         filename: string;
         language: string | null;
+        findingStatuses: import("@prisma/client/runtime/library").JsonValue | null;
+        inputTokens: number;
+        outputTokens: number;
+        codeSize: number;
+    }>;
+    setFindingStatus(user: RequestUser, id: string, index: number, dto: UpdateFindingStatusDto): Promise<{
+        id: string;
+        createdAt: Date;
+        organizationId: string | null;
+        userId: string;
+        provider: string;
+        aiInvoked: boolean;
+        fromCache: boolean;
+        verdict: import(".prisma/client").$Enums.Verdict;
+        summary: string;
+        findings: import("@prisma/client/runtime/library").JsonValue;
+        stage1: import("@prisma/client/runtime/library").JsonValue | null;
+        filename: string;
+        language: string | null;
+        findingStatuses: import("@prisma/client/runtime/library").JsonValue | null;
+        inputTokens: number;
+        outputTokens: number;
         codeSize: number;
     }>;
 }

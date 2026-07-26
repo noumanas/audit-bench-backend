@@ -16,6 +16,7 @@ exports.AuditController = void 0;
 const common_1 = require("@nestjs/common");
 const audit_service_1 = require("./audit.service");
 const create_audit_dto_1 = require("./dto/create-audit.dto");
+const update_finding_status_dto_1 = require("./dto/update-finding-status.dto");
 const jwt_auth_guard_1 = require("../auth/jwt-auth.guard");
 const current_user_decorator_1 = require("../auth/current-user.decorator");
 let AuditController = class AuditController {
@@ -31,6 +32,9 @@ let AuditController = class AuditController {
     }
     findOne(user, id) {
         return this.auditService.findOne(user, id);
+    }
+    setFindingStatus(user, id, index, dto) {
+        return this.auditService.setFindingStatus(user, id, index, dto.status);
     }
 };
 exports.AuditController = AuditController;
@@ -58,6 +62,16 @@ __decorate([
     __metadata("design:paramtypes", [Object, String]),
     __metadata("design:returntype", void 0)
 ], AuditController.prototype, "findOne", null);
+__decorate([
+    (0, common_1.Patch)(':id/findings/:index'),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Param)('id')),
+    __param(2, (0, common_1.Param)('index', common_1.ParseIntPipe)),
+    __param(3, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String, Number, update_finding_status_dto_1.UpdateFindingStatusDto]),
+    __metadata("design:returntype", void 0)
+], AuditController.prototype, "setFindingStatus", null);
 exports.AuditController = AuditController = __decorate([
     (0, common_1.Controller)('audit'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),

@@ -1,6 +1,6 @@
 import { LlmService } from '../llm/llm.service';
 import { AuditCacheService, CachedAuditResult } from './cache.service';
-import { LlmProviderName } from '../common/types';
+import { LlmProviderName, TokenUsage } from '../common/types';
 import { LineRange } from '../common/diff-ranges';
 export interface PipelineInput {
     filename: string;
@@ -17,6 +17,7 @@ export interface PipelineOptions {
 export interface PipelineOutput {
     result: CachedAuditResult;
     fromCache: boolean;
+    usage: TokenUsage;
 }
 export declare class PipelineService {
     private readonly llm;

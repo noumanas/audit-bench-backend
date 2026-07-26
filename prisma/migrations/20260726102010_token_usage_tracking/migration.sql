@@ -1,0 +1,7 @@
+-- AlterTable
+ALTER TABLE "Audit" ADD COLUMN     "inputTokens" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN     "outputTokens" INTEGER NOT NULL DEFAULT 0;
+
+-- AlterTable
+ALTER TABLE "ScanJob" ADD COLUMN     "inputTokens" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN     "outputTokens" INTEGER NOT NULL DEFAULT 0;

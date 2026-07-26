@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { LlmService } from '../llm/llm.service';
 import { QuotaService } from '../quota/quota.service';
@@ -7,6 +7,7 @@ import { detectLanguage } from '../common/language';
 import { CreateAuditDto } from './dto/create-audit.dto';
 import { Prisma } from '@prisma/client';
 import { WorkspaceActor, workspaceWhere, canViewResource } from '../common/workspace-scope';
+import { FindingStatus, FindingStatuses, FINDING_STATUSES } from '../common/finding.schema';
 
 @Injectable()
 export class AuditService {
@@ -25,7 +26,7 @@ export class AuditService {
     // Stage 1 (local, free) always runs; the LLM is only ever called if
     // Stage 1 flags something — and quota is only ever checked right
     // before that call, not for every request.
-    const { result, fromCache } = await this.pipeline.run(
+    const { result, fromCache, usage } = await this.pipeline.run(
       { filename, language, code: dto.code, provider: providerName, focusAreas: dto.focusAreas },
       { beforeAiCall: () => this.quota.assertCanRunAudit(actor.id) },
     );
@@ -44,6 +45,8 @@ export class AuditService {
       stage1: result.stage1 as unknown as Prisma.InputJsonValue,
       aiInvoked: result.aiInvoked,
       fromCache,
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
       codeSize: dto.code.length,
     };
 
@@ -73,6 +76,28 @@ export class AuditService {
       where: workspaceWhere(actor),
       orderBy: { createdAt: 'desc' },
       take: limit,
+    });
+  }
+
+  async setFindingStatus(actor: WorkspaceActor, auditId: string, findingIndex: number, status: FindingStatus) {
+    if (!FINDING_STATUSES.includes(status)) {
+      throw new BadRequestException(`status must be one of: ${FINDING_STATUSES.join(', ')}`);
+    }
+    const audit = await this.prisma.audit.findUnique({ where: { id: auditId } });
+    if (!audit || !canViewResource(actor, audit)) throw new NotFoundException(`Audit ${auditId} not found`);
+
+    const findings = audit.findings as unknown as unknown[];
+    if (findingIndex < 0 || findingIndex >= findings.length) {
+      throw new BadRequestException(`No finding at index ${findingIndex}`);
+    }
+
+    const statuses = { ...((audit.findingStatuses as FindingStatuses | null) ?? {}) };
+    if (status === 'open') delete statuses[findingIndex];
+    else statuses[findingIndex] = status;
+
+    return this.prisma.audit.update({
+      where: { id: auditId },
+      data: { findingStatuses: statuses as unknown as Prisma.InputJsonValue },
     });
   }
 }

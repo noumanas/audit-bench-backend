@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import pLimit = require('p-limit');
 import { PrismaService } from '../prisma/prisma.service';
@@ -17,11 +17,12 @@ import { findDuplicates } from '../analysis/duplicate-code';
 import { scanSecrets } from '../analysis/secrets-scanner';
 import { auditDependencies } from '../analysis/dependency-audit';
 import { ScannedFile } from '../analysis/types';
-import { LlmProviderName } from '../common/types';
+import { LlmProviderName, ZERO_USAGE, addUsage } from '../common/types';
 import { worstVerdict } from '../common/verdict';
 import { Prisma, ScanSourceType } from '@prisma/client';
 import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
 import { PrContext, PrFeedback } from '../pr-feedback/pr-feedback.types';
+import { FindingStatus, FindingStatuses, FINDING_STATUSES } from '../common/finding.schema';
 import { RepoRef } from '../common/repo-ref.types';
 import { WorkspaceActor, workspaceWhere, canViewResource } from '../common/workspace-scope';
 
@@ -222,7 +223,7 @@ export class RepositoryService {
         files.map((file) =>
           limit(async () => {
             try {
-              const { result, fromCache } = await this.pipeline.run({
+              const { result, fromCache, usage } = await this.pipeline.run({
                 filename: file.path,
                 language: detectLanguage(file.path),
                 code: file.content,
@@ -251,7 +252,7 @@ export class RepositoryService {
                 where: { id: jobId },
                 data: { filesScanned: { increment: 1 } },
               });
-              return { path: file.path, result };
+              return { path: file.path, result, usage };
             } catch (err) {
               this.logger.warn(`Skipping ${file.path}: ${(err as Error).message}`);
               return null;
@@ -264,6 +265,7 @@ export class RepositoryService {
       const succeeded = succeededByFile.map((r) => r.result);
       const totalFindings = succeeded.reduce((sum, r) => sum + r.findings.length, 0);
       const overallVerdict = succeeded.length ? worstVerdict(succeeded.map((r) => r.verdict)) : 'pass';
+      const totalUsage = succeededByFile.reduce((sum, r) => addUsage(sum, r.usage), ZERO_USAGE);
 
       const job = await this.prisma.scanJob.findUniqueOrThrow({ where: { id: jobId } });
       const secretsCount = Array.isArray(job.secrets) ? job.secrets.length : 0;
@@ -288,6 +290,8 @@ export class RepositoryService {
           filesFromCache,
           filesAiSkipped,
           aiInvoked: anyFreshAiInvoked,
+          inputTokens: totalUsage.inputTokens,
+          outputTokens: totalUsage.outputTokens,
           completedAt: new Date(),
         },
       });
@@ -330,6 +334,31 @@ export class RepositoryService {
     });
     if (!job || !canViewResource(actor, job)) throw new NotFoundException(`Scan ${id} not found`);
     return job;
+  }
+
+  async setFindingStatus(actor: WorkspaceActor, scanFileId: string, findingIndex: number, status: FindingStatus) {
+    if (!FINDING_STATUSES.includes(status)) {
+      throw new BadRequestException(`status must be one of: ${FINDING_STATUSES.join(', ')}`);
+    }
+    const file = await this.prisma.scanFile.findUnique({
+      where: { id: scanFileId },
+      include: { scanJob: true },
+    });
+    if (!file || !canViewResource(actor, file.scanJob)) throw new NotFoundException(`Scan file ${scanFileId} not found`);
+
+    const findings = file.findings as unknown as unknown[];
+    if (findingIndex < 0 || findingIndex >= findings.length) {
+      throw new BadRequestException(`No finding at index ${findingIndex}`);
+    }
+
+    const statuses = { ...((file.findingStatuses as FindingStatuses | null) ?? {}) };
+    if (status === 'open') delete statuses[findingIndex];
+    else statuses[findingIndex] = status;
+
+    return this.prisma.scanFile.update({
+      where: { id: scanFileId },
+      data: { findingStatuses: statuses as unknown as Prisma.InputJsonValue },
+    });
   }
 
   async findRecent(actor: WorkspaceActor, limit = 20) {

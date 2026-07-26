@@ -1,10 +1,10 @@
 import { z } from 'zod';
 export declare const findingSchema: z.ZodObject<{
     severity: z.ZodEnum<{
-        low: "low";
         critical: "critical";
         high: "high";
         medium: "medium";
+        low: "low";
     }>;
     category: z.ZodEnum<{
         Security: "Security";
@@ -12,6 +12,7 @@ export declare const findingSchema: z.ZodObject<{
         Performance: "Performance";
         Architecture: "Architecture";
         Maintainability: "Maintainability";
+        Testing: "Testing";
     }>;
     title: z.ZodString;
     line: z.ZodDefault<z.ZodOptional<z.ZodNullable<z.ZodNumber>>>;
@@ -30,10 +31,10 @@ export declare const auditResultSchema: z.ZodObject<{
     summary: z.ZodString;
     findings: z.ZodArray<z.ZodObject<{
         severity: z.ZodEnum<{
-            low: "low";
             critical: "critical";
             high: "high";
             medium: "medium";
+            low: "low";
         }>;
         category: z.ZodEnum<{
             Security: "Security";
@@ -41,6 +42,7 @@ export declare const auditResultSchema: z.ZodObject<{
             Performance: "Performance";
             Architecture: "Architecture";
             Maintainability: "Maintainability";
+            Testing: "Testing";
         }>;
         title: z.ZodString;
         line: z.ZodDefault<z.ZodOptional<z.ZodNullable<z.ZodNumber>>>;
@@ -52,3 +54,6 @@ export declare const auditResultSchema: z.ZodObject<{
     }, z.core.$strip>>;
 }, z.core.$strip>;
 export type Finding = z.infer<typeof findingSchema>;
+export declare const FINDING_STATUSES: readonly ["open", "in_progress", "wont_fix"];
+export type FindingStatus = (typeof FINDING_STATUSES)[number];
+export type FindingStatuses = Record<number, FindingStatus>;

@@ -42,7 +42,13 @@ let OpenAiProvider = class OpenAiProvider {
         if (choice?.finish_reason === 'length') {
             throw new Error('OpenAI response was truncated before completing (hit the output token limit) — the model spent its budget on internal reasoning for this prompt');
         }
-        return choice?.message?.content ?? '';
+        return {
+            text: choice?.message?.content ?? '',
+            usage: {
+                inputTokens: data.usage?.prompt_tokens ?? 0,
+                outputTokens: data.usage?.completion_tokens ?? 0,
+            },
+        };
     }
     request(apiKey, model, prompt, withReasoningEffort) {
         return fetch('https://api.openai.com/v1/chat/completions', {

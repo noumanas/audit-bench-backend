@@ -17,6 +17,7 @@ const quota_service_1 = require("../quota/quota.service");
 const pipeline_service_1 = require("./pipeline.service");
 const language_1 = require("../common/language");
 const workspace_scope_1 = require("../common/workspace-scope");
+const finding_schema_1 = require("../common/finding.schema");
 let AuditService = class AuditService {
     prisma;
     llm;
@@ -32,7 +33,7 @@ let AuditService = class AuditService {
         const filename = dto.filename?.trim() || 'untitled';
         const language = (0, language_1.detectLanguage)(filename);
         const providerName = this.llm.resolveProvider(dto.provider);
-        const { result, fromCache } = await this.pipeline.run({ filename, language, code: dto.code, provider: providerName, focusAreas: dto.focusAreas }, { beforeAiCall: () => this.quota.assertCanRunAudit(actor.id) });
+        const { result, fromCache, usage } = await this.pipeline.run({ filename, language, code: dto.code, provider: providerName, focusAreas: dto.focusAreas }, { beforeAiCall: () => this.quota.assertCanRunAudit(actor.id) });
         const data = {
             userId: actor.id,
             organizationId: actor.organizationId,
@@ -45,6 +46,8 @@ let AuditService = class AuditService {
             stage1: result.stage1,
             aiInvoked: result.aiInvoked,
             fromCache,
+            inputTokens: usage.inputTokens,
+            outputTokens: usage.outputTokens,
             codeSize: dto.code.length,
         };
         const consumesQuota = !fromCache && result.aiInvoked;
@@ -64,6 +67,27 @@ let AuditService = class AuditService {
             where: (0, workspace_scope_1.workspaceWhere)(actor),
             orderBy: { createdAt: 'desc' },
             take: limit,
+        });
+    }
+    async setFindingStatus(actor, auditId, findingIndex, status) {
+        if (!finding_schema_1.FINDING_STATUSES.includes(status)) {
+            throw new common_1.BadRequestException(`status must be one of: ${finding_schema_1.FINDING_STATUSES.join(', ')}`);
+        }
+        const audit = await this.prisma.audit.findUnique({ where: { id: auditId } });
+        if (!audit || !(0, workspace_scope_1.canViewResource)(actor, audit))
+            throw new common_1.NotFoundException(`Audit ${auditId} not found`);
+        const findings = audit.findings;
+        if (findingIndex < 0 || findingIndex >= findings.length) {
+            throw new common_1.BadRequestException(`No finding at index ${findingIndex}`);
+        }
+        const statuses = { ...(audit.findingStatuses ?? {}) };
+        if (status === 'open')
+            delete statuses[findingIndex];
+        else
+            statuses[findingIndex] = status;
+        return this.prisma.audit.update({
+            where: { id: auditId },
+            data: { findingStatuses: statuses },
         });
     }
 };

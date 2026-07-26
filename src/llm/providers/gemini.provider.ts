@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { CompleteOptions, LlmProvider } from '../llm-provider.interface';
+import { CompleteOptions, CompleteResult, LlmProvider } from '../llm-provider.interface';
 
 const MAX_OUTPUT_TOKENS = 2000;
 
@@ -10,7 +10,7 @@ export class GeminiProvider implements LlmProvider {
 
   constructor(private readonly config: ConfigService) {}
 
-  async complete(prompt: string, opts?: CompleteOptions): Promise<string> {
+  async complete(prompt: string, opts?: CompleteOptions): Promise<CompleteResult> {
     const apiKey = this.config.get<string>('GEMINI_API_KEY');
     if (!apiKey) {
       throw new Error('GEMINI_API_KEY is not configured on the server');
@@ -41,10 +41,15 @@ export class GeminiProvider implements LlmProvider {
     }
 
     const data = await response.json();
-    return (
-      data.candidates?.[0]?.content?.parts
-        ?.map((p: { text?: string }) => p.text ?? '')
-        .join('\n') ?? ''
-    );
+    const text =
+      data.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? '').join('\n') ?? '';
+
+    return {
+      text,
+      usage: {
+        inputTokens: data.usageMetadata?.promptTokenCount ?? 0,
+        outputTokens: data.usageMetadata?.candidatesTokenCount ?? 0,
+      },
+    };
   }
 }

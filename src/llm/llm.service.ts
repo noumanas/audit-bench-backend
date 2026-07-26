@@ -5,7 +5,12 @@ import { LlmProvider } from './llm-provider.interface';
 import { AnthropicProvider } from './providers/anthropic.provider';
 import { OpenAiProvider } from './providers/openai.provider';
 import { GeminiProvider } from './providers/gemini.provider';
-import { LlmProviderName } from '../common/types';
+import { LlmProviderName, TokenUsage } from '../common/types';
+
+export interface StructuredResult<T> {
+  result: T;
+  usage: TokenUsage;
+}
 
 function extractJson(raw: string): string {
   const withoutFences = raw.replace(/```json|```/gi, '').trim();
@@ -41,7 +46,8 @@ export class LlmService {
 
   /** Plain-text completion — for the conversational PR/MR chat reply, which isn't structured output. */
   async completeText(providerName: LlmProviderName, prompt: string): Promise<string> {
-    return this.providers[providerName].complete(prompt);
+    const { text } = await this.providers[providerName].complete(prompt);
+    return text;
   }
 
   /**
@@ -54,13 +60,13 @@ export class LlmService {
     prompt: string,
     schema: z.ZodType<T>,
     opts?: { escalate?: boolean },
-  ): Promise<T> {
+  ): Promise<StructuredResult<T>> {
     const provider = this.providers[providerName];
 
     const attempt = async (p: string) => {
-      const raw = await provider.complete(p, opts);
-      const json = JSON.parse(extractJson(raw));
-      return schema.parse(json);
+      const { text, usage } = await provider.complete(p, opts);
+      const json = JSON.parse(extractJson(text));
+      return { result: schema.parse(json), usage };
     };
 
     try {

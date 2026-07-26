@@ -30,6 +30,8 @@ export declare class GitlabController {
         aiInvoked: boolean;
         verdict: import(".prisma/client").$Enums.Verdict | null;
         summary: string | null;
+        inputTokens: number;
+        outputTokens: number;
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
         pullRequestUrl: string | null;
@@ -60,6 +62,8 @@ export declare class GitlabController {
         aiInvoked: boolean;
         verdict: import(".prisma/client").$Enums.Verdict | null;
         summary: string | null;
+        inputTokens: number;
+        outputTokens: number;
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
         pullRequestUrl: string | null;

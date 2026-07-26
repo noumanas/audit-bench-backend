@@ -40,14 +40,15 @@ let LlmService = class LlmService {
         return Boolean(this.config.get(`${providerName.toUpperCase()}_ESCALATION_MODEL`));
     }
     async completeText(providerName, prompt) {
-        return this.providers[providerName].complete(prompt);
+        const { text } = await this.providers[providerName].complete(prompt);
+        return text;
     }
     async completeStructured(providerName, prompt, schema, opts) {
         const provider = this.providers[providerName];
         const attempt = async (p) => {
-            const raw = await provider.complete(p, opts);
-            const json = JSON.parse(extractJson(raw));
-            return schema.parse(json);
+            const { text, usage } = await provider.complete(p, opts);
+            const json = JSON.parse(extractJson(text));
+            return { result: schema.parse(json), usage };
         };
         try {
             return await attempt(prompt);

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { CompleteOptions, LlmProvider } from '../llm-provider.interface';
+import { CompleteOptions, CompleteResult, LlmProvider } from '../llm-provider.interface';
 
 // Reasoning-capable models (o-series, gpt-5 family) spend part of this
 // budget on hidden reasoning tokens before writing visible output — how
@@ -15,7 +15,7 @@ export class OpenAiProvider implements LlmProvider {
 
   constructor(private readonly config: ConfigService) {}
 
-  async complete(prompt: string, opts?: CompleteOptions): Promise<string> {
+  async complete(prompt: string, opts?: CompleteOptions): Promise<CompleteResult> {
     const apiKey = this.config.get<string>('OPENAI_API_KEY');
     if (!apiKey) {
       throw new Error('OPENAI_API_KEY is not configured on the server');
@@ -47,7 +47,13 @@ export class OpenAiProvider implements LlmProvider {
       );
     }
 
-    return choice?.message?.content ?? '';
+    return {
+      text: choice?.message?.content ?? '',
+      usage: {
+        inputTokens: data.usage?.prompt_tokens ?? 0,
+        outputTokens: data.usage?.completion_tokens ?? 0,
+      },
+    };
   }
 
   private request(apiKey: string, model: string, prompt: string, withReasoningEffort: boolean) {

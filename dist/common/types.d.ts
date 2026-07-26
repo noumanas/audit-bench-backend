@@ -1,6 +1,6 @@
 export type Severity = 'critical' | 'high' | 'medium' | 'low';
 export type Verdict = 'pass' | 'needs_work' | 'do_not_ship';
-export type FindingCategory = 'Security' | 'Logic' | 'Performance' | 'Architecture' | 'Maintainability';
+export type FindingCategory = 'Security' | 'Logic' | 'Performance' | 'Architecture' | 'Maintainability' | 'Testing';
 export interface Finding {
     severity: Severity;
     category: FindingCategory;
@@ -18,3 +18,9 @@ export interface AuditResult {
     findings: Finding[];
 }
 export type LlmProviderName = 'anthropic' | 'openai' | 'gemini';
+export interface TokenUsage {
+    inputTokens: number;
+    outputTokens: number;
+}
+export declare const ZERO_USAGE: TokenUsage;
+export declare function addUsage(a: TokenUsage, b: TokenUsage): TokenUsage;

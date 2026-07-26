@@ -19,6 +19,7 @@ const multer_1 = require("multer");
 const repository_service_1 = require("./repository.service");
 const jwt_auth_guard_1 = require("../auth/jwt-auth.guard");
 const current_user_decorator_1 = require("../auth/current-user.decorator");
+const update_finding_status_dto_1 = require("../audit/dto/update-finding-status.dto");
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 let RepositoryController = class RepositoryController {
     repositoryService;
@@ -38,6 +39,9 @@ let RepositoryController = class RepositoryController {
     }
     findOne(user, id) {
         return this.repositoryService.findOne(user, id);
+    }
+    setFindingStatus(user, scanFileId, index, dto) {
+        return this.repositoryService.setFindingStatus(user, scanFileId, index, dto.status);
     }
 };
 exports.RepositoryController = RepositoryController;
@@ -70,6 +74,16 @@ __decorate([
     __metadata("design:paramtypes", [Object, String]),
     __metadata("design:returntype", void 0)
 ], RepositoryController.prototype, "findOne", null);
+__decorate([
+    (0, common_1.Patch)('scan-files/:scanFileId/findings/:index'),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Param)('scanFileId')),
+    __param(2, (0, common_1.Param)('index', common_1.ParseIntPipe)),
+    __param(3, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String, Number, update_finding_status_dto_1.UpdateFindingStatusDto]),
+    __metadata("design:returntype", void 0)
+], RepositoryController.prototype, "setFindingStatus", null);
 exports.RepositoryController = RepositoryController = __decorate([
     (0, common_1.Controller)('repository'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),

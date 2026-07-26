@@ -7,7 +7,7 @@ const RESPONSE_SHAPE = `{
   "findings": [
     {
       "severity": "critical" | "high" | "medium" | "low",
-      "category": "Security" | "Logic" | "Performance" | "Architecture" | "Maintainability",
+      "category": "Security" | "Logic" | "Performance" | "Architecture" | "Maintainability" | "Testing",
       "title": "a short, plain-language summary of the actual problem — no unexplained jargon or acronyms (avoid things like 'SSRF', 'prototype pollution', 'anti-pattern', 'race condition'); say what happens in everyday words, e.g. 'The server can be tricked into fetching internal URLs' instead of 'SSRF vulnerability'",
       "line": <the real file line number given for that function's snippet, offset by where the issue occurs — or null>,
       "description": "what is wrong and why it matters, written so a junior developer or non-technical reader can follow it — if you use a technical term, explain what it means in the same sentence",
@@ -25,7 +25,7 @@ function signatureOf(fn) {
 function buildFocusedPrompt(opts) {
     const focus = opts.focusAreas && opts.focusAreas.length > 0
         ? opts.focusAreas.join('; ')
-        : 'security (SQLi, XSS, CSRF, SSRF, auth/JWT, secrets), logic bugs, performance, architecture, maintainability';
+        : 'security (SQLi, XSS, CSRF, SSRF, auth/JWT, secrets), logic bugs, performance, architecture, maintainability, test coverage';
     const byName = new Map(opts.allFunctions.map((f) => [f.name, f]));
     const sections = opts.riskyFunctions.map(({ fn, reasons }) => {
         const dependencySignatures = fn.callsInFile
@@ -52,6 +52,8 @@ Return ONLY a JSON object, no markdown fences, no preamble, with this exact shap
 ${RESPONSE_SHAPE}
 
 Only report real, specific issues in the functions shown — don't invent problems, and don't comment on code you weren't shown. If none of the flagged functions actually have a real issue on closer inspection, return an empty findings array with verdict "pass".
+
+For "Testing" findings: you are not shown this file's test suite, so never assert that a test doesn't exist. Instead, flag specific untested-looking risk — a money/auth-critical branch, an edge case (empty input, concurrent calls, a boundary value) that this function's own logic suggests could break it — and phrase it as a recommendation to verify or add coverage, not a claim about what's missing.
 
 Write every finding in plain, simple language — this is read by developers at every experience level, not just security specialists. Avoid unexplained acronyms and jargon (SSRF, CSRF, XSS, prototype pollution, anti-pattern, race condition, etc.); describe what actually happens and why it's a problem in everyday words instead of just naming the category of bug. Stay technically precise — just say it plainly.`;
 }

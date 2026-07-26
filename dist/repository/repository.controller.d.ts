@@ -1,5 +1,6 @@
 import { RepositoryService } from './repository.service';
 import { RequestUser } from '../auth/types';
+import { UpdateFindingStatusDto } from '../audit/dto/update-finding-status.dto';
 export declare class RepositoryController {
     private readonly repositoryService;
     constructor(repositoryService: RepositoryService);
@@ -14,6 +15,8 @@ export declare class RepositoryController {
         aiInvoked: boolean;
         verdict: import(".prisma/client").$Enums.Verdict | null;
         summary: string | null;
+        inputTokens: number;
+        outputTokens: number;
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
         pullRequestUrl: string | null;
@@ -44,6 +47,8 @@ export declare class RepositoryController {
         aiInvoked: boolean;
         verdict: import(".prisma/client").$Enums.Verdict | null;
         summary: string | null;
+        inputTokens: number;
+        outputTokens: number;
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
         pullRequestUrl: string | null;
@@ -74,6 +79,7 @@ export declare class RepositoryController {
             stage1: import("@prisma/client/runtime/library").JsonValue | null;
             path: string;
             language: string | null;
+            findingStatuses: import("@prisma/client/runtime/library").JsonValue | null;
             scanJobId: string;
         }[];
     } & {
@@ -87,6 +93,8 @@ export declare class RepositoryController {
         aiInvoked: boolean;
         verdict: import(".prisma/client").$Enums.Verdict | null;
         summary: string | null;
+        inputTokens: number;
+        outputTokens: number;
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
         pullRequestUrl: string | null;
@@ -105,5 +113,18 @@ export declare class RepositoryController {
         filesAiSkipped: number;
         updatedAt: Date;
         completedAt: Date | null;
+    }>;
+    setFindingStatus(user: RequestUser, scanFileId: string, index: number, dto: UpdateFindingStatusDto): Promise<{
+        id: string;
+        createdAt: Date;
+        aiInvoked: boolean;
+        fromCache: boolean;
+        verdict: import(".prisma/client").$Enums.Verdict | null;
+        findings: import("@prisma/client/runtime/library").JsonValue;
+        stage1: import("@prisma/client/runtime/library").JsonValue | null;
+        path: string;
+        language: string | null;
+        findingStatuses: import("@prisma/client/runtime/library").JsonValue | null;
+        scanJobId: string;
     }>;
 }
