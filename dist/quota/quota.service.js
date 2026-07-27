@@ -13,6 +13,7 @@ exports.QuotaService = void 0;
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 const prisma_service_1 = require("../prisma/prisma.service");
+const repo_key_1 = require("../common/repo-key");
 function startOfDay(d = new Date()) {
     return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
@@ -94,9 +95,23 @@ let QuotaService = class QuotaService {
             throw new common_1.ForbiddenException(`Repository scanning isn't included in the ${plan.name} plan. Upgrade to Pro or higher.`);
         }
     }
-    async assertCanScanRepository(userId, db = this.prisma) {
-        await this.assertPlanAllowsRepositoryScan(userId, db);
-        await this.assertCanRunAudit(userId, db);
+    async assertCanScanNewRepository(userId, repoKey, db = this.prisma) {
+        const user = await this.loadUserWithPlan(db, userId);
+        const plan = this.effectivePlan(user);
+        if (!plan.repositoryScan) {
+            throw new common_1.ForbiddenException(`Repository scanning isn't included in the ${plan.name} plan. Upgrade to Pro or higher.`);
+        }
+        if (plan.maxRepositories != null) {
+            const scopeWhere = user.organizationId ? { organizationId: user.organizationId } : { userId };
+            const priorScans = await db.scanJob.findMany({
+                where: scopeWhere,
+                select: { sourceName: true, repoRef: true, prContext: true },
+            });
+            const seenKeys = new Set(priorScans.map((s) => (0, repo_key_1.deriveRepoKey)(s)));
+            if (!seenKeys.has(repoKey) && seenKeys.size >= plan.maxRepositories) {
+                throw new common_1.ForbiddenException(`The ${plan.name} plan can scan ${plan.maxRepositories} repositor${plan.maxRepositories === 1 ? 'y' : 'ies'}. Upgrade to Pro to scan more.`);
+            }
+        }
     }
     async withQuotaCheck(checker, create, attempt = 0) {
         try {

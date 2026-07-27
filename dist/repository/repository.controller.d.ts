@@ -13,10 +13,6 @@ export declare class RepositoryController {
         provider: string;
         status: import(".prisma/client").$Enums.ScanStatus;
         aiInvoked: boolean;
-        verdict: import(".prisma/client").$Enums.Verdict | null;
-        summary: string | null;
-        inputTokens: number;
-        outputTokens: number;
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
         pullRequestUrl: string | null;
@@ -25,6 +21,8 @@ export declare class RepositoryController {
         framework: string | null;
         fileCount: number;
         filesScanned: number;
+        verdict: import(".prisma/client").$Enums.Verdict | null;
+        summary: string | null;
         dependencyGraph: import("@prisma/client/runtime/library").JsonValue | null;
         circularImports: import("@prisma/client/runtime/library").JsonValue | null;
         deadCode: import("@prisma/client/runtime/library").JsonValue | null;
@@ -33,6 +31,8 @@ export declare class RepositoryController {
         dependencyVulnerabilities: import("@prisma/client/runtime/library").JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
+        inputTokens: number;
+        outputTokens: number;
         updatedAt: Date;
         completedAt: Date | null;
     }>;
@@ -45,10 +45,6 @@ export declare class RepositoryController {
         provider: string;
         status: import(".prisma/client").$Enums.ScanStatus;
         aiInvoked: boolean;
-        verdict: import(".prisma/client").$Enums.Verdict | null;
-        summary: string | null;
-        inputTokens: number;
-        outputTokens: number;
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
         pullRequestUrl: string | null;
@@ -57,6 +53,8 @@ export declare class RepositoryController {
         framework: string | null;
         fileCount: number;
         filesScanned: number;
+        verdict: import(".prisma/client").$Enums.Verdict | null;
+        summary: string | null;
         dependencyGraph: import("@prisma/client/runtime/library").JsonValue | null;
         circularImports: import("@prisma/client/runtime/library").JsonValue | null;
         deadCode: import("@prisma/client/runtime/library").JsonValue | null;
@@ -65,6 +63,8 @@ export declare class RepositoryController {
         dependencyVulnerabilities: import("@prisma/client/runtime/library").JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
+        inputTokens: number;
+        outputTokens: number;
         updatedAt: Date;
         completedAt: Date | null;
     }[]>;
@@ -91,10 +91,6 @@ export declare class RepositoryController {
         provider: string;
         status: import(".prisma/client").$Enums.ScanStatus;
         aiInvoked: boolean;
-        verdict: import(".prisma/client").$Enums.Verdict | null;
-        summary: string | null;
-        inputTokens: number;
-        outputTokens: number;
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
         pullRequestUrl: string | null;
@@ -103,6 +99,8 @@ export declare class RepositoryController {
         framework: string | null;
         fileCount: number;
         filesScanned: number;
+        verdict: import(".prisma/client").$Enums.Verdict | null;
+        summary: string | null;
         dependencyGraph: import("@prisma/client/runtime/library").JsonValue | null;
         circularImports: import("@prisma/client/runtime/library").JsonValue | null;
         deadCode: import("@prisma/client/runtime/library").JsonValue | null;
@@ -111,6 +109,8 @@ export declare class RepositoryController {
         dependencyVulnerabilities: import("@prisma/client/runtime/library").JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
+        inputTokens: number;
+        outputTokens: number;
         updatedAt: Date;
         completedAt: Date | null;
     }>;

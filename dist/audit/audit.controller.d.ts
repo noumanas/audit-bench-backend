@@ -15,13 +15,13 @@ export declare class AuditController {
         fromCache: boolean;
         verdict: import(".prisma/client").$Enums.Verdict;
         summary: string;
+        inputTokens: number;
+        outputTokens: number;
         findings: import("@prisma/client/runtime/library").JsonValue;
         stage1: import("@prisma/client/runtime/library").JsonValue | null;
         filename: string;
         language: string | null;
         findingStatuses: import("@prisma/client/runtime/library").JsonValue | null;
-        inputTokens: number;
-        outputTokens: number;
         codeSize: number;
     }>;
     findRecent(user: RequestUser, limit?: string): Promise<{
@@ -34,13 +34,13 @@ export declare class AuditController {
         fromCache: boolean;
         verdict: import(".prisma/client").$Enums.Verdict;
         summary: string;
+        inputTokens: number;
+        outputTokens: number;
         findings: import("@prisma/client/runtime/library").JsonValue;
         stage1: import("@prisma/client/runtime/library").JsonValue | null;
         filename: string;
         language: string | null;
         findingStatuses: import("@prisma/client/runtime/library").JsonValue | null;
-        inputTokens: number;
-        outputTokens: number;
         codeSize: number;
     }[]>;
     findOne(user: RequestUser, id: string): Promise<{
@@ -53,13 +53,13 @@ export declare class AuditController {
         fromCache: boolean;
         verdict: import(".prisma/client").$Enums.Verdict;
         summary: string;
+        inputTokens: number;
+        outputTokens: number;
         findings: import("@prisma/client/runtime/library").JsonValue;
         stage1: import("@prisma/client/runtime/library").JsonValue | null;
         filename: string;
         language: string | null;
         findingStatuses: import("@prisma/client/runtime/library").JsonValue | null;
-        inputTokens: number;
-        outputTokens: number;
         codeSize: number;
     }>;
     setFindingStatus(user: RequestUser, id: string, index: number, dto: UpdateFindingStatusDto): Promise<{
@@ -72,13 +72,13 @@ export declare class AuditController {
         fromCache: boolean;
         verdict: import(".prisma/client").$Enums.Verdict;
         summary: string;
+        inputTokens: number;
+        outputTokens: number;
         findings: import("@prisma/client/runtime/library").JsonValue;
         stage1: import("@prisma/client/runtime/library").JsonValue | null;
         filename: string;
         language: string | null;
         findingStatuses: import("@prisma/client/runtime/library").JsonValue | null;
-        inputTokens: number;
-        outputTokens: number;
         codeSize: number;
     }>;
 }

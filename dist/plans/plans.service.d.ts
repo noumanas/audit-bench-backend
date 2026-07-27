@@ -11,5 +11,6 @@ export declare class PlansService {
         dailyAuditLimit: number | null;
         monthlyAuditLimit: number | null;
         repositoryScan: boolean;
+        maxRepositories: number | null;
     }[]>;
 }

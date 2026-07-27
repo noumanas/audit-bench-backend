@@ -7,17 +7,26 @@ function makeFakeDb(opts: {
   monthlyLimit?: number | null;
   usageCount?: number;
   repositoryScan?: boolean;
+  maxRepositories?: number | null;
+  priorScans?: { sourceName: string; repoRef?: unknown; prContext?: unknown }[];
 }) {
-  const { dailyLimit = 5, monthlyLimit = 20, usageCount = 0, repositoryScan = true } = opts;
+  const {
+    dailyLimit = 5,
+    monthlyLimit = 20,
+    usageCount = 0,
+    repositoryScan = true,
+    maxRepositories = null,
+    priorScans = [],
+  } = opts;
   return {
     user: {
       findUniqueOrThrow: jest.fn().mockResolvedValue({
         id: 'u1',
-        plan: { name: 'Test', dailyAuditLimit: dailyLimit, monthlyAuditLimit: monthlyLimit, repositoryScan },
+        plan: { name: 'Test', dailyAuditLimit: dailyLimit, monthlyAuditLimit: monthlyLimit, repositoryScan, maxRepositories },
       }),
     },
     audit: { count: jest.fn().mockResolvedValue(usageCount) },
-    scanJob: { count: jest.fn().mockResolvedValue(0) },
+    scanJob: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue(priorScans) },
   };
 }
 
@@ -59,5 +68,53 @@ describe('QuotaService.assertPlanAllowsRepositoryScan', () => {
     const quota = new QuotaService({} as PrismaService);
     const db = makeFakeDb({ repositoryScan: true });
     await expect(quota.assertPlanAllowsRepositoryScan('u1', db as never)).resolves.toBeUndefined();
+  });
+});
+
+describe('QuotaService.assertCanScanNewRepository', () => {
+  it('throws Forbidden when the plan excludes repository scanning outright', async () => {
+    const quota = new QuotaService({} as PrismaService);
+    const db = makeFakeDb({ repositoryScan: false });
+    await expect(quota.assertCanScanNewRepository('u1', 'github:o/r', db as never)).rejects.toThrow(
+      ForbiddenException,
+    );
+  });
+
+  it('allows a first repository on a plan capped at one (e.g. Free)', async () => {
+    const quota = new QuotaService({} as PrismaService);
+    const db = makeFakeDb({ repositoryScan: true, maxRepositories: 1, priorScans: [] });
+    await expect(quota.assertCanScanNewRepository('u1', 'github:o/r', db as never)).resolves.toBeUndefined();
+  });
+
+  it('allows re-scanning (or reviewing another PR against) the same repo already counted', async () => {
+    const quota = new QuotaService({} as PrismaService);
+    const db = makeFakeDb({
+      repositoryScan: true,
+      maxRepositories: 1,
+      priorScans: [{ sourceName: 'o/r', repoRef: { kind: 'github', owner: 'o', repo: 'r' } }],
+    });
+    await expect(quota.assertCanScanNewRepository('u1', 'github:o/r', db as never)).resolves.toBeUndefined();
+  });
+
+  it('blocks a second, different repository once the cap is reached', async () => {
+    const quota = new QuotaService({} as PrismaService);
+    const db = makeFakeDb({
+      repositoryScan: true,
+      maxRepositories: 1,
+      priorScans: [{ sourceName: 'o/r', repoRef: { kind: 'github', owner: 'o', repo: 'r' } }],
+    });
+    await expect(quota.assertCanScanNewRepository('u1', 'github:o/other', db as never)).rejects.toThrow(
+      ForbiddenException,
+    );
+  });
+
+  it('never blocks on an unlimited plan (null maxRepositories) no matter how many prior scans', async () => {
+    const quota = new QuotaService({} as PrismaService);
+    const db = makeFakeDb({
+      repositoryScan: true,
+      maxRepositories: null,
+      priorScans: [{ sourceName: 'a' }, { sourceName: 'b' }, { sourceName: 'c' }],
+    });
+    await expect(quota.assertCanScanNewRepository('u1', 'zip:d', db as never)).resolves.toBeUndefined();
   });
 });

@@ -16,6 +16,7 @@ export declare class UsersController {
             dailyAuditLimit: number | null;
             monthlyAuditLimit: number | null;
             repositoryScan: boolean;
+            maxRepositories: number | null;
         };
         organization: {
             name: string;
@@ -36,6 +37,7 @@ export declare class UsersController {
             dailyAuditLimit: number | null;
             monthlyAuditLimit: number | null;
             repositoryScan: boolean;
+            maxRepositories: number | null;
             name: string;
         };
         scope: "organization" | "personal";
@@ -59,6 +61,7 @@ export declare class UsersController {
                 dailyAuditLimit: number | null;
                 monthlyAuditLimit: number | null;
                 repositoryScan: boolean;
+                maxRepositories: number | null;
             };
             organization: {
                 name: string;
@@ -91,6 +94,7 @@ export declare class UsersController {
                 dailyAuditLimit: number | null;
                 monthlyAuditLimit: number | null;
                 repositoryScan: boolean;
+                maxRepositories: number | null;
             };
             reviewedBy: {
                 email: string;
@@ -124,6 +128,7 @@ export declare class UsersController {
             dailyAuditLimit: number | null;
             monthlyAuditLimit: number | null;
             repositoryScan: boolean;
+            maxRepositories: number | null;
         };
         reviewedBy: {
             email: string;

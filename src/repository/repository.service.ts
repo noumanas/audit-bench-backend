@@ -24,6 +24,7 @@ import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
 import { PrContext, PrFeedback } from '../pr-feedback/pr-feedback.types';
 import { FindingStatus, FindingStatuses, FINDING_STATUSES } from '../common/finding.schema';
 import { RepoRef } from '../common/repo-ref.types';
+import { deriveRepoKey } from '../common/repo-key';
 import { WorkspaceActor, workspaceWhere, canViewResource } from '../common/workspace-scope';
 
 function selectFilesToAnalyze(files: ScannedFile[], max: number): ScannedFile[] {
@@ -87,7 +88,7 @@ export class RepositoryService {
     // scanned ref and open a PR/MR once the user commits a fix.
     repoRef?: RepoRef,
   ) {
-    await this.quota.assertPlanAllowsRepositoryScan(actor.id);
+    await this.quota.assertCanScanNewRepository(actor.id, deriveRepoKey({ sourceName, repoRef }));
 
     const providerName = this.llm.resolveProvider(provider);
     const maxFileSize = this.config.get<number>('MAX_FILE_SIZE_BYTES') || 200_000;
@@ -141,7 +142,10 @@ export class RepositoryService {
       prContext?: PrContext;
     },
   ) {
-    await this.quota.assertPlanAllowsRepositoryScan(actor.id);
+    await this.quota.assertCanScanNewRepository(
+      actor.id,
+      deriveRepoKey({ sourceName: meta.sourceName, prContext: meta.prContext }),
+    );
 
     const providerName = this.llm.resolveProvider(meta.provider);
     const maxFileSize = this.config.get<number>('MAX_FILE_SIZE_BYTES') || 200_000;

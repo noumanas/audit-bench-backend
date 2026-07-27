@@ -12,6 +12,7 @@ export declare class QuotaService {
             dailyAuditLimit: number | null;
             monthlyAuditLimit: number | null;
             repositoryScan: boolean;
+            maxRepositories: number | null;
             name: string;
         };
         scope: "organization" | "personal";
@@ -25,7 +26,7 @@ export declare class QuotaService {
     }>;
     assertCanRunAudit(userId: string, db?: Db): Promise<void>;
     assertPlanAllowsRepositoryScan(userId: string, db?: Db): Promise<void>;
-    assertCanScanRepository(userId: string, db?: Db): Promise<void>;
+    assertCanScanNewRepository(userId: string, repoKey: string, db?: Db): Promise<void>;
     withQuotaCheck<T>(checker: (db: Db) => Promise<void>, create: (db: Db) => Promise<T>, attempt?: number): Promise<T>;
 }
 export {};

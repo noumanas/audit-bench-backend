@@ -22,13 +22,13 @@ export declare class AuditService {
         fromCache: boolean;
         verdict: import(".prisma/client").$Enums.Verdict;
         summary: string;
+        inputTokens: number;
+        outputTokens: number;
         findings: Prisma.JsonValue;
         stage1: Prisma.JsonValue | null;
         filename: string;
         language: string | null;
         findingStatuses: Prisma.JsonValue | null;
-        inputTokens: number;
-        outputTokens: number;
         codeSize: number;
     }>;
     findOne(actor: WorkspaceActor, id: string): Promise<{
@@ -41,13 +41,13 @@ export declare class AuditService {
         fromCache: boolean;
         verdict: import(".prisma/client").$Enums.Verdict;
         summary: string;
+        inputTokens: number;
+        outputTokens: number;
         findings: Prisma.JsonValue;
         stage1: Prisma.JsonValue | null;
         filename: string;
         language: string | null;
         findingStatuses: Prisma.JsonValue | null;
-        inputTokens: number;
-        outputTokens: number;
         codeSize: number;
     }>;
     findRecent(actor: WorkspaceActor, limit?: number): Promise<{
@@ -60,13 +60,13 @@ export declare class AuditService {
         fromCache: boolean;
         verdict: import(".prisma/client").$Enums.Verdict;
         summary: string;
+        inputTokens: number;
+        outputTokens: number;
         findings: Prisma.JsonValue;
         stage1: Prisma.JsonValue | null;
         filename: string;
         language: string | null;
         findingStatuses: Prisma.JsonValue | null;
-        inputTokens: number;
-        outputTokens: number;
         codeSize: number;
     }[]>;
     setFindingStatus(actor: WorkspaceActor, auditId: string, findingIndex: number, status: FindingStatus): Promise<{
@@ -79,13 +79,13 @@ export declare class AuditService {
         fromCache: boolean;
         verdict: import(".prisma/client").$Enums.Verdict;
         summary: string;
+        inputTokens: number;
+        outputTokens: number;
         findings: Prisma.JsonValue;
         stage1: Prisma.JsonValue | null;
         filename: string;
         language: string | null;
         findingStatuses: Prisma.JsonValue | null;
-        inputTokens: number;
-        outputTokens: number;
         codeSize: number;
     }>;
 }

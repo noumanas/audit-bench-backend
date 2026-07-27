@@ -33,6 +33,7 @@ const types_1 = require("../common/types");
 const verdict_1 = require("../common/verdict");
 const pr_feedback_service_1 = require("../pr-feedback/pr-feedback.service");
 const finding_schema_1 = require("../common/finding.schema");
+const repo_key_1 = require("../common/repo-key");
 const workspace_scope_1 = require("../common/workspace-scope");
 function selectFilesToAnalyze(files, max) {
     const analyzable = files.filter((f) => {
@@ -67,7 +68,7 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
         return this.createScanJobFromBuffer(actor, file.buffer, file.originalname, provider);
     }
     async createScanJobFromBuffer(actor, zipBuffer, sourceName, provider, sourceType = 'zip', repoRef) {
-        await this.quota.assertPlanAllowsRepositoryScan(actor.id);
+        await this.quota.assertCanScanNewRepository(actor.id, (0, repo_key_1.deriveRepoKey)({ sourceName, repoRef }));
         const providerName = this.llm.resolveProvider(provider);
         const maxFileSize = this.config.get('MAX_FILE_SIZE_BYTES') || 200_000;
         const maxScanFiles = this.config.get('MAX_SCAN_FILES') || 40;
@@ -97,7 +98,7 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
         return job;
     }
     async createDiffReview(actor, files, meta) {
-        await this.quota.assertPlanAllowsRepositoryScan(actor.id);
+        await this.quota.assertCanScanNewRepository(actor.id, (0, repo_key_1.deriveRepoKey)({ sourceName: meta.sourceName, prContext: meta.prContext }));
         const providerName = this.llm.resolveProvider(meta.provider);
         const maxFileSize = this.config.get('MAX_FILE_SIZE_BYTES') || 200_000;
         const maxScanFiles = this.config.get('MAX_SCAN_FILES') || 40;

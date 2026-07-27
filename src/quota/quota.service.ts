@@ -1,6 +1,7 @@
 import { ForbiddenException, HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { deriveRepoKey } from '../common/repo-key';
 
 /** Either the top-level client or a client scoped to an in-flight transaction. */
 type Db = Prisma.TransactionClient;
@@ -42,7 +43,16 @@ export class QuotaService {
    * a team (see AuthService/UsersService, which still keep it up to date so
    * it's ready to use again if they ever leave).
    */
-  private effectivePlan(user: { plan: { dailyAuditLimit: number | null; monthlyAuditLimit: number | null; repositoryScan: boolean; name: string }; organization: { plan: typeof user.plan } | null }) {
+  private effectivePlan(user: {
+    plan: {
+      dailyAuditLimit: number | null;
+      monthlyAuditLimit: number | null;
+      repositoryScan: boolean;
+      maxRepositories: number | null;
+      name: string;
+    };
+    organization: { plan: typeof user.plan } | null;
+  }) {
     return user.organization ? user.organization.plan : user.plan;
   }
 
@@ -129,7 +139,9 @@ export class QuotaService {
    * Throws 403 if the plan excludes repository scanning outright. This is a
    * feature gate, not a quota check — it applies even to a scan that will
    * turn out to need no AI at all, since extraction/static-analysis itself
-   * has real server cost.
+   * has real server cost. Used for actions on an *existing* scan job (AI
+   * fix, fix-all) — see assertCanScanNewRepository for creating a new one,
+   * which additionally enforces the plan's repository-count cap.
    */
   async assertPlanAllowsRepositoryScan(userId: string, db: Db = this.prisma): Promise<void> {
     const user = await this.loadUserWithPlan(db, userId);
@@ -139,10 +151,34 @@ export class QuotaService {
     }
   }
 
-  /** Combined feature-gate + quota check, for callers that don't need to defer the quota half. */
-  async assertCanScanRepository(userId: string, db: Db = this.prisma): Promise<void> {
-    await this.assertPlanAllowsRepositoryScan(userId, db);
-    await this.assertCanRunAudit(userId, db);
+  /**
+   * Gate for starting a scan against `repoKey` (see deriveRepoKey) — the
+   * feature check above, plus (when the plan caps distinct repositories,
+   * e.g. Free: 1) a lifetime count of repositories already scanned. Scanning
+   * a repo already within that count — including reviewing another PR/MR
+   * against it — is always allowed; only a genuinely new repository beyond
+   * the cap is blocked.
+   */
+  async assertCanScanNewRepository(userId: string, repoKey: string, db: Db = this.prisma): Promise<void> {
+    const user = await this.loadUserWithPlan(db, userId);
+    const plan = this.effectivePlan(user);
+    if (!plan.repositoryScan) {
+      throw new ForbiddenException(`Repository scanning isn't included in the ${plan.name} plan. Upgrade to Pro or higher.`);
+    }
+
+    if (plan.maxRepositories != null) {
+      const scopeWhere = user.organizationId ? { organizationId: user.organizationId } : { userId };
+      const priorScans = await db.scanJob.findMany({
+        where: scopeWhere,
+        select: { sourceName: true, repoRef: true, prContext: true },
+      });
+      const seenKeys = new Set(priorScans.map((s) => deriveRepoKey(s)));
+      if (!seenKeys.has(repoKey) && seenKeys.size >= plan.maxRepositories) {
+        throw new ForbiddenException(
+          `The ${plan.name} plan can scan ${plan.maxRepositories} repositor${plan.maxRepositories === 1 ? 'y' : 'ies'}. Upgrade to Pro to scan more.`,
+        );
+      }
+    }
   }
 
   /**
