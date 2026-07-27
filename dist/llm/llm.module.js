@@ -12,12 +12,31 @@ const llm_service_1 = require("./llm.service");
 const anthropic_provider_1 = require("./providers/anthropic.provider");
 const openai_provider_1 = require("./providers/openai.provider");
 const gemini_provider_1 = require("./providers/gemini.provider");
+const deepseek_provider_1 = require("./providers/deepseek.provider");
+const glm_provider_1 = require("./providers/glm.provider");
+const qwen_provider_1 = require("./providers/qwen.provider");
+const kimi_provider_1 = require("./providers/kimi.provider");
+const xai_provider_1 = require("./providers/xai.provider");
+const mistral_provider_1 = require("./providers/mistral.provider");
+const minimax_provider_1 = require("./providers/minimax.provider");
 let LlmModule = class LlmModule {
 };
 exports.LlmModule = LlmModule;
 exports.LlmModule = LlmModule = __decorate([
     (0, common_1.Module)({
-        providers: [llm_service_1.LlmService, anthropic_provider_1.AnthropicProvider, openai_provider_1.OpenAiProvider, gemini_provider_1.GeminiProvider],
+        providers: [
+            llm_service_1.LlmService,
+            anthropic_provider_1.AnthropicProvider,
+            openai_provider_1.OpenAiProvider,
+            gemini_provider_1.GeminiProvider,
+            deepseek_provider_1.DeepSeekProvider,
+            glm_provider_1.GlmProvider,
+            qwen_provider_1.QwenProvider,
+            kimi_provider_1.KimiProvider,
+            xai_provider_1.XaiProvider,
+            mistral_provider_1.MistralProvider,
+            minimax_provider_1.MiniMaxProvider,
+        ],
         exports: [llm_service_1.LlmService],
     })
 ], LlmModule);

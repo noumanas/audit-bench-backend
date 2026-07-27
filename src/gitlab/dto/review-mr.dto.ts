@@ -1,6 +1,6 @@
 import { IsIn, IsInt, IsOptional, IsString, Min } from 'class-validator';
 
-const PROVIDERS = ['anthropic', 'openai', 'gemini'];
+const PROVIDERS = ['anthropic', 'openai', 'gemini', 'deepseek', 'glm', 'qwen', 'kimi', 'xai', 'mistral', 'minimax'];
 
 export class ReviewMrDto {
   @IsInt()

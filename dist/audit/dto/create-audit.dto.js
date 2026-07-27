@@ -11,7 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CreateAuditDto = void 0;
 const class_validator_1 = require("class-validator");
-const PROVIDERS = ['anthropic', 'openai', 'gemini'];
+const PROVIDERS = ['anthropic', 'openai', 'gemini', 'deepseek', 'glm', 'qwen', 'kimi', 'xai', 'mistral', 'minimax'];
 class CreateAuditDto {
     code;
     filename;

@@ -17,7 +17,7 @@ export interface AuditResult {
     summary: string;
     findings: Finding[];
 }
-export type LlmProviderName = 'anthropic' | 'openai' | 'gemini';
+export type LlmProviderName = 'anthropic' | 'openai' | 'gemini' | 'deepseek' | 'glm' | 'qwen' | 'kimi' | 'xai' | 'mistral' | 'minimax';
 export interface TokenUsage {
     inputTokens: number;
     outputTokens: number;

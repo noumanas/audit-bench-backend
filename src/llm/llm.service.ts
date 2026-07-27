@@ -5,6 +5,13 @@ import { LlmProvider } from './llm-provider.interface';
 import { AnthropicProvider } from './providers/anthropic.provider';
 import { OpenAiProvider } from './providers/openai.provider';
 import { GeminiProvider } from './providers/gemini.provider';
+import { DeepSeekProvider } from './providers/deepseek.provider';
+import { GlmProvider } from './providers/glm.provider';
+import { QwenProvider } from './providers/qwen.provider';
+import { KimiProvider } from './providers/kimi.provider';
+import { XaiProvider } from './providers/xai.provider';
+import { MistralProvider } from './providers/mistral.provider';
+import { MiniMaxProvider } from './providers/minimax.provider';
 import { LlmProviderName, TokenUsage } from '../common/types';
 
 export interface StructuredResult<T> {
@@ -29,8 +36,15 @@ export class LlmService {
     anthropic: AnthropicProvider,
     openai: OpenAiProvider,
     gemini: GeminiProvider,
+    deepseek: DeepSeekProvider,
+    glm: GlmProvider,
+    qwen: QwenProvider,
+    kimi: KimiProvider,
+    xai: XaiProvider,
+    mistral: MistralProvider,
+    minimax: MiniMaxProvider,
   ) {
-    this.providers = { anthropic, openai, gemini };
+    this.providers = { anthropic, openai, gemini, deepseek, glm, qwen, kimi, xai, mistral, minimax };
   }
 
   resolveProvider(requested?: string): LlmProviderName {

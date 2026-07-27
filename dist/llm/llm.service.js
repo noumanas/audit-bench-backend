@@ -15,6 +15,13 @@ const config_1 = require("@nestjs/config");
 const anthropic_provider_1 = require("./providers/anthropic.provider");
 const openai_provider_1 = require("./providers/openai.provider");
 const gemini_provider_1 = require("./providers/gemini.provider");
+const deepseek_provider_1 = require("./providers/deepseek.provider");
+const glm_provider_1 = require("./providers/glm.provider");
+const qwen_provider_1 = require("./providers/qwen.provider");
+const kimi_provider_1 = require("./providers/kimi.provider");
+const xai_provider_1 = require("./providers/xai.provider");
+const mistral_provider_1 = require("./providers/mistral.provider");
+const minimax_provider_1 = require("./providers/minimax.provider");
 function extractJson(raw) {
     const withoutFences = raw.replace(/```json|```/gi, '').trim();
     const start = withoutFences.indexOf('{');
@@ -26,9 +33,9 @@ function extractJson(raw) {
 let LlmService = class LlmService {
     config;
     providers;
-    constructor(config, anthropic, openai, gemini) {
+    constructor(config, anthropic, openai, gemini, deepseek, glm, qwen, kimi, xai, mistral, minimax) {
         this.config = config;
-        this.providers = { anthropic, openai, gemini };
+        this.providers = { anthropic, openai, gemini, deepseek, glm, qwen, kimi, xai, mistral, minimax };
     }
     resolveProvider(requested) {
         const fallback = (this.config.get('DEFAULT_LLM_PROVIDER') || 'anthropic');
@@ -65,6 +72,13 @@ exports.LlmService = LlmService = __decorate([
     __metadata("design:paramtypes", [config_1.ConfigService,
         anthropic_provider_1.AnthropicProvider,
         openai_provider_1.OpenAiProvider,
-        gemini_provider_1.GeminiProvider])
+        gemini_provider_1.GeminiProvider,
+        deepseek_provider_1.DeepSeekProvider,
+        glm_provider_1.GlmProvider,
+        qwen_provider_1.QwenProvider,
+        kimi_provider_1.KimiProvider,
+        xai_provider_1.XaiProvider,
+        mistral_provider_1.MistralProvider,
+        minimax_provider_1.MiniMaxProvider])
 ], LlmService);
 //# sourceMappingURL=llm.service.js.map

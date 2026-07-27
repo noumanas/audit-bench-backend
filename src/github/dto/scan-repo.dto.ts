@@ -1,6 +1,6 @@
 import { IsIn, IsOptional, IsString, Matches } from 'class-validator';
 
-const PROVIDERS = ['anthropic', 'openai', 'gemini'];
+const PROVIDERS = ['anthropic', 'openai', 'gemini', 'deepseek', 'glm', 'qwen', 'kimi', 'xai', 'mistral', 'minimax'];
 
 // These are interpolated directly into a GitHub API URL path — restrict to
 // characters GitHub itself allows in owner/repo/ref names so a crafted
