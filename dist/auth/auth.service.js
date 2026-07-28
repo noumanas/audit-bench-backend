@@ -16,7 +16,7 @@ const jwt_1 = require("@nestjs/jwt");
 const bcrypt = require("bcryptjs");
 const prisma_service_1 = require("../prisma/prisma.service");
 const SALT_ROUNDS = 12;
-const DEFAULT_PLAN_SLUG = 'free';
+const DEFAULT_PLAN_SLUG = "free";
 let AuthService = class AuthService {
     prisma;
     jwt;
@@ -27,17 +27,30 @@ let AuthService = class AuthService {
         this.config = config;
     }
     async signup(dto) {
-        const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
+        const existing = await this.prisma.user.findUnique({
+            where: { email: dto.email },
+        });
         if (existing)
-            throw new common_1.ConflictException('An account with this email already exists');
-        const plan = await this.prisma.plan.findUnique({ where: { slug: DEFAULT_PLAN_SLUG } });
+            throw new common_1.ConflictException("An account with this email already exists");
+        const plan = await this.prisma.plan.findUnique({
+            where: { slug: DEFAULT_PLAN_SLUG },
+        });
         if (!plan)
             throw new Error(`Default plan "${DEFAULT_PLAN_SLUG}" is not seeded`);
         const passwordHash = await bcrypt.hash(dto.password, SALT_ROUNDS);
-        const superAdminEmail = this.config.get('SUPER_ADMIN_EMAIL');
-        const role = superAdminEmail && superAdminEmail.toLowerCase() === dto.email.toLowerCase() ? 'super_admin' : 'user';
+        const superAdminEmail = this.config.get("SUPER_ADMIN_EMAIL");
+        const role = superAdminEmail &&
+            superAdminEmail.toLowerCase() === dto.email.toLowerCase()
+            ? "super_admin"
+            : "user";
         const user = await this.prisma.user.create({
-            data: { email: dto.email, passwordHash, name: dto.name, planId: plan.id, role },
+            data: {
+                email: dto.email,
+                passwordHash,
+                name: dto.name,
+                planId: plan.id,
+                role,
+            },
             include: { plan: true, organization: true },
         });
         return this.buildSession(user);
@@ -48,22 +61,25 @@ let AuthService = class AuthService {
             include: { plan: true, organization: true },
         });
         if (!user)
-            throw new common_1.UnauthorizedException('Invalid email or password');
+            throw new common_1.UnauthorizedException("Invalid email or password");
         if (!user.passwordHash) {
-            throw new common_1.UnauthorizedException('This account uses GitHub/GitLab login — sign in that way instead of with a password.');
+            throw new common_1.UnauthorizedException("This account uses Google/GitHub/GitLab login — sign in that way instead of with a password.");
         }
         const valid = await bcrypt.compare(dto.password, user.passwordHash);
         if (!valid)
-            throw new common_1.UnauthorizedException('Invalid email or password');
+            throw new common_1.UnauthorizedException("Invalid email or password");
         if (bcrypt.getRounds(user.passwordHash) < SALT_ROUNDS) {
             const upgradedHash = await bcrypt.hash(dto.password, SALT_ROUNDS);
-            await this.prisma.user.update({ where: { id: user.id }, data: { passwordHash: upgradedHash } });
+            await this.prisma.user.update({
+                where: { id: user.id },
+                data: { passwordHash: upgradedHash },
+            });
         }
         return this.buildSession(user);
     }
     buildSession(user) {
         if (!user.isActive) {
-            throw new common_1.UnauthorizedException('This account has been suspended. Contact an administrator.');
+            throw new common_1.UnauthorizedException("This account has been suspended. Contact an administrator.");
         }
         const payload = { sub: user.id, email: user.email };
         return {
@@ -76,7 +92,11 @@ let AuthService = class AuthService {
                 plan: user.plan,
                 role: user.role,
                 organization: user.organization
-                    ? { id: user.organization.id, name: user.organization.name, slug: user.organization.slug }
+                    ? {
+                        id: user.organization.id,
+                        name: user.organization.name,
+                        slug: user.organization.slug,
+                    }
                     : null,
                 orgRole: user.organization ? user.orgRole : null,
             },

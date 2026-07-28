@@ -1,9 +1,9 @@
-import { ConfigService } from '@nestjs/config';
-import { JwtService } from '@nestjs/jwt';
-import { OrgRole, Role } from '@prisma/client';
-import { PrismaService } from '../prisma/prisma.service';
-import { SignupDto } from './dto/signup.dto';
-import { LoginDto } from './dto/login.dto';
+import { ConfigService } from "@nestjs/config";
+import { JwtService } from "@nestjs/jwt";
+import { OrgRole, Role } from "@prisma/client";
+import { PrismaService } from "../prisma/prisma.service";
+import { SignupDto } from "./dto/signup.dto";
+import { LoginDto } from "./dto/login.dto";
 export declare class AuthService {
     private readonly prisma;
     private readonly jwt;

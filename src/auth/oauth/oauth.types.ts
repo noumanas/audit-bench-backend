@@ -1,4 +1,4 @@
-export type OAuthProvider = 'github' | 'gitlab';
+export type OAuthProvider = "github" | "gitlab" | "google";
 
 export interface OAuthProfile {
   providerUserId: string;
