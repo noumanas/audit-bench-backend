@@ -355,6 +355,10 @@ export class GithubService implements OnModuleInit, PrPublisher {
     await fetch(`${GITHUB_API}/repos/${owner}/${repo}/statuses/${sha}`, {
       method: 'POST',
       headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+      // Kept as the pre-rebrand name, not "Audit Bench Ai" — this is the
+      // stable status-check identifier branch protection rules key off of;
+      // renaming it would silently break any required-check rule an
+      // existing user already configured against "audit/bench".
       body: JSON.stringify({ state, description, context: 'audit/bench' }),
     });
   }
@@ -397,7 +401,7 @@ function buildSummaryBody(feedback: PrFeedback): string {
     .join(', ');
 
   const lines = [
-    `### audit/bench review — ${verdictLabel}`,
+    `### Audit Bench Ai review — ${verdictLabel}`,
     '',
     feedback.summary,
     '',
@@ -415,10 +419,10 @@ function buildSummaryBody(feedback: PrFeedback): string {
  */
 function commitStatusFor(feedback: PrFeedback): { state: 'success' | 'failure'; description: string } {
   if (feedback.verdict === 'do_not_ship') {
-    return { state: 'failure', description: 'audit/bench found blocking issues — see review comments' };
+    return { state: 'failure', description: 'Audit Bench Ai found blocking issues — see review comments' };
   }
   if (feedback.verdict === 'needs_work') {
-    return { state: 'success', description: 'audit/bench found issues worth reviewing' };
+    return { state: 'success', description: 'Audit Bench Ai found issues worth reviewing' };
   }
-  return { state: 'success', description: 'audit/bench found no issues' };
+  return { state: 'success', description: 'Audit Bench Ai found no issues' };
 }

@@ -145,9 +145,9 @@ export class OrganizationService {
     const inviterName = actor.name || actor.email;
     await this.email.send(
       email,
-      `You've been invited to join ${actor.organization.name} on audit/bench`,
-      `<p>${inviterName} invited you to join <strong>${actor.organization.name}</strong> on audit/bench.</p><p><a href="${url}">Accept invite</a></p><p>This link expires in 7 days.</p>`,
-      `${inviterName} invited you to join ${actor.organization.name} on audit/bench.\n\nAccept: ${url}\n\nThis link expires in 7 days.`,
+      `You've been invited to join ${actor.organization.name} on Audit Bench Ai`,
+      `<p>${inviterName} invited you to join <strong>${actor.organization.name}</strong> on Audit Bench Ai.</p><p><a href="${url}">Accept invite</a></p><p>This link expires in 7 days.</p>`,
+      `${inviterName} invited you to join ${actor.organization.name} on Audit Bench Ai.\n\nAccept: ${url}\n\nThis link expires in 7 days.`,
     );
 
     return {

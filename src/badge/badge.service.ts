@@ -27,9 +27,9 @@ export class BadgeService {
     });
 
     if (!job?.verdict) {
-      return { schemaVersion: 1, label: 'audit/bench', message: 'no scans yet', color: 'lightgrey' };
+      return { schemaVersion: 1, label: 'Audit Bench Ai', message: 'no scans yet', color: 'lightgrey' };
     }
 
-    return { schemaVersion: 1, label: 'audit/bench', message: LABEL[job.verdict], color: COLOR[job.verdict] };
+    return { schemaVersion: 1, label: 'Audit Bench Ai', message: LABEL[job.verdict], color: COLOR[job.verdict] };
   }
 }

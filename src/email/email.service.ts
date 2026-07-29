@@ -41,7 +41,9 @@ export class EmailService {
       return;
     }
 
-    const from = this.config.get<string>('SMTP_FROM') || '"audit/bench" <no-reply@audit-bench.dev>';
+    // Display name only — the address itself is left as the domain SMTP is
+    // actually configured/verified for (SPF/DKIM), not the newer auditbenchai.com.
+    const from = this.config.get<string>('SMTP_FROM') || '"Audit Bench Ai" <no-reply@audit-bench.dev>';
     await this.transporter.sendMail({ from, to, subject, html, text });
   }
 }

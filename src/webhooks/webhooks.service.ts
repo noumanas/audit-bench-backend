@@ -278,7 +278,7 @@ export class WebhooksService {
   }
 
   private quotaSkipMessage(err: Error): string {
-    return `audit/bench skipped the automatic review of this commit: ${err.message}`;
+    return `Audit Bench Ai skipped the automatic review of this commit: ${err.message}`;
   }
 
   private async generateReply(question: string, files: { path: string; content: string }[]): Promise<string> {
@@ -287,7 +287,7 @@ export class WebhooksService {
       .map((f) => `--- ${f.path} ---\n${f.content.slice(0, MAX_CONTEXT_CHARS_PER_FILE)}`)
       .join('\n\n');
 
-    const prompt = `You are audit/bench, a code review bot replying to a comment thread on a pull/merge request. Answer the question directly and concisely (a few sentences, or a short code snippet if helpful), referencing specific files/lines from the diff below where relevant. Don't repeat the question back.
+    const prompt = `You are Audit Bench Ai, a code review bot replying to a comment thread on a pull/merge request. Answer the question directly and concisely (a few sentences, or a short code snippet if helpful), referencing specific files/lines from the diff below where relevant. Don't repeat the question back.
 
 Changed files in this PR/MR:
 ${context || '(no changed files available)'}

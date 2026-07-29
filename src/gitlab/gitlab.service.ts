@@ -386,6 +386,10 @@ export class GitlabService implements OnModuleInit, PrPublisher {
     await fetch(`${this.baseUrl()}/projects/${projectId}/statuses/${sha}`, {
       method: 'POST',
       headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+      // Kept as the pre-rebrand name, not "Audit Bench Ai" — this is the
+      // stable status-check identifier merge rules key off of; renaming it
+      // would silently break any "pipeline must succeed" rule an existing
+      // user already configured against "audit/bench".
       body: JSON.stringify({ state, description, name: 'audit/bench' }),
     });
   }
@@ -416,7 +420,7 @@ function buildSummaryBody(feedback: PrFeedback): string {
     .join(', ');
 
   const lines = [
-    `### audit/bench review — ${verdictLabel}`,
+    `### Audit Bench Ai review — ${verdictLabel}`,
     '',
     feedback.summary,
     '',
@@ -432,10 +436,10 @@ function buildSummaryBody(feedback: PrFeedback): string {
  */
 function commitStatusFor(feedback: PrFeedback): { state: 'success' | 'failed'; description: string } {
   if (feedback.verdict === 'do_not_ship') {
-    return { state: 'failed', description: 'audit/bench found blocking issues — see review comments' };
+    return { state: 'failed', description: 'Audit Bench Ai found blocking issues — see review comments' };
   }
   if (feedback.verdict === 'needs_work') {
-    return { state: 'success', description: 'audit/bench found issues worth reviewing' };
+    return { state: 'success', description: 'Audit Bench Ai found issues worth reviewing' };
   }
-  return { state: 'success', description: 'audit/bench found no issues' };
+  return { state: 'success', description: 'Audit Bench Ai found no issues' };
 }

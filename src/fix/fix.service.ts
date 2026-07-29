@@ -16,7 +16,7 @@ import { CommitFixResult, RecheckFixResult, AiFixResult } from './fix.types';
 import { buildAiFixPrompt, buildAiFixAllPrompt, aiFixResultSchema } from './ai-fix-prompt';
 import { WorkspaceActor, canViewResource } from '../common/workspace-scope';
 
-const DEFAULT_MESSAGE = (path: string) => `audit/bench: apply suggested fix for ${path}`;
+const DEFAULT_MESSAGE = (path: string) => `Audit Bench Ai: apply suggested fix for ${path}`;
 
 @Injectable()
 export class FixService {
@@ -124,7 +124,7 @@ export class FixService {
         userId,
         repoRef.owner,
         repoRef.repo,
-        `audit/bench: fix ${path}`,
+        `Audit Bench Ai: fix ${path}`,
         newBranch,
         repoRef.ref,
         commitMessage,
@@ -147,7 +147,7 @@ export class FixService {
         repoRef.projectId,
         newBranch,
         repoRef.ref,
-        `audit/bench: fix ${path}`,
+        `Audit Bench Ai: fix ${path}`,
         commitMessage,
       );
       return { commitUrl, pullRequestUrl: mr.url, created: true };

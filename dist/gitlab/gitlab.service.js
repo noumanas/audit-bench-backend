@@ -346,7 +346,7 @@ function buildSummaryBody(feedback) {
         .map((s) => `${counts[s]} ${s}`)
         .join(', ');
     const lines = [
-        `### audit/bench review — ${verdictLabel}`,
+        `### Audit Bench Ai review — ${verdictLabel}`,
         '',
         feedback.summary,
         '',
@@ -358,11 +358,11 @@ function buildSummaryBody(feedback) {
 }
 function commitStatusFor(feedback) {
     if (feedback.verdict === 'do_not_ship') {
-        return { state: 'failed', description: 'audit/bench found blocking issues — see review comments' };
+        return { state: 'failed', description: 'Audit Bench Ai found blocking issues — see review comments' };
     }
     if (feedback.verdict === 'needs_work') {
-        return { state: 'success', description: 'audit/bench found issues worth reviewing' };
+        return { state: 'success', description: 'Audit Bench Ai found issues worth reviewing' };
     }
-    return { state: 'success', description: 'audit/bench found no issues' };
+    return { state: 'success', description: 'Audit Bench Ai found no issues' };
 }
 //# sourceMappingURL=gitlab.service.js.map
