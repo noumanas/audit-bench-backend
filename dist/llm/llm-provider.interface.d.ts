@@ -1,6 +1,7 @@
 import { TokenUsage } from '../common/types';
 export interface CompleteOptions {
     escalate?: boolean;
+    jsonMode?: boolean;
 }
 export interface CompleteResult {
     text: string;

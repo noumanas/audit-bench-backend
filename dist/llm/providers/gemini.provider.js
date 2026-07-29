@@ -33,7 +33,7 @@ let GeminiProvider = class GeminiProvider {
                 contents: [{ parts: [{ text: prompt }] }],
                 generationConfig: {
                     maxOutputTokens: MAX_OUTPUT_TOKENS,
-                    responseMimeType: 'application/json',
+                    ...(opts?.jsonMode ? { responseMimeType: 'application/json' } : {}),
                 },
             }),
         });

@@ -52,8 +52,9 @@ let LlmService = class LlmService {
     }
     async completeStructured(providerName, prompt, schema, opts) {
         const provider = this.providers[providerName];
+        const withJsonReminder = (p) => /\bjson\b/i.test(p) ? p : `${p}\n\nRespond with a JSON object.`;
         const attempt = async (p) => {
-            const { text, usage } = await provider.complete(p, opts);
+            const { text, usage } = await provider.complete(withJsonReminder(p), { ...opts, jsonMode: true });
             const json = JSON.parse(extractJson(text));
             return { result: schema.parse(json), usage };
         };

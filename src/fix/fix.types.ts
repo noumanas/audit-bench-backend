@@ -16,6 +16,8 @@ export interface RecheckFixResult {
 }
 
 export interface AiFixResult {
+  /** The model's root-cause analysis and self-check, elicited before fixedCode to improve fix quality — not primarily meant for display, but returned in case a client wants to show it. */
+  reasoning: string;
   /** The full file content with the targeted finding fixed — replaces the editor's content wholesale. */
   fixedCode: string;
   /** 1-2 sentence summary of what changed, shown to the user before they commit. */

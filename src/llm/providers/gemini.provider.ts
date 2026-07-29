@@ -29,7 +29,10 @@ export class GeminiProvider implements LlmProvider {
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: {
             maxOutputTokens: MAX_OUTPUT_TOKENS,
-            responseMimeType: 'application/json',
+            // Only when the caller actually wants structured output
+            // (completeStructured) — forcing this for completeText's
+            // free-form callers would wrap plain prose in an unwanted shape.
+            ...(opts?.jsonMode ? { responseMimeType: 'application/json' } : {}),
           },
         }),
       },

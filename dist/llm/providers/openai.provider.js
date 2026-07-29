@@ -26,11 +26,12 @@ let OpenAiProvider = class OpenAiProvider {
         }
         const baseModel = this.config.get('OPENAI_MODEL') || 'gpt-5-mini';
         const model = opts?.escalate ? this.config.get('OPENAI_ESCALATION_MODEL') || baseModel : baseModel;
-        let response = await this.request(apiKey, model, prompt, true);
+        const jsonMode = opts?.jsonMode ?? false;
+        let response = await this.request(apiKey, model, prompt, true, jsonMode);
         if (!response.ok && response.status === 400) {
             const body = await response.clone().text();
             if (body.includes('reasoning_effort')) {
-                response = await this.request(apiKey, model, prompt, false);
+                response = await this.request(apiKey, model, prompt, false, jsonMode);
             }
         }
         if (!response.ok) {
@@ -50,7 +51,7 @@ let OpenAiProvider = class OpenAiProvider {
             },
         };
     }
-    request(apiKey, model, prompt, withReasoningEffort) {
+    request(apiKey, model, prompt, withReasoningEffort, jsonMode) {
         return fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
             headers: {
@@ -61,7 +62,7 @@ let OpenAiProvider = class OpenAiProvider {
                 model,
                 messages: [{ role: 'user', content: prompt }],
                 max_completion_tokens: MAX_OUTPUT_TOKENS,
-                response_format: { type: 'json_object' },
+                ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
                 ...(withReasoningEffort ? { reasoning_effort: 'low' } : {}),
             }),
         });

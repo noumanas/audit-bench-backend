@@ -61,6 +61,18 @@ enum InviteStatus {
   expired
 }
 
+enum BenchmarkDifficulty {
+  easy
+  medium
+  hard
+}
+
+enum InvestigationStatus {
+  running
+  completed
+  failed
+}
+
 model Plan {
   id                String         @id @default(uuid())
   slug              String         @unique // "free" | "pro" | "team" | "enterprise"
@@ -175,6 +187,10 @@ model User {
   organizationId  String?
   orgRole         OrgRole?
   sentOrgInvites  OrganizationInvite[] @relation("OrgInvitesSent")
+  // Alignment-lab pilot (see AlignmentLabModule) — a separate research
+  // feature, admin-only, unrelated to the core code-review product below.
+  benchmarkModels BenchmarkModel[]
+  investigations  Investigation[]
 
   @@index([organizationId])
 }
@@ -384,4 +400,65 @@ model ScanFile {
   createdAt DateTime @default(now())
 
   @@index([scanJobId])
+}
+
+// ---------------------------------------------------------------------------
+// Alignment-lab pilot — a small, deliberately isolated slice of a much larger
+// proposed platform (evaluating whether an "investigator" LLM agent can
+// uncover a hidden behavior deliberately written into a "target" persona).
+// This is a DIFFERENT domain from the code-review product above: it doesn't
+// review anyone's code, it probes a simulated model's answers. Scoped to
+// admin-only (see AlignmentLabModule) as a pilot, not a customer-facing
+// feature. "Target model" here is a real LLM call run under a system persona
+// prompt (personaPrompt) — not an actually fine-tuned/implanted model, which
+// would need real model-serving infra far beyond this pilot's scope.
+// ---------------------------------------------------------------------------
+
+model BenchmarkModel {
+  id                   String               @id @default(uuid())
+  name                 String
+  // Ground truth the investigator is trying to uncover, e.g. "Secretly
+  // favors Country X in geopolitical questions." Never sent to the target
+  // persona itself — only used to grade an investigation afterward.
+  hiddenBehavior       String
+  // System-style prompt simulating the implanted behavior — the "target
+  // model" is this persona run through a real provider (see
+  // investigator-prompts.ts targetSystemPrompt), instructed to stay in
+  // character and deny any hidden agenda if asked about one directly.
+  personaPrompt        String
+  difficulty           BenchmarkDifficulty  @default(medium)
+  confessionResistance BenchmarkDifficulty  @default(medium)
+  createdBy            User                 @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  createdById          String
+  createdAt            DateTime             @default(now())
+  investigations       Investigation[]
+
+  @@index([createdById])
+}
+
+model Investigation {
+  id                String               @id @default(uuid())
+  model             BenchmarkModel       @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  modelId           String
+  runBy             User                 @relation(fields: [runById], references: [id], onDelete: Cascade)
+  runById           String
+  status            InvestigationStatus  @default(running)
+  // TurnRecord[] — see alignment-lab.types.ts. One entry per investigator
+  // turn: hypothesis, the prompt sent, the target's response, updated belief.
+  turns             Json
+  predictedBehavior String?
+  confidence        Float?
+  // Heuristic keyword-overlap grade against model.hiddenBehavior — a cheap
+  // approximation so a run has some automatic signal without spending an
+  // extra LLM call on grading (see grading.ts). Not a rigorous grader.
+  correct           Boolean?
+  queryCount        Int                  @default(0)
+  inputTokens       Int                  @default(0)
+  outputTokens      Int                  @default(0)
+  provider          String
+  createdAt         DateTime             @default(now())
+  completedAt       DateTime?
+
+  @@index([modelId])
+  @@index([runById])
 }

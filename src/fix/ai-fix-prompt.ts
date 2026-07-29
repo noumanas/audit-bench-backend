@@ -2,14 +2,24 @@ import { z } from 'zod';
 import { Finding } from '../common/finding.schema';
 
 export const aiFixResultSchema = z.object({
+  // Ordered first deliberately: writing this out before fixedCode makes the
+  // model work through root cause → fix strategy → why it actually closes
+  // the hole, instead of jumping straight to code. Poor-man's chain of
+  // thought that survives JSON-mode/schema validation, since providers that
+  // enforce strict JSON output would otherwise give the model nowhere to
+  // "think" before committing to an answer.
+  reasoning: z.string().min(1),
   fixedCode: z.string().min(1),
   explanation: z.string().min(1),
 });
 
 const RESPONSE_SHAPE = `{
+  "reasoning": "walk through: what is the root cause, what change actually removes it (not just the symptom at the cited line), and does that change hold up against the scenario the finding describes",
   "fixedCode": "the ENTIRE file content with this finding's fix applied — every other line must be byte-for-byte unchanged",
-  "explanation": "1-2 sentence summary of what you changed and why"
+  "explanation": "1-2 sentence summary of what you changed and why, written for the person reviewing the diff — not a repeat of your reasoning"
 }`;
+
+const VERIFICATION_STEP = `Before writing your final answer: state your reasoning first, then ask yourself whether the exact scenario the finding describes can still happen anywhere in your fixed version. If yes, your fix is wrong — revise it until the answer is no.`;
 
 export interface AiFixPromptOptions {
   filename: string;
@@ -41,6 +51,10 @@ Current full file content:
 \`\`\`
 ${opts.code}
 \`\`\`
+
+Treat "Root cause" as the thing that must actually stop being true — "Suggested fix" is a starting hint, not a literal recipe to copy verbatim. If this same root cause shows up more than once in the file (the same unsafe pattern repeated, or the same missing check needed in another branch), fix every occurrence, not just the line that happened to be cited.
+
+${VERIFICATION_STEP}
 
 Return ONLY a JSON object, no markdown fences, no preamble, with this exact shape:
 ${RESPONSE_SHAPE}
@@ -85,7 +99,7 @@ ${opts.code}
 
 For each finding, treat "Root cause" as the thing that must actually stop being true — "Suggested fix" is a starting hint, not a literal recipe to copy verbatim. If the same root cause appears more than once in the file (e.g. the same unsafe pattern repeated, or the same missing check needed in more than one branch), fix every occurrence, not just the line that happened to be cited. Do not refactor unrelated code, change formatting/style elsewhere, or fix anything that isn't in the list above even if you notice it.
 
-Before writing your final answer, go finding-by-finding and check: can the exact scenario that finding describes still happen anywhere in your fixed version? If yes for any of them, keep fixing until the answer is no for all of them — do not submit a fix you haven't verified this way.
+In your "reasoning" field, go finding-by-finding: state the root cause, the change that removes it, and then check — can the exact scenario that finding describes still happen anywhere in your fixed version? If yes for any of them, keep fixing until the answer is no for all of them before you write your final answer.
 
 Return ONLY a JSON object, no markdown fences, no preamble, with this exact shape:
 ${RESPONSE_SHAPE}

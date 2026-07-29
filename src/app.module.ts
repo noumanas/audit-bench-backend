@@ -23,6 +23,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
 import { FixModule } from './fix/fix.module';
 import { EmailModule } from './email/email.module';
 import { OrganizationModule } from './organization/organization.module';
+import { AlignmentLabModule } from './alignment-lab/alignment-lab.module';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { OrganizationModule } from './organization/organization.module';
     BadgeModule,
     WebhooksModule,
     FixModule,
+    AlignmentLabModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

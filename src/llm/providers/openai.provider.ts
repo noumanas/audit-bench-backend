@@ -23,13 +23,14 @@ export class OpenAiProvider implements LlmProvider {
     const baseModel = this.config.get<string>('OPENAI_MODEL') || 'gpt-5-mini';
     const model = opts?.escalate ? this.config.get<string>('OPENAI_ESCALATION_MODEL') || baseModel : baseModel;
 
-    let response = await this.request(apiKey, model, prompt, true);
+    const jsonMode = opts?.jsonMode ?? false;
+    let response = await this.request(apiKey, model, prompt, true, jsonMode);
 
     if (!response.ok && response.status === 400) {
       const body = await response.clone().text();
       if (body.includes('reasoning_effort')) {
         // Model doesn't support the param (e.g. a non-reasoning model) — retry without it.
-        response = await this.request(apiKey, model, prompt, false);
+        response = await this.request(apiKey, model, prompt, false, jsonMode);
       }
     }
 
@@ -56,7 +57,7 @@ export class OpenAiProvider implements LlmProvider {
     };
   }
 
-  private request(apiKey: string, model: string, prompt: string, withReasoningEffort: boolean) {
+  private request(apiKey: string, model: string, prompt: string, withReasoningEffort: boolean, jsonMode: boolean) {
     return fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -66,10 +67,13 @@ export class OpenAiProvider implements LlmProvider {
       body: JSON.stringify({
         model,
         messages: [{ role: 'user', content: prompt }],
-        // Caps runaway generations, and forcing valid JSON avoids the
-        // llm.service.ts repair-retry path silently doubling request cost.
+        // Caps runaway generations, and (when jsonMode is set) forcing valid
+        // JSON avoids the llm.service.ts repair-retry path silently doubling
+        // request cost. OpenAI 400s on response_format unless the prompt
+        // itself contains the word "json" — only completeStructured sets
+        // jsonMode, never completeText's free-form callers.
         max_completion_tokens: MAX_OUTPUT_TOKENS,
-        response_format: { type: 'json_object' },
+        ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
         ...(withReasoningEffort ? { reasoning_effort: 'low' } : {}),
       }),
     });

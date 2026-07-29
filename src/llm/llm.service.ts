@@ -77,8 +77,16 @@ export class LlmService {
   ): Promise<StructuredResult<T>> {
     const provider = this.providers[providerName];
 
+    // Providers with a native JSON mode (OpenAI, Gemini) only enable it here
+    // — never for completeText's free-form callers. OpenAI specifically
+    // requires the literal word "json" to appear in the prompt whenever that
+    // mode is on, so this appends a guaranteed mention rather than trusting
+    // every prompt author to remember it (see openai.provider.ts).
+    const withJsonReminder = (p: string) =>
+      /\bjson\b/i.test(p) ? p : `${p}\n\nRespond with a JSON object.`;
+
     const attempt = async (p: string) => {
-      const { text, usage } = await provider.complete(p, opts);
+      const { text, usage } = await provider.complete(withJsonReminder(p), { ...opts, jsonMode: true });
       const json = JSON.parse(extractJson(text));
       return { result: schema.parse(json), usage };
     };
