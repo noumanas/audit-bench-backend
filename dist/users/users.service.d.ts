@@ -13,6 +13,8 @@ export declare class UsersService {
             monthlyAuditLimit: number | null;
             repositoryScan: boolean;
             maxRepositories: number | null;
+            alignmentLabEnabled: boolean;
+            monthlyInvestigationLimit: number | null;
         };
         organization: {
             name: string;
@@ -41,6 +43,8 @@ export declare class UsersService {
                 monthlyAuditLimit: number | null;
                 repositoryScan: boolean;
                 maxRepositories: number | null;
+                alignmentLabEnabled: boolean;
+                monthlyInvestigationLimit: number | null;
             };
             organization: {
                 name: string;
@@ -74,6 +78,8 @@ export declare class UsersService {
                 monthlyAuditLimit: number | null;
                 repositoryScan: boolean;
                 maxRepositories: number | null;
+                alignmentLabEnabled: boolean;
+                monthlyInvestigationLimit: number | null;
             };
             reviewedBy: {
                 email: string;
@@ -108,6 +114,8 @@ export declare class UsersService {
             monthlyAuditLimit: number | null;
             repositoryScan: boolean;
             maxRepositories: number | null;
+            alignmentLabEnabled: boolean;
+            monthlyInvestigationLimit: number | null;
         };
         reviewedBy: {
             email: string;

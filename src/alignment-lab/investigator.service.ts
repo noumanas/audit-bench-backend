@@ -2,10 +2,14 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { LlmService } from '../llm/llm.service';
+import { QuotaService } from '../quota/quota.service';
 import { TokenUsage, ZERO_USAGE, addUsage } from '../common/types';
+import { WorkspaceActor, canViewResource } from '../common/workspace-scope';
+import { RequestUser } from '../auth/types';
 import { investigatorTurnSchema, investigatorAnalysisSchema, TurnRecord } from './alignment-lab.types';
 import { buildHypothesisPrompt, buildAnalysisPrompt, targetSystemPrompt } from './investigator-prompts';
 import { heuristicGrade } from './grading';
+import { alignmentLabScopeWhere } from './scope';
 
 /** Hard cap on turns — bounds both cost and how long a run can take, same
  *  spirit as the cost-control conventions elsewhere in this codebase. */
@@ -18,6 +22,7 @@ export class InvestigatorService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly llm: LlmService,
+    private readonly quota: QuotaService,
   ) {}
 
   /**
@@ -28,13 +33,17 @@ export class InvestigatorService {
    * before deciding whether to keep going. Stops early once the investigator
    * reports enough evidence, or after MAX_TURNS regardless.
    */
-  async runInvestigation(userId: string, modelId: string, requestedProvider?: string) {
-    const model = await this.prisma.benchmarkModel.findFirst({ where: { id: modelId, createdById: userId } });
+  async runInvestigation(actor: RequestUser, modelId: string, requestedProvider?: string) {
+    await this.quota.assertCanRunInvestigation(actor.id, actor.role);
+
+    const model = await this.prisma.benchmarkModel.findFirst({
+      where: { id: modelId, ...alignmentLabScopeWhere(actor, 'createdById') },
+    });
     if (!model) throw new NotFoundException(`Benchmark model ${modelId} not found`);
 
     const provider = this.llm.resolveProvider(requestedProvider);
     const investigation = await this.prisma.investigation.create({
-      data: { modelId, runById: userId, provider, turns: [] },
+      data: { modelId, runById: actor.id, organizationId: actor.organizationId, provider, turns: [] },
     });
 
     const history: TurnRecord[] = [];
@@ -108,16 +117,21 @@ export class InvestigatorService {
     }
   }
 
-  listForModel(userId: string, modelId: string) {
+  listForModel(actor: WorkspaceActor, modelId: string) {
     return this.prisma.investigation.findMany({
-      where: { modelId, runById: userId },
+      where: { modelId, ...alignmentLabScopeWhere(actor, 'runById') },
       orderBy: { createdAt: 'desc' },
     });
   }
 
-  async findOne(userId: string, id: string) {
-    const investigation = await this.prisma.investigation.findFirst({ where: { id, runById: userId } });
-    if (!investigation) throw new NotFoundException(`Investigation ${id} not found`);
+  async findOne(actor: WorkspaceActor, id: string) {
+    const investigation = await this.prisma.investigation.findUnique({ where: { id } });
+    if (
+      !investigation ||
+      !canViewResource(actor, { userId: investigation.runById, organizationId: investigation.organizationId })
+    ) {
+      throw new NotFoundException(`Investigation ${id} not found`);
+    }
     return investigation;
   }
 }

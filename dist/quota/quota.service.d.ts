@@ -13,6 +13,8 @@ export declare class QuotaService {
             monthlyAuditLimit: number | null;
             repositoryScan: boolean;
             maxRepositories: number | null;
+            alignmentLabEnabled: boolean;
+            monthlyInvestigationLimit: number | null;
             name: string;
         };
         scope: "organization" | "personal";
@@ -27,6 +29,7 @@ export declare class QuotaService {
     assertCanRunAudit(userId: string, db?: Db): Promise<void>;
     assertPlanAllowsRepositoryScan(userId: string, db?: Db): Promise<void>;
     assertCanScanNewRepository(userId: string, repoKey: string, db?: Db): Promise<void>;
+    assertCanRunInvestigation(userId: string, role: 'user' | 'admin' | 'super_admin', db?: Db): Promise<void>;
     withQuotaCheck<T>(checker: (db: Db) => Promise<void>, create: (db: Db) => Promise<T>, attempt?: number): Promise<T>;
 }
 export {};

@@ -2,6 +2,10 @@ import { NotFoundException } from '@nestjs/common';
 import { InvestigatorService } from './investigator.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { LlmService } from '../llm/llm.service';
+import { QuotaService } from '../quota/quota.service';
+import { RequestUser } from '../auth/types';
+
+const ACTOR: RequestUser = { id: 'user-1', email: 'u@example.com', role: 'user', organizationId: null };
 
 const MODEL = {
   id: 'model-1',
@@ -22,6 +26,10 @@ function makeFakePrisma(opts: { model?: typeof MODEL | null } = {}) {
   };
 }
 
+function makeFakeQuota() {
+  return { assertCanRunInvestigation: jest.fn().mockResolvedValue(undefined) };
+}
+
 /**
  * This is the whole cost boundary for a live run — get the loop-termination
  * logic wrong and a real investigation either stops after one turn (useless)
@@ -30,16 +38,28 @@ function makeFakePrisma(opts: { model?: typeof MODEL | null } = {}) {
  * QuotaService's own tests avoid a live LLM/DB dependency.
  */
 describe('InvestigatorService.runInvestigation', () => {
-  it('throws NotFoundException when the model does not belong to this user', async () => {
+  it('checks the plan/quota gate before doing anything else', async () => {
     const prisma = makeFakePrisma({ model: null });
+    const quota = makeFakeQuota();
     const llm = { resolveProvider: jest.fn().mockReturnValue('anthropic') } as unknown as LlmService;
-    const service = new InvestigatorService(prisma as unknown as PrismaService, llm);
+    const service = new InvestigatorService(prisma as unknown as PrismaService, llm, quota as unknown as QuotaService);
 
-    await expect(service.runInvestigation('user-1', 'model-1')).rejects.toThrow(NotFoundException);
+    await expect(service.runInvestigation(ACTOR, 'model-1')).rejects.toThrow(NotFoundException);
+    expect(quota.assertCanRunInvestigation).toHaveBeenCalledWith(ACTOR.id, ACTOR.role);
+  });
+
+  it('throws NotFoundException when the model does not belong to this user/org', async () => {
+    const prisma = makeFakePrisma({ model: null });
+    const quota = makeFakeQuota();
+    const llm = { resolveProvider: jest.fn().mockReturnValue('anthropic') } as unknown as LlmService;
+    const service = new InvestigatorService(prisma as unknown as PrismaService, llm, quota as unknown as QuotaService);
+
+    await expect(service.runInvestigation(ACTOR, 'model-1')).rejects.toThrow(NotFoundException);
   });
 
   it('stops early once the investigator reports enough evidence', async () => {
     const prisma = makeFakePrisma();
+    const quota = makeFakeQuota();
     const completeStructured = jest
       .fn()
       // Turn 1: hypothesis + prompt
@@ -64,8 +84,8 @@ describe('InvestigatorService.runInvestigation', () => {
       completeText,
     } as unknown as LlmService;
 
-    const service = new InvestigatorService(prisma as unknown as PrismaService, llm);
-    await service.runInvestigation('user-1', 'model-1');
+    const service = new InvestigatorService(prisma as unknown as PrismaService, llm, quota as unknown as QuotaService);
+    await service.runInvestigation(ACTOR, 'model-1');
 
     // One hypothesis call + one analysis call = 2 completeStructured calls, not 10 (5 turns × 2).
     expect(completeStructured).toHaveBeenCalledTimes(2);
@@ -80,6 +100,7 @@ describe('InvestigatorService.runInvestigation', () => {
 
   it('never exceeds MAX_TURNS even if the investigator never reports enough evidence', async () => {
     const prisma = makeFakePrisma();
+    const quota = makeFakeQuota();
     const completeStructured = jest
       .fn()
       .mockImplementation((_provider: string, prompt: string) => {
@@ -101,8 +122,8 @@ describe('InvestigatorService.runInvestigation', () => {
       completeText,
     } as unknown as LlmService;
 
-    const service = new InvestigatorService(prisma as unknown as PrismaService, llm);
-    await service.runInvestigation('user-1', 'model-1');
+    const service = new InvestigatorService(prisma as unknown as PrismaService, llm, quota as unknown as QuotaService);
+    await service.runInvestigation(ACTOR, 'model-1');
 
     // 5 turns × (1 hypothesis call + 1 analysis call) = 10, never more.
     expect(completeStructured).toHaveBeenCalledTimes(10);
@@ -115,14 +136,15 @@ describe('InvestigatorService.runInvestigation', () => {
 
   it('marks the investigation failed (not silently swallowed) if a provider call throws', async () => {
     const prisma = makeFakePrisma();
+    const quota = makeFakeQuota();
     const llm = {
       resolveProvider: jest.fn().mockReturnValue('anthropic'),
       completeStructured: jest.fn().mockRejectedValue(new Error('provider unavailable')),
       completeText: jest.fn(),
     } as unknown as LlmService;
 
-    const service = new InvestigatorService(prisma as unknown as PrismaService, llm);
-    await expect(service.runInvestigation('user-1', 'model-1')).rejects.toThrow('provider unavailable');
+    const service = new InvestigatorService(prisma as unknown as PrismaService, llm, quota as unknown as QuotaService);
+    await expect(service.runInvestigation(ACTOR, 'model-1')).rejects.toThrow('provider unavailable');
 
     const updateCall = (prisma.investigation.update as jest.Mock).mock.calls[0][0];
     expect(updateCall.data.status).toBe('failed');

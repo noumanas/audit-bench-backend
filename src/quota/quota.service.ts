@@ -49,6 +49,8 @@ export class QuotaService {
       monthlyAuditLimit: number | null;
       repositoryScan: boolean;
       maxRepositories: number | null;
+      alignmentLabEnabled: boolean;
+      monthlyInvestigationLimit: number | null;
       name: string;
     };
     organization: { plan: typeof user.plan } | null;
@@ -176,6 +178,44 @@ export class QuotaService {
       if (!seenKeys.has(repoKey) && seenKeys.size >= plan.maxRepositories) {
         throw new ForbiddenException(
           `The ${plan.name} plan can scan ${plan.maxRepositories} repositor${plan.maxRepositories === 1 ? 'y' : 'ies'}. Upgrade to Pro to scan more.`,
+        );
+      }
+    }
+  }
+
+  /**
+   * Throws 403 if the plan excludes Alignment Lab outright, or 429 if the
+   * org/account is out of monthly investigations — a role check, not just a
+   * plan check: admin/super_admin always passes (support/testing), same as
+   * the product owner needing to exercise a Team/Enterprise-gated feature
+   * without needing to be on a paid plan themselves.
+   */
+  async assertCanRunInvestigation(
+    userId: string,
+    role: 'user' | 'admin' | 'super_admin',
+    db: Db = this.prisma,
+  ): Promise<void> {
+    if (role === 'admin' || role === 'super_admin') return;
+
+    const user = await this.loadUserWithPlan(db, userId);
+    const plan = this.effectivePlan(user);
+    if (!plan.alignmentLabEnabled) {
+      throw new ForbiddenException(`Alignment Lab isn't included in the ${plan.name} plan. Upgrade to Team or higher.`);
+    }
+
+    if (plan.monthlyInvestigationLimit != null) {
+      const scopeWhere = user.organizationId ? { organizationId: user.organizationId } : { userId };
+      const used = await db.investigation.count({
+        where: { ...scopeWhere, createdAt: { gte: startOfMonth() } },
+      });
+      if (used >= plan.monthlyInvestigationLimit) {
+        throw new HttpException(
+          {
+            message: `Monthly investigation limit reached (${used}/${plan.monthlyInvestigationLimit}). Resets at ${startOfNextMonth().toISOString()}.`,
+            resetsAt: startOfNextMonth(),
+            scope: 'monthly',
+          },
+          HttpStatus.TOO_MANY_REQUESTS,
         );
       }
     }

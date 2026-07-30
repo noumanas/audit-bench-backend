@@ -1,7 +1,5 @@
 import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { RolesGuard } from '../auth/roles.guard';
-import { Roles } from '../auth/roles.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { RequestUser } from '../auth/types';
 import { BenchmarkModelService } from './benchmark-model.service';
@@ -10,14 +8,15 @@ import { CreateBenchmarkModelDto } from './dto/create-benchmark-model.dto';
 import { RunInvestigationDto } from './dto/run-investigation.dto';
 
 /**
- * Alignment-lab pilot — admin-only research feature, deliberately separate
- * from the code-review product's audit/repository endpoints. See
- * BenchmarkModel/Investigation in schema.prisma for the "why admin-only,
- * why a real LLM call instead of a fine-tuned model" reasoning.
+ * Alignment Lab — a second product line alongside code review, gated per
+ * plan (see QuotaService.assertCanRunInvestigation), not by role. Any
+ * authenticated user can register a model or browse what their account/org
+ * already has; actually running an investigation is where the plan
+ * entitlement and monthly quota are enforced. admin/super_admin always pass
+ * the gate, for support/testing.
  */
 @Controller('alignment-lab')
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('admin', 'super_admin')
+@UseGuards(JwtAuthGuard)
 export class AlignmentLabController {
   constructor(
     private readonly models: BenchmarkModelService,
@@ -26,31 +25,31 @@ export class AlignmentLabController {
 
   @Post('models')
   createModel(@CurrentUser() user: RequestUser, @Body() dto: CreateBenchmarkModelDto) {
-    return this.models.create(user.id, dto);
+    return this.models.create(user, dto);
   }
 
   @Get('models')
   listModels(@CurrentUser() user: RequestUser) {
-    return this.models.findAll(user.id);
+    return this.models.findAll(user);
   }
 
   @Get('models/:id')
   getModel(@CurrentUser() user: RequestUser, @Param('id') id: string) {
-    return this.models.findOne(user.id, id);
+    return this.models.findOne(user, id);
   }
 
   @Post('models/:id/investigate')
   investigate(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() dto: RunInvestigationDto) {
-    return this.investigator.runInvestigation(user.id, id, dto.provider);
+    return this.investigator.runInvestigation(user, id, dto.provider);
   }
 
   @Get('models/:id/investigations')
   listInvestigations(@CurrentUser() user: RequestUser, @Param('id') id: string) {
-    return this.investigator.listForModel(user.id, id);
+    return this.investigator.listForModel(user, id);
   }
 
   @Get('investigations/:id')
   getInvestigation(@CurrentUser() user: RequestUser, @Param('id') id: string) {
-    return this.investigator.findOne(user.id, id);
+    return this.investigator.findOne(user, id);
   }
 }

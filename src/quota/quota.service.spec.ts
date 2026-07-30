@@ -9,6 +9,9 @@ function makeFakeDb(opts: {
   repositoryScan?: boolean;
   maxRepositories?: number | null;
   priorScans?: { sourceName: string; repoRef?: unknown; prContext?: unknown }[];
+  alignmentLabEnabled?: boolean;
+  monthlyInvestigationLimit?: number | null;
+  investigationUsageCount?: number;
 }) {
   const {
     dailyLimit = 5,
@@ -17,16 +20,28 @@ function makeFakeDb(opts: {
     repositoryScan = true,
     maxRepositories = null,
     priorScans = [],
+    alignmentLabEnabled = false,
+    monthlyInvestigationLimit = null,
+    investigationUsageCount = 0,
   } = opts;
   return {
     user: {
       findUniqueOrThrow: jest.fn().mockResolvedValue({
         id: 'u1',
-        plan: { name: 'Test', dailyAuditLimit: dailyLimit, monthlyAuditLimit: monthlyLimit, repositoryScan, maxRepositories },
+        plan: {
+          name: 'Test',
+          dailyAuditLimit: dailyLimit,
+          monthlyAuditLimit: monthlyLimit,
+          repositoryScan,
+          maxRepositories,
+          alignmentLabEnabled,
+          monthlyInvestigationLimit,
+        },
       }),
     },
     audit: { count: jest.fn().mockResolvedValue(usageCount) },
     scanJob: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue(priorScans) },
+    investigation: { count: jest.fn().mockResolvedValue(investigationUsageCount) },
   };
 }
 
@@ -116,5 +131,42 @@ describe('QuotaService.assertCanScanNewRepository', () => {
       priorScans: [{ sourceName: 'a' }, { sourceName: 'b' }, { sourceName: 'c' }],
     });
     await expect(quota.assertCanScanNewRepository('u1', 'zip:d', db as never)).resolves.toBeUndefined();
+  });
+});
+
+describe('QuotaService.assertCanRunInvestigation', () => {
+  it('throws Forbidden when the plan excludes Alignment Lab', async () => {
+    const quota = new QuotaService({} as PrismaService);
+    const db = makeFakeDb({ alignmentLabEnabled: false });
+    await expect(quota.assertCanRunInvestigation('u1', 'user', db as never)).rejects.toThrow(ForbiddenException);
+  });
+
+  it('passes when the plan includes it and usage is under the monthly limit', async () => {
+    const quota = new QuotaService({} as PrismaService);
+    const db = makeFakeDb({ alignmentLabEnabled: true, monthlyInvestigationLimit: 20, investigationUsageCount: 5 });
+    await expect(quota.assertCanRunInvestigation('u1', 'user', db as never)).resolves.toBeUndefined();
+  });
+
+  it('rejects with a 429 once monthly investigation usage hits the limit', async () => {
+    const quota = new QuotaService({} as PrismaService);
+    const db = makeFakeDb({ alignmentLabEnabled: true, monthlyInvestigationLimit: 20, investigationUsageCount: 20 });
+    await expect(quota.assertCanRunInvestigation('u1', 'user', db as never)).rejects.toThrow(HttpException);
+  });
+
+  it('never blocks on an unlimited plan (null monthlyInvestigationLimit) no matter how high usage is', async () => {
+    const quota = new QuotaService({} as PrismaService);
+    const db = makeFakeDb({
+      alignmentLabEnabled: true,
+      monthlyInvestigationLimit: null,
+      investigationUsageCount: 999_999,
+    });
+    await expect(quota.assertCanRunInvestigation('u1', 'user', db as never)).resolves.toBeUndefined();
+  });
+
+  it('lets admin and super_admin through regardless of plan — support/testing bypass', async () => {
+    const quota = new QuotaService({} as PrismaService);
+    const db = makeFakeDb({ alignmentLabEnabled: false });
+    await expect(quota.assertCanRunInvestigation('u1', 'admin', db as never)).resolves.toBeUndefined();
+    await expect(quota.assertCanRunInvestigation('u1', 'super_admin', db as never)).resolves.toBeUndefined();
   });
 });

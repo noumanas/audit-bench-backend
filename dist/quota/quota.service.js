@@ -113,6 +113,28 @@ let QuotaService = class QuotaService {
             }
         }
     }
+    async assertCanRunInvestigation(userId, role, db = this.prisma) {
+        if (role === 'admin' || role === 'super_admin')
+            return;
+        const user = await this.loadUserWithPlan(db, userId);
+        const plan = this.effectivePlan(user);
+        if (!plan.alignmentLabEnabled) {
+            throw new common_1.ForbiddenException(`Alignment Lab isn't included in the ${plan.name} plan. Upgrade to Team or higher.`);
+        }
+        if (plan.monthlyInvestigationLimit != null) {
+            const scopeWhere = user.organizationId ? { organizationId: user.organizationId } : { userId };
+            const used = await db.investigation.count({
+                where: { ...scopeWhere, createdAt: { gte: startOfMonth() } },
+            });
+            if (used >= plan.monthlyInvestigationLimit) {
+                throw new common_1.HttpException({
+                    message: `Monthly investigation limit reached (${used}/${plan.monthlyInvestigationLimit}). Resets at ${startOfNextMonth().toISOString()}.`,
+                    resetsAt: startOfNextMonth(),
+                    scope: 'monthly',
+                }, common_1.HttpStatus.TOO_MANY_REQUESTS);
+            }
+        }
+    }
     async withQuotaCheck(checker, create, attempt = 0) {
         try {
             return await this.prisma.$transaction(async (tx) => {

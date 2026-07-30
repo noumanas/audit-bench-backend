@@ -87,6 +87,15 @@ model Plan {
   // reviewing a PR/MR against it, never counts as a new one (see
   // QuotaService.assertCanScanNewRepository / deriveRepoKey).
   maxRepositories   Int?
+  // Alignment Lab — a second product line alongside code review (see
+  // AlignmentLabModule): register a benchmark persona with a known hidden
+  // behavior, run an autonomous investigator agent against it, see whether
+  // it's uncovered. Gated per plan the same way repositoryScan is, not by
+  // role — super_admin still bypasses both for support/testing.
+  alignmentLabEnabled        Boolean @default(false)
+  // null = unlimited. Each "Run investigation" consumes one, regardless of
+  // how many turns it actually takes.
+  monthlyInvestigationLimit  Int?
   createdAt         DateTime       @default(now())
   users             User[]
   organizations     Organization[]
@@ -113,6 +122,8 @@ model Organization {
   planRequests PlanRequest[]        @relation("PlanRequestsByOrganization")
   audits       Audit[]
   scanJobs     ScanJob[]
+  benchmarkModels BenchmarkModel[]
+  investigations  Investigation[]
 }
 
 // Invite by email — the only join path in this version (no public
@@ -403,15 +414,14 @@ model ScanFile {
 }
 
 // ---------------------------------------------------------------------------
-// Alignment-lab pilot — a small, deliberately isolated slice of a much larger
-// proposed platform (evaluating whether an "investigator" LLM agent can
-// uncover a hidden behavior deliberately written into a "target" persona).
-// This is a DIFFERENT domain from the code-review product above: it doesn't
-// review anyone's code, it probes a simulated model's answers. Scoped to
-// admin-only (see AlignmentLabModule) as a pilot, not a customer-facing
-// feature. "Target model" here is a real LLM call run under a system persona
-// prompt (personaPrompt) — not an actually fine-tuned/implanted model, which
-// would need real model-serving infra far beyond this pilot's scope.
+// Alignment Lab — a second product line alongside the code-review product
+// above (evaluating whether an "investigator" LLM agent can uncover a hidden
+// behavior deliberately written into a "target" persona). Gated per plan
+// (Plan.alignmentLabEnabled/monthlyInvestigationLimit — Team/Enterprise, see
+// QuotaService), same pooled-org-usage pattern as Audit/ScanJob, not by role.
+// "Target model" here is a real LLM call run under a system persona prompt
+// (personaPrompt) — not an actually fine-tuned/implanted model, which would
+// need real model-serving infra far beyond this feature's current scope.
 // ---------------------------------------------------------------------------
 
 model BenchmarkModel {
@@ -430,10 +440,15 @@ model BenchmarkModel {
   confessionResistance BenchmarkDifficulty  @default(medium)
   createdBy            User                 @relation(fields: [createdById], references: [id], onDelete: Cascade)
   createdById          String
+  // Same team-visibility rule as Audit.organizationId — see there. Null for
+  // a model registered before joining a team, or outside any org.
+  organization         Organization?        @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  organizationId       String?
   createdAt            DateTime             @default(now())
   investigations       Investigation[]
 
   @@index([createdById])
+  @@index([organizationId])
 }
 
 model Investigation {
@@ -442,6 +457,10 @@ model Investigation {
   modelId           String
   runBy             User                 @relation(fields: [runById], references: [id], onDelete: Cascade)
   runById           String
+  // Same team-visibility rule as Audit.organizationId — see there. Also
+  // what QuotaService pools monthly investigation usage by, for a team.
+  organization      Organization?        @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  organizationId    String?
   status            InvestigationStatus  @default(running)
   // TurnRecord[] — see alignment-lab.types.ts. One entry per investigator
   // turn: hypothesis, the prompt sent, the target's response, updated belief.
@@ -461,4 +480,5 @@ model Investigation {
 
   @@index([modelId])
   @@index([runById])
+  @@index([organizationId])
 }

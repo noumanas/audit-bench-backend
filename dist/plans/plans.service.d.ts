@@ -12,5 +12,7 @@ export declare class PlansService {
         monthlyAuditLimit: number | null;
         repositoryScan: boolean;
         maxRepositories: number | null;
+        alignmentLabEnabled: boolean;
+        monthlyInvestigationLimit: number | null;
     }[]>;
 }
