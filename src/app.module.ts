@@ -24,6 +24,7 @@ import { FixModule } from './fix/fix.module';
 import { EmailModule } from './email/email.module';
 import { OrganizationModule } from './organization/organization.module';
 import { AlignmentLabModule } from './alignment-lab/alignment-lab.module';
+import { WebVitalsModule } from './web-vitals/web-vitals.module';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { AlignmentLabModule } from './alignment-lab/alignment-lab.module';
     WebhooksModule,
     FixModule,
     AlignmentLabModule,
+    WebVitalsModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

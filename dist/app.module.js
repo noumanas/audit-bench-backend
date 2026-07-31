@@ -33,6 +33,7 @@ const fix_module_1 = require("./fix/fix.module");
 const email_module_1 = require("./email/email.module");
 const organization_module_1 = require("./organization/organization.module");
 const alignment_lab_module_1 = require("./alignment-lab/alignment-lab.module");
+const web_vitals_module_1 = require("./web-vitals/web-vitals.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -61,6 +62,7 @@ exports.AppModule = AppModule = __decorate([
             webhooks_module_1.WebhooksModule,
             fix_module_1.FixModule,
             alignment_lab_module_1.AlignmentLabModule,
+            web_vitals_module_1.WebVitalsModule,
         ],
         controllers: [app_controller_1.AppController],
         providers: [app_service_1.AppService, { provide: core_1.APP_GUARD, useClass: throttler_1.ThrottlerGuard }],

@@ -482,3 +482,31 @@ model Investigation {
   @@index([runById])
   @@index([organizationId])
 }
+
+enum WebVitalRating {
+  good
+  needs_improvement
+  poor
+}
+
+// Anonymous Core Web Vitals beacons from real visitors (both the public
+// marketing site and the authenticated app) — no user/session association
+// by design, this is aggregate performance telemetry, not visitor tracking.
+// Ingested via a public, unauthenticated endpoint (see WebVitalsController)
+// since most of what reports here is logged-out marketing-site traffic.
+model WebVital {
+  id        String         @id @default(uuid())
+  // The metric's own id from the web-vitals library — not a foreign key to
+  // anything, just kept in case a specific report ever needs tracing back.
+  metricId  String
+  name      String // CLS | FCP | INP | LCP | TTFB
+  value     Float
+  rating    WebVitalRating
+  // Pathname the metric was measured on, e.g. "/pricing" — not a full URL
+  // (no query string), so this can't leak anything visitor-specific.
+  path      String
+  createdAt DateTime       @default(now())
+
+  @@index([name, createdAt])
+  @@index([path])
+}
