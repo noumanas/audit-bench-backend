@@ -20,9 +20,11 @@ async function bootstrap() {
                 callback(new Error(`Origin ${origin} is not allowed by CORS`));
             }
         },
+        credentials: true,
     });
     app.useGlobalPipes(new common_1.ValidationPipe({ whitelist: true, transform: true }));
     app.use(cookieParser());
+    app.use('/web-vitals', (0, express_1.json)({ type: ['application/json', 'text/plain'] }));
     app.use((0, express_1.json)({
         limit: '5mb',
         verify: (req, _res, buf) => {
