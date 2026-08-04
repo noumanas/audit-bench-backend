@@ -5,8 +5,10 @@ import { runTypeScriptCheck } from './typescript-check';
 import { checkFormatting } from './prettier-check';
 import { runSemgrep } from './semgrep-check';
 import { selectRiskyFunctions } from './risk-scorer';
+import { runPythonCheck } from './python-check';
 
 const ANALYZABLE_BY_AST = /\.(ts|tsx|js|jsx|mjs|cjs)$/i;
+const PYTHON_FILE = /\.(py|pyi)$/i;
 
 /**
  * Every free, local check that runs before a single token is spent on an
@@ -15,8 +17,10 @@ const ANALYZABLE_BY_AST = /\.(ts|tsx|js|jsx|mjs|cjs)$/i;
  */
 export async function runStage1(code: string, filename: string): Promise<Stage1Result> {
   const isCode = ANALYZABLE_BY_AST.test(filename);
+  const isPython = PYTHON_FILE.test(filename);
 
   const lint = isCode ? runEslint(code, filename) : [];
+  const python = isPython ? runPythonCheck(code, filename) : [];
   const tsDiagnostics = runTypeScriptCheck(code, filename);
   const { formatted, skipped: formattingSkipped } = await checkFormatting(code, filename);
   const semgrep = await runSemgrep(code, filename);
@@ -24,15 +28,17 @@ export async function runStage1(code: string, filename: string): Promise<Stage1R
   const riskyFunctions = selectRiskyFunctions(functions, lint);
 
   const semgrepFlagged = !semgrep.skipped && semgrep.findings.length > 0;
+  const pythonFlagged = python.some((p) => p.severity === 'error');
 
   return {
     lint,
+    python,
     tsDiagnostics,
     formatted,
     formattingSkipped,
     semgrep,
     functions,
     riskyFunctions,
-    clean: riskyFunctions.length === 0 && tsDiagnostics.length === 0 && !semgrepFlagged,
+    clean: riskyFunctions.length === 0 && tsDiagnostics.length === 0 && !semgrepFlagged && !pythonFlagged,
   };
 }

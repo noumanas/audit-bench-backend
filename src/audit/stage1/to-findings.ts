@@ -23,6 +23,20 @@ export function stage1ToFindings(stage1: Stage1Result): Finding[] {
     });
   }
 
+  for (const p of stage1.python) {
+    findings.push({
+      severity: p.severity === 'error' ? 'high' : 'medium',
+      category: 'Security',
+      title: `Python check: ${p.ruleId}`,
+      line: p.line || null,
+      description: p.message,
+      rootCause: 'Python local audit matched a risky pattern.',
+      suggestedFix: 'Review the code path and replace the risky pattern with a safer alternative.',
+      examplePatch: null,
+      confidence: p.severity === 'error' ? 0.9 : 0.75,
+    });
+  }
+
   for (const l of stage1.lint) {
     if (l.severity !== 'error') continue;
     findings.push({

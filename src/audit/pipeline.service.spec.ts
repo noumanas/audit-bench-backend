@@ -14,6 +14,7 @@ jest.mock('./stage1/run-stage1', () => ({ runStage1: jest.fn() }));
 function makeStage1(overrides: Partial<Stage1Result> = {}): Stage1Result {
   return {
     lint: [],
+    python: [],
     tsDiagnostics: [],
     formatted: true,
     formattingSkipped: false,

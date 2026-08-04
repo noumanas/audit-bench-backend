@@ -44,10 +44,12 @@ function detectFramework(files) {
         return 'Spring Boot';
     if (files.some((f) => /(^|\/)manage\.py$/.test(f.path.replace(/\\/g, '/'))))
         return 'Django';
-    if (files.some((f) => /(^|\/)requirements\.txt$/.test(f.path.replace(/\\/g, '/')) &&
+    if (files.some((f) => /(^|\/)pyproject\.toml$/.test(f.path.replace(/\\/g, '/'))))
+        return 'Python';
+    if (files.some((f) => /(^|\/)(requirements\.txt|pyproject\.toml)$/.test(f.path.replace(/\\/g, '/')) &&
         /fastapi/i.test(f.content)))
         return 'FastAPI';
-    if (files.some((f) => /(^|\/)requirements\.txt$/.test(f.path.replace(/\\/g, '/'))))
+    if (files.some((f) => /(^|\/)(requirements\.txt|pyproject\.toml)$/.test(f.path.replace(/\\/g, '/'))))
         return 'Python';
     return undefined;
 }

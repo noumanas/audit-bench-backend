@@ -47,8 +47,8 @@ let PipelineService = PipelineService_1 = class PipelineService {
             result = {
                 verdict: (0, verdict_1.verdictForSeverities)(baseFindings),
                 summary: baseFindings.length > 0
-                    ? `Local checks (ESLint, TypeScript, complexity, formatting) found ${baseFindings.length} minor issue(s). Nothing here warranted an AI review, so no AI credits were used.`
-                    : 'Local checks (ESLint, TypeScript, complexity, formatting) found nothing. No AI credits were used.',
+                    ? `Local checks (JavaScript/TypeScript, Python, complexity, formatting) found ${baseFindings.length} minor issue(s). Nothing here warranted an AI review, so no AI credits were used.`
+                    : 'Local checks (JavaScript/TypeScript, Python, complexity, formatting) found nothing. No AI credits were used.',
                 findings: baseFindings,
                 stage1,
                 aiInvoked: false,
