@@ -30,6 +30,9 @@ const duplicate_code_1 = require("../analysis/duplicate-code");
 const secrets_scanner_1 = require("../analysis/secrets-scanner");
 const dependency_audit_1 = require("../analysis/dependency-audit");
 const license_audit_1 = require("../analysis/license-audit");
+const test_coverage_1 = require("../analysis/test-coverage");
+const architecture_detector_1 = require("../audit/architecture-detector");
+const risk_aggregation_1 = require("./risk-aggregation");
 const types_1 = require("../common/types");
 const verdict_1 = require("../common/verdict");
 const pr_feedback_service_1 = require("../pr-feedback/pr-feedback.service");
@@ -79,6 +82,7 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
         const deadCode = (0, dead_code_1.findDeadCode)(files, graph);
         const duplicates = (0, duplicate_code_1.findDuplicates)(files);
         const secrets = (0, secrets_scanner_1.scanSecrets)(files);
+        const testCoverage = (0, test_coverage_1.estimateTestCoverage)(files);
         const [dependencyVulnerabilities, licenseFindings] = await Promise.all([
             (0, dependency_audit_1.auditDependencies)(files),
             (0, license_audit_1.auditLicenses)(files),
@@ -98,6 +102,7 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
             secrets: secrets,
             dependencyVulnerabilities: dependencyVulnerabilities,
             licenseFindings: licenseFindings,
+            testCoverage: testCoverage,
             ...(contributorStats ? { contributorStats: contributorStats } : {}),
         });
         void this.processScan(job.id, filesToAnalyze, providerName, repoContext);
@@ -202,9 +207,23 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
             const succeeded = succeededByFile.map((r) => r.result);
             const totalFindings = succeeded.reduce((sum, r) => sum + r.findings.length, 0);
             const overallVerdict = succeeded.length ? (0, verdict_1.worstVerdict)(succeeded.map((r) => r.verdict)) : 'pass';
-            const totalUsage = succeededByFile.reduce((sum, r) => (0, types_1.addUsage)(sum, r.usage), types_1.ZERO_USAGE);
+            let totalUsage = succeededByFile.reduce((sum, r) => (0, types_1.addUsage)(sum, r.usage), types_1.ZERO_USAGE);
             const job = await this.prisma.scanJob.findUniqueOrThrow({ where: { id: jobId } });
             const secretsCount = Array.isArray(job.secrets) ? job.secrets.length : 0;
+            let architectureAssessment = null;
+            if (REPO_WIDE_SOURCE_TYPES.has(job.sourceType) && anyFreshAiInvoked) {
+                const architecturePrompt = (0, architecture_detector_1.buildArchitecturePrompt)(files);
+                if (architecturePrompt) {
+                    try {
+                        const { result, usage } = await this.llm.completeStructured(providerName, architecturePrompt, architecture_detector_1.architectureAssessmentSchema);
+                        architectureAssessment = result;
+                        totalUsage = (0, types_1.addUsage)(totalUsage, usage);
+                    }
+                    catch (err) {
+                        this.logger.warn(`Architecture assessment failed for scan ${jobId}: ${err.message}`);
+                    }
+                }
+            }
             let crossFileNote = '';
             if (REPO_WIDE_SOURCE_TYPES.has(job.sourceType)) {
                 const depVulnCount = Array.isArray(job.dependencyVulnerabilities) ? job.dependencyVulnerabilities.length : 0;
@@ -212,7 +231,10 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
                 const circularCount = Array.isArray(job.circularImports) ? job.circularImports.length : 0;
                 const deadCodeCount = Array.isArray(job.deadCode) ? job.deadCode.length : 0;
                 const duplicatesCount = Array.isArray(job.duplicates) ? job.duplicates.length : 0;
-                crossFileNote = ` ${depVulnCount} vulnerable dependency issue(s), ${licenseCount} license compliance issue(s), ${circularCount} circular import chain(s), ${deadCodeCount} possibly dead file(s), ${duplicatesCount} duplicate block(s),`;
+                const testCoverageRisk = job.testCoverage && typeof job.testCoverage === 'object' && 'riskLevel' in job.testCoverage
+                    ? job.testCoverage.riskLevel
+                    : null;
+                crossFileNote = ` ${depVulnCount} vulnerable dependency issue(s), ${licenseCount} license compliance issue(s), ${circularCount} circular import chain(s), ${deadCodeCount} possibly dead file(s), ${duplicatesCount} duplicate block(s),${testCoverageRisk ? ` ${testCoverageRisk} test-coverage risk,` : ''}${architectureAssessment ? ` architecture consistency ${architectureAssessment.consistencyScore}/100,` : ''}`;
             }
             const summary = `Reviewed ${succeeded.length}/${files.length} files (of ${job.fileCount} total) — ${filesFromCache} from cache, ${filesAiSkipped} needed no AI review. Found ${totalFindings} finding(s),${crossFileNote} ${secretsCount} potential secret(s).`;
             await this.prisma.scanJob.update({
@@ -226,6 +248,7 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
                     aiInvoked: anyFreshAiInvoked,
                     inputTokens: totalUsage.inputTokens,
                     outputTokens: totalUsage.outputTokens,
+                    architectureAssessment: architectureAssessment,
                     completedAt: new Date(),
                 },
             });
@@ -264,7 +287,8 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
         });
         if (!job || !(0, workspace_scope_1.canViewResource)(actor, job))
             throw new common_1.NotFoundException(`Scan ${id} not found`);
-        return job;
+        const riskAggregation = job.status === 'completed' ? (0, risk_aggregation_1.aggregateRisk)(job) : null;
+        return { ...job, riskAggregation };
     }
     async setFindingStatus(actor, scanFileId, findingIndex, status) {
         if (!finding_schema_1.FINDING_STATUSES.includes(status)) {

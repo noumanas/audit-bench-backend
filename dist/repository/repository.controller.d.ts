@@ -30,6 +30,8 @@ export declare class RepositoryController {
         secrets: import("@prisma/client/runtime/library").JsonValue | null;
         dependencyVulnerabilities: import("@prisma/client/runtime/library").JsonValue | null;
         licenseFindings: import("@prisma/client/runtime/library").JsonValue | null;
+        testCoverage: import("@prisma/client/runtime/library").JsonValue | null;
+        architectureAssessment: import("@prisma/client/runtime/library").JsonValue | null;
         contributorStats: import("@prisma/client/runtime/library").JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
@@ -64,6 +66,8 @@ export declare class RepositoryController {
         secrets: import("@prisma/client/runtime/library").JsonValue | null;
         dependencyVulnerabilities: import("@prisma/client/runtime/library").JsonValue | null;
         licenseFindings: import("@prisma/client/runtime/library").JsonValue | null;
+        testCoverage: import("@prisma/client/runtime/library").JsonValue | null;
+        architectureAssessment: import("@prisma/client/runtime/library").JsonValue | null;
         contributorStats: import("@prisma/client/runtime/library").JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
@@ -73,6 +77,7 @@ export declare class RepositoryController {
         completedAt: Date | null;
     }[]>;
     findOne(user: RequestUser, id: string): Promise<{
+        riskAggregation: import("./risk-aggregation").RiskAggregation | null;
         files: {
             id: string;
             createdAt: Date;
@@ -86,7 +91,6 @@ export declare class RepositoryController {
             findingStatuses: import("@prisma/client/runtime/library").JsonValue | null;
             scanJobId: string;
         }[];
-    } & {
         error: string | null;
         id: string;
         createdAt: Date;
@@ -112,6 +116,8 @@ export declare class RepositoryController {
         secrets: import("@prisma/client/runtime/library").JsonValue | null;
         dependencyVulnerabilities: import("@prisma/client/runtime/library").JsonValue | null;
         licenseFindings: import("@prisma/client/runtime/library").JsonValue | null;
+        testCoverage: import("@prisma/client/runtime/library").JsonValue | null;
+        architectureAssessment: import("@prisma/client/runtime/library").JsonValue | null;
         contributorStats: import("@prisma/client/runtime/library").JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;

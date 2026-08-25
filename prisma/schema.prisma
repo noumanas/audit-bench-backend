@@ -377,6 +377,17 @@ model ScanJob {
   // itself looks open-source, since license compliance isn't a relevant
   // question there — see looksProprietary in that file.
   licenseFindings Json?
+  // Static, no-execution test coverage approximation — TestCoverageEstimate,
+  // see analysis/test-coverage.ts. Never runs the target's actual test
+  // suite; see that file for why.
+  testCoverage Json?
+  // LLM-judged architecture consistency read across a sample of the scan's
+  // files — ArchitectureAssessment, see audit/architecture-detector.ts. Only
+  // computed for a repo-wide scan that already needed a fresh AI call for
+  // at least one file (see RepositoryService.processScan) — it rides on a
+  // job that's already quota-gated rather than opening a new unmetered AI
+  // cost path on an otherwise-clean, free scan.
+  architectureAssessment Json?
   // Set for github_repo / gitlab_repo — per-contributor commit/line counts
   // from the provider's own stats endpoint. ContributorStat[] — see
   // analysis/types.ts and GithubService/GitlabService.fetchContributorStats.

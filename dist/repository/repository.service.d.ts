@@ -47,6 +47,8 @@ export declare class RepositoryService {
         secrets: Prisma.JsonValue | null;
         dependencyVulnerabilities: Prisma.JsonValue | null;
         licenseFindings: Prisma.JsonValue | null;
+        testCoverage: Prisma.JsonValue | null;
+        architectureAssessment: Prisma.JsonValue | null;
         contributorStats: Prisma.JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
@@ -81,6 +83,8 @@ export declare class RepositoryService {
         secrets: Prisma.JsonValue | null;
         dependencyVulnerabilities: Prisma.JsonValue | null;
         licenseFindings: Prisma.JsonValue | null;
+        testCoverage: Prisma.JsonValue | null;
+        architectureAssessment: Prisma.JsonValue | null;
         contributorStats: Prisma.JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
@@ -121,6 +125,8 @@ export declare class RepositoryService {
         secrets: Prisma.JsonValue | null;
         dependencyVulnerabilities: Prisma.JsonValue | null;
         licenseFindings: Prisma.JsonValue | null;
+        testCoverage: Prisma.JsonValue | null;
+        architectureAssessment: Prisma.JsonValue | null;
         contributorStats: Prisma.JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
@@ -134,6 +140,7 @@ export declare class RepositoryService {
     private processScan;
     private buildScanUrl;
     findOne(actor: WorkspaceActor, id: string): Promise<{
+        riskAggregation: import("./risk-aggregation").RiskAggregation | null;
         files: {
             id: string;
             createdAt: Date;
@@ -147,7 +154,6 @@ export declare class RepositoryService {
             findingStatuses: Prisma.JsonValue | null;
             scanJobId: string;
         }[];
-    } & {
         error: string | null;
         id: string;
         createdAt: Date;
@@ -173,6 +179,8 @@ export declare class RepositoryService {
         secrets: Prisma.JsonValue | null;
         dependencyVulnerabilities: Prisma.JsonValue | null;
         licenseFindings: Prisma.JsonValue | null;
+        testCoverage: Prisma.JsonValue | null;
+        architectureAssessment: Prisma.JsonValue | null;
         contributorStats: Prisma.JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
@@ -220,6 +228,8 @@ export declare class RepositoryService {
         secrets: Prisma.JsonValue | null;
         dependencyVulnerabilities: Prisma.JsonValue | null;
         licenseFindings: Prisma.JsonValue | null;
+        testCoverage: Prisma.JsonValue | null;
+        architectureAssessment: Prisma.JsonValue | null;
         contributorStats: Prisma.JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;

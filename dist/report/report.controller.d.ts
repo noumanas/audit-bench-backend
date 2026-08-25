@@ -61,6 +61,8 @@ export declare class ReportController {
         secrets: import("@prisma/client/runtime/library").JsonValue | null;
         dependencyVulnerabilities: import("@prisma/client/runtime/library").JsonValue | null;
         licenseFindings: import("@prisma/client/runtime/library").JsonValue | null;
+        testCoverage: import("@prisma/client/runtime/library").JsonValue | null;
+        architectureAssessment: import("@prisma/client/runtime/library").JsonValue | null;
         contributorStats: import("@prisma/client/runtime/library").JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
