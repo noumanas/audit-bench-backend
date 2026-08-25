@@ -372,6 +372,11 @@ model ScanJob {
   duplicates      Json?
   secrets         Json?
   dependencyVulnerabilities Json? // DependencyVulnerability[] — see analysis/dependency-audit.ts
+  // Copyleft/unclear-license dependency findings — LicenseFinding[], see
+  // analysis/license-audit.ts. Empty (not null) when the scanned project
+  // itself looks open-source, since license compliance isn't a relevant
+  // question there — see looksProprietary in that file.
+  licenseFindings Json?
   // Set for github_repo / gitlab_repo — per-contributor commit/line counts
   // from the provider's own stats endpoint. ContributorStat[] — see
   // analysis/types.ts and GithubService/GitlabService.fetchContributorStats.

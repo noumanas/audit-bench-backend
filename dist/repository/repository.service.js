@@ -29,6 +29,7 @@ const dead_code_1 = require("../analysis/dead-code");
 const duplicate_code_1 = require("../analysis/duplicate-code");
 const secrets_scanner_1 = require("../analysis/secrets-scanner");
 const dependency_audit_1 = require("../analysis/dependency-audit");
+const license_audit_1 = require("../analysis/license-audit");
 const types_1 = require("../common/types");
 const verdict_1 = require("../common/verdict");
 const pr_feedback_service_1 = require("../pr-feedback/pr-feedback.service");
@@ -78,7 +79,10 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
         const deadCode = (0, dead_code_1.findDeadCode)(files, graph);
         const duplicates = (0, duplicate_code_1.findDuplicates)(files);
         const secrets = (0, secrets_scanner_1.scanSecrets)(files);
-        const dependencyVulnerabilities = await (0, dependency_audit_1.auditDependencies)(files);
+        const [dependencyVulnerabilities, licenseFindings] = await Promise.all([
+            (0, dependency_audit_1.auditDependencies)(files),
+            (0, license_audit_1.auditLicenses)(files),
+        ]);
         const filesToAnalyze = selectFilesToAnalyze(files, maxScanFiles);
         const repoContext = `Detected framework: ${framework || 'unknown'}. Repository has ${files.length} files total; ${filesToAnalyze.length} selected for review.`;
         const job = await this.gateAndCreateJob(actor, filesToAnalyze, providerName, {
@@ -93,6 +97,7 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
             duplicates: duplicates,
             secrets: secrets,
             dependencyVulnerabilities: dependencyVulnerabilities,
+            licenseFindings: licenseFindings,
             ...(contributorStats ? { contributorStats: contributorStats } : {}),
         });
         void this.processScan(job.id, filesToAnalyze, providerName, repoContext);
@@ -203,10 +208,11 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
             let crossFileNote = '';
             if (REPO_WIDE_SOURCE_TYPES.has(job.sourceType)) {
                 const depVulnCount = Array.isArray(job.dependencyVulnerabilities) ? job.dependencyVulnerabilities.length : 0;
+                const licenseCount = Array.isArray(job.licenseFindings) ? job.licenseFindings.length : 0;
                 const circularCount = Array.isArray(job.circularImports) ? job.circularImports.length : 0;
                 const deadCodeCount = Array.isArray(job.deadCode) ? job.deadCode.length : 0;
                 const duplicatesCount = Array.isArray(job.duplicates) ? job.duplicates.length : 0;
-                crossFileNote = ` ${depVulnCount} vulnerable dependency issue(s), ${circularCount} circular import chain(s), ${deadCodeCount} possibly dead file(s), ${duplicatesCount} duplicate block(s),`;
+                crossFileNote = ` ${depVulnCount} vulnerable dependency issue(s), ${licenseCount} license compliance issue(s), ${circularCount} circular import chain(s), ${deadCodeCount} possibly dead file(s), ${duplicatesCount} duplicate block(s),`;
             }
             const summary = `Reviewed ${succeeded.length}/${files.length} files (of ${job.fileCount} total) — ${filesFromCache} from cache, ${filesAiSkipped} needed no AI review. Found ${totalFindings} finding(s),${crossFileNote} ${secretsCount} potential secret(s).`;
             await this.prisma.scanJob.update({

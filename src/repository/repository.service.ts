@@ -16,6 +16,7 @@ import { findDeadCode } from '../analysis/dead-code';
 import { findDuplicates } from '../analysis/duplicate-code';
 import { scanSecrets } from '../analysis/secrets-scanner';
 import { auditDependencies } from '../analysis/dependency-audit';
+import { auditLicenses } from '../analysis/license-audit';
 import { ScannedFile, ContributorStat } from '../analysis/types';
 import { LlmProviderName, ZERO_USAGE, addUsage } from '../common/types';
 import { worstVerdict } from '../common/verdict';
@@ -55,6 +56,7 @@ interface JobDataBase {
   duplicates?: Prisma.InputJsonValue;
   secrets?: Prisma.InputJsonValue;
   dependencyVulnerabilities?: Prisma.InputJsonValue;
+  licenseFindings?: Prisma.InputJsonValue;
   contributorStats?: Prisma.InputJsonValue;
 }
 
@@ -106,7 +108,10 @@ export class RepositoryService {
     const deadCode = findDeadCode(files, graph);
     const duplicates = findDuplicates(files);
     const secrets = scanSecrets(files);
-    const dependencyVulnerabilities = await auditDependencies(files);
+    const [dependencyVulnerabilities, licenseFindings] = await Promise.all([
+      auditDependencies(files),
+      auditLicenses(files),
+    ]);
     const filesToAnalyze = selectFilesToAnalyze(files, maxScanFiles);
     const repoContext = `Detected framework: ${framework || 'unknown'}. Repository has ${files.length} files total; ${filesToAnalyze.length} selected for review.`;
 
@@ -122,6 +127,7 @@ export class RepositoryService {
       duplicates: duplicates as unknown as Prisma.InputJsonValue,
       secrets: secrets as unknown as Prisma.InputJsonValue,
       dependencyVulnerabilities: dependencyVulnerabilities as unknown as Prisma.InputJsonValue,
+      licenseFindings: licenseFindings as unknown as Prisma.InputJsonValue,
       ...(contributorStats ? { contributorStats: contributorStats as unknown as Prisma.InputJsonValue } : {}),
     });
 
@@ -284,10 +290,11 @@ export class RepositoryService {
       let crossFileNote = '';
       if (REPO_WIDE_SOURCE_TYPES.has(job.sourceType)) {
         const depVulnCount = Array.isArray(job.dependencyVulnerabilities) ? job.dependencyVulnerabilities.length : 0;
+        const licenseCount = Array.isArray(job.licenseFindings) ? job.licenseFindings.length : 0;
         const circularCount = Array.isArray(job.circularImports) ? job.circularImports.length : 0;
         const deadCodeCount = Array.isArray(job.deadCode) ? job.deadCode.length : 0;
         const duplicatesCount = Array.isArray(job.duplicates) ? job.duplicates.length : 0;
-        crossFileNote = ` ${depVulnCount} vulnerable dependency issue(s), ${circularCount} circular import chain(s), ${deadCodeCount} possibly dead file(s), ${duplicatesCount} duplicate block(s),`;
+        crossFileNote = ` ${depVulnCount} vulnerable dependency issue(s), ${licenseCount} license compliance issue(s), ${circularCount} circular import chain(s), ${deadCodeCount} possibly dead file(s), ${duplicatesCount} duplicate block(s),`;
       }
 
       const summary = `Reviewed ${succeeded.length}/${files.length} files (of ${job.fileCount} total) — ${filesFromCache} from cache, ${filesAiSkipped} needed no AI review. Found ${totalFindings} finding(s),${crossFileNote} ${secretsCount} potential secret(s).`;

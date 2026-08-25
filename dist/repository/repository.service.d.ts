@@ -46,6 +46,7 @@ export declare class RepositoryService {
         duplicates: Prisma.JsonValue | null;
         secrets: Prisma.JsonValue | null;
         dependencyVulnerabilities: Prisma.JsonValue | null;
+        licenseFindings: Prisma.JsonValue | null;
         contributorStats: Prisma.JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
@@ -79,6 +80,7 @@ export declare class RepositoryService {
         duplicates: Prisma.JsonValue | null;
         secrets: Prisma.JsonValue | null;
         dependencyVulnerabilities: Prisma.JsonValue | null;
+        licenseFindings: Prisma.JsonValue | null;
         contributorStats: Prisma.JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
@@ -118,6 +120,7 @@ export declare class RepositoryService {
         duplicates: Prisma.JsonValue | null;
         secrets: Prisma.JsonValue | null;
         dependencyVulnerabilities: Prisma.JsonValue | null;
+        licenseFindings: Prisma.JsonValue | null;
         contributorStats: Prisma.JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
@@ -169,6 +172,7 @@ export declare class RepositoryService {
         duplicates: Prisma.JsonValue | null;
         secrets: Prisma.JsonValue | null;
         dependencyVulnerabilities: Prisma.JsonValue | null;
+        licenseFindings: Prisma.JsonValue | null;
         contributorStats: Prisma.JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
@@ -215,6 +219,7 @@ export declare class RepositoryService {
         duplicates: Prisma.JsonValue | null;
         secrets: Prisma.JsonValue | null;
         dependencyVulnerabilities: Prisma.JsonValue | null;
+        licenseFindings: Prisma.JsonValue | null;
         contributorStats: Prisma.JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
