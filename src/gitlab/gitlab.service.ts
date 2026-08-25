@@ -8,6 +8,7 @@ import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
 import { PrContext, PrFeedback, PrPublisher } from '../pr-feedback/pr-feedback.types';
 import { gitlabInstanceUrl } from '../common/gitlab-url';
 import { TokenCryptoService } from '../common/token-crypto.service';
+import { ContributorStat } from '../analysis/types';
 
 @Injectable()
 export class GitlabService implements OnModuleInit, PrPublisher {
@@ -195,6 +196,24 @@ export class GitlabService implements OnModuleInit, PrPublisher {
 
     const arrayBuffer = await res.arrayBuffer();
     return Buffer.from(arrayBuffer);
+  }
+
+  /**
+   * Aggregated per-contributor commit stats for `ref`'s history — unlike
+   * GitHub, GitLab returns this synchronously and pre-aggregated by author
+   * name/email in one call, no clone or per-commit walk needed. Only the
+   * first page is read (per_page=100), same cap used elsewhere in this
+   * service for repos/projects listings.
+   */
+  async fetchContributorStats(userId: string, projectId: number, ref: string): Promise<ContributorStat[]> {
+    const token = await this.requireToken(userId);
+    const res = await fetch(
+      `${this.baseUrl()}/projects/${projectId}/repository/contributors?ref=${encodeURIComponent(ref)}&order_by=commits&sort=desc&per_page=100`,
+      { headers: this.authHeaders(token) },
+    );
+    if (!res.ok) return []; // best-effort — a scan shouldn't fail over missing contributor stats
+    const raw = await res.json();
+    return Array.isArray(raw) ? mapGitlabContributorStats(raw) : [];
   }
 
   /**
@@ -401,6 +420,28 @@ export class GitlabService implements OnModuleInit, PrPublisher {
     const providedBuf = Buffer.from(tokenHeader);
     return secretBuf.length === providedBuf.length && crypto.timingSafeEqual(secretBuf, providedBuf);
   }
+}
+
+/**
+ * Pure mapping from GitLab's `/repository/contributors` response shape into
+ * ContributorStat[] — exported standalone for unit testing without a live
+ * token/HTTP call. GitLab reports the raw git author name/email, not a
+ * resolved GitLab username, and gives no per-contributor last-commit date.
+ */
+export function mapGitlabContributorStats(raw: unknown[]): ContributorStat[] {
+  return raw
+    .filter((entry): entry is Record<string, any> => Boolean(entry) && typeof (entry as any).commits === 'number')
+    .map(
+      (entry): ContributorStat => ({
+        author: entry.name || entry.email || 'unknown',
+        email: entry.email || undefined,
+        commits: entry.commits,
+        additions: entry.additions || 0,
+        deletions: entry.deletions || 0,
+        lastCommitAt: null,
+      }),
+    )
+    .sort((a, b) => b.commits - a.commits);
 }
 
 function severityLabel(severity: string): string {

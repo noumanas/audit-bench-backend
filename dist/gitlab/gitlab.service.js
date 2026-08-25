@@ -10,6 +10,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.GitlabService = void 0;
+exports.mapGitlabContributorStats = mapGitlabContributorStats;
 const common_1 = require("@nestjs/common");
 const crypto = require("crypto");
 const config_1 = require("@nestjs/config");
@@ -168,6 +169,14 @@ let GitlabService = class GitlabService {
         }
         const arrayBuffer = await res.arrayBuffer();
         return Buffer.from(arrayBuffer);
+    }
+    async fetchContributorStats(userId, projectId, ref) {
+        const token = await this.requireToken(userId);
+        const res = await fetch(`${this.baseUrl()}/projects/${projectId}/repository/contributors?ref=${encodeURIComponent(ref)}&order_by=commits&sort=desc&per_page=100`, { headers: this.authHeaders(token) });
+        if (!res.ok)
+            return [];
+        const raw = await res.json();
+        return Array.isArray(raw) ? mapGitlabContributorStats(raw) : [];
     }
     async fetchMrFiles(userId, projectId, mrIid) {
         const token = await this.requireToken(userId);
@@ -331,6 +340,19 @@ exports.GitlabService = GitlabService = __decorate([
         pr_feedback_service_1.PrFeedbackService,
         token_crypto_service_1.TokenCryptoService])
 ], GitlabService);
+function mapGitlabContributorStats(raw) {
+    return raw
+        .filter((entry) => Boolean(entry) && typeof entry.commits === 'number')
+        .map((entry) => ({
+        author: entry.name || entry.email || 'unknown',
+        email: entry.email || undefined,
+        commits: entry.commits,
+        additions: entry.additions || 0,
+        deletions: entry.deletions || 0,
+        lastCommitAt: null,
+    }))
+        .sort((a, b) => b.commits - a.commits);
+}
 function severityLabel(severity) {
     const icons = { critical: '🔴 Critical', high: '🟠 High', medium: '🟡 Medium', low: '🔵 Low' };
     return icons[severity] || severity;

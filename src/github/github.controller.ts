@@ -50,7 +50,10 @@ export class GithubController {
   async scan(@CurrentUser() user: RequestUser, @Body() dto: ScanRepoDto) {
     const { defaultBranch } = await this.githubService.getRepoMeta(user.id, dto.owner, dto.repo);
     const ref = dto.ref || defaultBranch;
-    const zipBuffer = await this.githubService.downloadRepoZip(user.id, dto.owner, dto.repo, dto.ref);
+    const [zipBuffer, contributorStats] = await Promise.all([
+      this.githubService.downloadRepoZip(user.id, dto.owner, dto.repo, dto.ref),
+      this.githubService.fetchContributorStats(user.id, dto.owner, dto.repo),
+    ]);
     return this.repositoryService.createScanJobFromBuffer(
       user,
       zipBuffer,
@@ -58,6 +61,7 @@ export class GithubController {
       dto.provider,
       'github_repo',
       { kind: 'github', owner: dto.owner, repo: dto.repo, ref, defaultBranch },
+      contributorStats,
     );
   }
 

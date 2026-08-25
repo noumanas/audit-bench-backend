@@ -60,6 +60,7 @@ export declare class ReportController {
         duplicates: import("@prisma/client/runtime/library").JsonValue | null;
         secrets: import("@prisma/client/runtime/library").JsonValue | null;
         dependencyVulnerabilities: import("@prisma/client/runtime/library").JsonValue | null;
+        contributorStats: import("@prisma/client/runtime/library").JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
         inputTokens: number;

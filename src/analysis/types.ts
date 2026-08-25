@@ -24,3 +24,22 @@ export interface SecretFinding {
   rule: string;
   snippet: string;
 }
+
+/**
+ * Per-contributor commit activity for a github_repo/gitlab_repo scan — see
+ * GithubService.fetchContributorStats / GitlabService.fetchContributorStats.
+ * Sourced from each provider's own aggregated stats endpoint rather than a
+ * local `git log` walk, so it needs no git clone or history download —
+ * consistent with the rest of this app's provider integrations, which are
+ * all REST calls against the hosted API, never a local git binary.
+ */
+export interface ContributorStat {
+  /** Provider login/username when available, otherwise the commit author's display name. */
+  author: string;
+  email?: string;
+  commits: number;
+  additions: number;
+  deletions: number;
+  /** ISO timestamp of this contributor's most recent commit, or null if the provider didn't report one. */
+  lastCommitAt: string | null;
+}

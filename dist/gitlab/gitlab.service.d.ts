@@ -5,6 +5,7 @@ import { GitlabMrDetails, GitlabMrSummary, GitlabProjectSummary } from './gitlab
 import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
 import { PrContext, PrFeedback, PrPublisher } from '../pr-feedback/pr-feedback.types';
 import { TokenCryptoService } from '../common/token-crypto.service';
+import { ContributorStat } from '../analysis/types';
 export declare class GitlabService implements OnModuleInit, PrPublisher {
     private readonly prisma;
     private readonly config;
@@ -28,6 +29,7 @@ export declare class GitlabService implements OnModuleInit, PrPublisher {
     listBranches(userId: string, projectId: number): Promise<string[]>;
     listMergeRequests(userId: string, projectId: number): Promise<GitlabMrSummary[]>;
     downloadProjectZip(userId: string, projectId: number, ref?: string): Promise<Buffer>;
+    fetchContributorStats(userId: string, projectId: number, ref: string): Promise<ContributorStat[]>;
     fetchMrFiles(userId: string, projectId: number, mrIid: number): Promise<GitlabMrDetails>;
     private fetchFileContent;
     getProjectMeta(userId: string, projectId: number): Promise<{
@@ -48,3 +50,4 @@ export declare class GitlabService implements OnModuleInit, PrPublisher {
     private postCommitStatus;
     static verifyWebhookToken(secret: string, tokenHeader: string | undefined): boolean;
 }
+export declare function mapGitlabContributorStats(raw: unknown[]): ContributorStat[];

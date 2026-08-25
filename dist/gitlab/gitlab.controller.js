@@ -49,8 +49,11 @@ let GitlabController = class GitlabController {
     async scan(user, dto) {
         const { defaultBranch } = await this.gitlabService.getProjectMeta(user.id, dto.projectId);
         const ref = dto.ref || defaultBranch;
-        const zipBuffer = await this.gitlabService.downloadProjectZip(user.id, dto.projectId, dto.ref);
-        return this.repositoryService.createScanJobFromBuffer(user, zipBuffer, dto.projectPath || `project ${dto.projectId}`, dto.provider, 'gitlab_repo', { kind: 'gitlab', projectId: dto.projectId, ref, defaultBranch });
+        const [zipBuffer, contributorStats] = await Promise.all([
+            this.gitlabService.downloadProjectZip(user.id, dto.projectId, dto.ref),
+            this.gitlabService.fetchContributorStats(user.id, dto.projectId, ref),
+        ]);
+        return this.repositoryService.createScanJobFromBuffer(user, zipBuffer, dto.projectPath || `project ${dto.projectId}`, dto.provider, 'gitlab_repo', { kind: 'gitlab', projectId: dto.projectId, ref, defaultBranch }, contributorStats);
     }
     async reviewMr(user, dto) {
         const { files, url, headSha, diffRefs, sourceBranch, targetBranch } = await this.gitlabService.fetchMrFiles(user.id, dto.projectId, dto.mrIid);

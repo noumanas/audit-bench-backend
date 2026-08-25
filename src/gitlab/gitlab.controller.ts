@@ -50,7 +50,10 @@ export class GitlabController {
   async scan(@CurrentUser() user: RequestUser, @Body() dto: ScanProjectDto) {
     const { defaultBranch } = await this.gitlabService.getProjectMeta(user.id, dto.projectId);
     const ref = dto.ref || defaultBranch;
-    const zipBuffer = await this.gitlabService.downloadProjectZip(user.id, dto.projectId, dto.ref);
+    const [zipBuffer, contributorStats] = await Promise.all([
+      this.gitlabService.downloadProjectZip(user.id, dto.projectId, dto.ref),
+      this.gitlabService.fetchContributorStats(user.id, dto.projectId, ref),
+    ]);
     return this.repositoryService.createScanJobFromBuffer(
       user,
       zipBuffer,
@@ -58,6 +61,7 @@ export class GitlabController {
       dto.provider,
       'gitlab_repo',
       { kind: 'gitlab', projectId: dto.projectId, ref, defaultBranch },
+      contributorStats,
     );
   }
 

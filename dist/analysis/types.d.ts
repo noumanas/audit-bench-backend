@@ -22,3 +22,11 @@ export interface SecretFinding {
     rule: string;
     snippet: string;
 }
+export interface ContributorStat {
+    author: string;
+    email?: string;
+    commits: number;
+    additions: number;
+    deletions: number;
+    lastCommitAt: string | null;
+}

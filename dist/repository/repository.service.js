@@ -67,7 +67,7 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
     async createScanJob(actor, file, provider) {
         return this.createScanJobFromBuffer(actor, file.buffer, file.originalname, provider);
     }
-    async createScanJobFromBuffer(actor, zipBuffer, sourceName, provider, sourceType = 'zip', repoRef) {
+    async createScanJobFromBuffer(actor, zipBuffer, sourceName, provider, sourceType = 'zip', repoRef, contributorStats) {
         await this.quota.assertCanScanNewRepository(actor.id, (0, repo_key_1.deriveRepoKey)({ sourceName, repoRef }));
         const providerName = this.llm.resolveProvider(provider);
         const maxFileSize = this.config.get('MAX_FILE_SIZE_BYTES') || 200_000;
@@ -93,6 +93,7 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
             duplicates: duplicates,
             secrets: secrets,
             dependencyVulnerabilities: dependencyVulnerabilities,
+            ...(contributorStats ? { contributorStats: contributorStats } : {}),
         });
         void this.processScan(job.id, filesToAnalyze, providerName, repoContext);
         return job;

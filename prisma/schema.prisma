@@ -372,6 +372,12 @@ model ScanJob {
   duplicates      Json?
   secrets         Json?
   dependencyVulnerabilities Json? // DependencyVulnerability[] — see analysis/dependency-audit.ts
+  // Set for github_repo / gitlab_repo — per-contributor commit/line counts
+  // from the provider's own stats endpoint. ContributorStat[] — see
+  // analysis/types.ts and GithubService/GitlabService.fetchContributorStats.
+  // Null for a zip upload: a raw zip carries no git history to derive this
+  // from, and for github_pr/gitlab_mr diff reviews, where it isn't meaningful.
+  contributorStats Json?
   // Cost-saving summary for this scan — see RepositoryService.processScan.
   filesFromCache Int @default(0)
   filesAiSkipped Int @default(0) // Stage 1 found nothing risky; no LLM call made

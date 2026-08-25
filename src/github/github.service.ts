@@ -6,6 +6,7 @@ import { parseChangedRanges } from '../common/diff-ranges';
 import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
 import { PrContext, PrFeedback, PrPublisher } from '../pr-feedback/pr-feedback.types';
 import { TokenCryptoService } from '../common/token-crypto.service';
+import { ContributorStat } from '../analysis/types';
 
 const GITHUB_API = 'https://api.github.com';
 
@@ -154,6 +155,45 @@ export class GithubService implements OnModuleInit, PrPublisher {
 
     const arrayBuffer = await res.arrayBuffer();
     return Buffer.from(arrayBuffer);
+  }
+
+  /**
+   * Aggregated per-contributor commit stats for the repo's whole history —
+   * GitHub computes and caches this server-side (weekly commit activity per
+   * author), so no local git clone or per-commit walk is needed here. Used
+   * to flag talent/bus-factor concentration on a repo scan (see
+   * RepositoryService), not on a PR/MR diff review.
+   */
+  async fetchContributorStats(userId: string, owner: string, repo: string): Promise<ContributorStat[]> {
+    const token = await this.requireToken(userId);
+    const raw = await this.requestContributorStats(token, owner, repo);
+    return raw ? mapGithubContributorStats(raw) : [];
+  }
+
+  /**
+   * GitHub computes contributor stats lazily — a repo with no cached stats
+   * yet returns 202 while it works in the background (its own documented
+   * behavior, not an error). Retried once after a short delay since this
+   * runs inline in a scan request rather than a background job; still 202
+   * (or empty/404) after that just means "no stats available yet."
+   */
+  private async requestContributorStats(token: string, owner: string, repo: string): Promise<unknown[] | null> {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/stats/contributors`, {
+        headers: this.authHeaders(token),
+      });
+      if (res.status === 202) {
+        if (attempt === 0) {
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+          continue;
+        }
+        return null;
+      }
+      if (!res.ok) return null; // best-effort — a scan shouldn't fail over missing contributor stats
+      const body = await res.json();
+      return Array.isArray(body) ? body : null;
+    }
+    return null;
   }
 
   /**
@@ -382,6 +422,33 @@ export class GithubService implements OnModuleInit, PrPublisher {
     const providedBuf = Buffer.from(provided, 'hex');
     return expectedBuf.length === providedBuf.length && crypto.timingSafeEqual(expectedBuf, providedBuf);
   }
+}
+
+/**
+ * Pure mapping from GitHub's `/stats/contributors` response shape into
+ * ContributorStat[] — exported standalone so the mapping logic (weekly
+ * bucket summing, last-active-week lookup) is unit-testable without a live
+ * token/HTTP call. `author` is null on GitHub's side when a commit's email
+ * doesn't match any GitHub account; those are grouped under 'unknown'
+ * rather than dropped, since the commits/lines still count toward risk.
+ */
+export function mapGithubContributorStats(raw: unknown[]): ContributorStat[] {
+  return raw
+    .filter((entry): entry is Record<string, any> => Boolean(entry) && typeof (entry as any).total === 'number')
+    .map((entry): ContributorStat => {
+      const weeks: Array<{ w: number; a: number; d: number; c: number }> = Array.isArray(entry.weeks) ? entry.weeks : [];
+      const additions = weeks.reduce((sum, w) => sum + (w.a || 0), 0);
+      const deletions = weeks.reduce((sum, w) => sum + (w.d || 0), 0);
+      const lastActiveWeek = [...weeks].reverse().find((w) => (w.c || 0) > 0);
+      return {
+        author: entry.author?.login || 'unknown',
+        commits: entry.total,
+        additions,
+        deletions,
+        lastCommitAt: lastActiveWeek ? new Date(lastActiveWeek.w * 1000).toISOString() : null,
+      };
+    })
+    .sort((a, b) => b.commits - a.commits);
 }
 
 function severityLabel(severity: string): string {

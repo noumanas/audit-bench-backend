@@ -10,6 +10,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.GithubService = void 0;
+exports.mapGithubContributorStats = mapGithubContributorStats;
 const common_1 = require("@nestjs/common");
 const crypto = require("crypto");
 const prisma_service_1 = require("../prisma/prisma.service");
@@ -137,6 +138,30 @@ let GithubService = class GithubService {
         }
         const arrayBuffer = await res.arrayBuffer();
         return Buffer.from(arrayBuffer);
+    }
+    async fetchContributorStats(userId, owner, repo) {
+        const token = await this.requireToken(userId);
+        const raw = await this.requestContributorStats(token, owner, repo);
+        return raw ? mapGithubContributorStats(raw) : [];
+    }
+    async requestContributorStats(token, owner, repo) {
+        for (let attempt = 0; attempt < 2; attempt++) {
+            const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/stats/contributors`, {
+                headers: this.authHeaders(token),
+            });
+            if (res.status === 202) {
+                if (attempt === 0) {
+                    await new Promise((resolve) => setTimeout(resolve, 1500));
+                    continue;
+                }
+                return null;
+            }
+            if (!res.ok)
+                return null;
+            const body = await res.json();
+            return Array.isArray(body) ? body : null;
+        }
+        return null;
     }
     async fetchPrFiles(userId, owner, repo, pullNumber) {
         const token = await this.requireToken(userId);
@@ -324,6 +349,24 @@ exports.GithubService = GithubService = __decorate([
         pr_feedback_service_1.PrFeedbackService,
         token_crypto_service_1.TokenCryptoService])
 ], GithubService);
+function mapGithubContributorStats(raw) {
+    return raw
+        .filter((entry) => Boolean(entry) && typeof entry.total === 'number')
+        .map((entry) => {
+        const weeks = Array.isArray(entry.weeks) ? entry.weeks : [];
+        const additions = weeks.reduce((sum, w) => sum + (w.a || 0), 0);
+        const deletions = weeks.reduce((sum, w) => sum + (w.d || 0), 0);
+        const lastActiveWeek = [...weeks].reverse().find((w) => (w.c || 0) > 0);
+        return {
+            author: entry.author?.login || 'unknown',
+            commits: entry.total,
+            additions,
+            deletions,
+            lastCommitAt: lastActiveWeek ? new Date(lastActiveWeek.w * 1000).toISOString() : null,
+        };
+    })
+        .sort((a, b) => b.commits - a.commits);
+}
 function severityLabel(severity) {
     const icons = { critical: '🔴 Critical', high: '🟠 High', medium: '🟡 Medium', low: '🔵 Low' };
     return icons[severity] || severity;

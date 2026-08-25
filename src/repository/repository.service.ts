@@ -16,7 +16,7 @@ import { findDeadCode } from '../analysis/dead-code';
 import { findDuplicates } from '../analysis/duplicate-code';
 import { scanSecrets } from '../analysis/secrets-scanner';
 import { auditDependencies } from '../analysis/dependency-audit';
-import { ScannedFile } from '../analysis/types';
+import { ScannedFile, ContributorStat } from '../analysis/types';
 import { LlmProviderName, ZERO_USAGE, addUsage } from '../common/types';
 import { worstVerdict } from '../common/verdict';
 import { Prisma, ScanSourceType } from '@prisma/client';
@@ -55,6 +55,7 @@ interface JobDataBase {
   duplicates?: Prisma.InputJsonValue;
   secrets?: Prisma.InputJsonValue;
   dependencyVulnerabilities?: Prisma.InputJsonValue;
+  contributorStats?: Prisma.InputJsonValue;
 }
 
 const REPO_WIDE_SOURCE_TYPES = new Set<ScanSourceType>(['zip', 'github_repo', 'gitlab_repo']);
@@ -87,6 +88,11 @@ export class RepositoryService {
     // Set for github_repo / gitlab_repo — lets FixService branch off the
     // scanned ref and open a PR/MR once the user commits a fix.
     repoRef?: RepoRef,
+    // Set for github_repo / gitlab_repo — per-contributor commit stats
+    // fetched from the provider alongside the zip download (see
+    // GithubController/GitlabController). Absent for a zip upload, which
+    // has no git host to source this from.
+    contributorStats?: ContributorStat[],
   ) {
     await this.quota.assertCanScanNewRepository(actor.id, deriveRepoKey({ sourceName, repoRef }));
 
@@ -116,6 +122,7 @@ export class RepositoryService {
       duplicates: duplicates as unknown as Prisma.InputJsonValue,
       secrets: secrets as unknown as Prisma.InputJsonValue,
       dependencyVulnerabilities: dependencyVulnerabilities as unknown as Prisma.InputJsonValue,
+      ...(contributorStats ? { contributorStats: contributorStats as unknown as Prisma.InputJsonValue } : {}),
     });
 
     void this.processScan(job.id, filesToAnalyze, providerName, repoContext);

@@ -4,7 +4,7 @@ import { LlmService } from '../llm/llm.service';
 import { QuotaService } from '../quota/quota.service';
 import { PipelineService } from '../audit/pipeline.service';
 import { AuditCacheService } from '../audit/cache.service';
-import { ScannedFile } from '../analysis/types';
+import { ScannedFile, ContributorStat } from '../analysis/types';
 import { Prisma, ScanSourceType } from '@prisma/client';
 import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
 import { PrContext } from '../pr-feedback/pr-feedback.types';
@@ -46,6 +46,7 @@ export declare class RepositoryService {
         duplicates: Prisma.JsonValue | null;
         secrets: Prisma.JsonValue | null;
         dependencyVulnerabilities: Prisma.JsonValue | null;
+        contributorStats: Prisma.JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
         inputTokens: number;
@@ -53,7 +54,7 @@ export declare class RepositoryService {
         updatedAt: Date;
         completedAt: Date | null;
     }>;
-    createScanJobFromBuffer(actor: WorkspaceActor, zipBuffer: Buffer, sourceName: string, provider?: string, sourceType?: ScanSourceType, repoRef?: RepoRef): Promise<{
+    createScanJobFromBuffer(actor: WorkspaceActor, zipBuffer: Buffer, sourceName: string, provider?: string, sourceType?: ScanSourceType, repoRef?: RepoRef, contributorStats?: ContributorStat[]): Promise<{
         error: string | null;
         id: string;
         createdAt: Date;
@@ -78,6 +79,7 @@ export declare class RepositoryService {
         duplicates: Prisma.JsonValue | null;
         secrets: Prisma.JsonValue | null;
         dependencyVulnerabilities: Prisma.JsonValue | null;
+        contributorStats: Prisma.JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
         inputTokens: number;
@@ -116,6 +118,7 @@ export declare class RepositoryService {
         duplicates: Prisma.JsonValue | null;
         secrets: Prisma.JsonValue | null;
         dependencyVulnerabilities: Prisma.JsonValue | null;
+        contributorStats: Prisma.JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
         inputTokens: number;
@@ -166,6 +169,7 @@ export declare class RepositoryService {
         duplicates: Prisma.JsonValue | null;
         secrets: Prisma.JsonValue | null;
         dependencyVulnerabilities: Prisma.JsonValue | null;
+        contributorStats: Prisma.JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
         inputTokens: number;
@@ -211,6 +215,7 @@ export declare class RepositoryService {
         duplicates: Prisma.JsonValue | null;
         secrets: Prisma.JsonValue | null;
         dependencyVulnerabilities: Prisma.JsonValue | null;
+        contributorStats: Prisma.JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
         inputTokens: number;

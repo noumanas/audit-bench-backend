@@ -4,6 +4,7 @@ import { GithubPrDetails, GithubPrSummary, GithubRepoSummary } from './github.ty
 import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
 import { PrContext, PrFeedback, PrPublisher } from '../pr-feedback/pr-feedback.types';
 import { TokenCryptoService } from '../common/token-crypto.service';
+import { ContributorStat } from '../analysis/types';
 export declare class GithubService implements OnModuleInit, PrPublisher {
     private readonly prisma;
     private readonly prFeedback;
@@ -24,6 +25,8 @@ export declare class GithubService implements OnModuleInit, PrPublisher {
     listBranches(userId: string, owner: string, repo: string): Promise<string[]>;
     listPullRequests(userId: string, owner: string, repo: string): Promise<GithubPrSummary[]>;
     downloadRepoZip(userId: string, owner: string, repo: string, ref?: string): Promise<Buffer>;
+    fetchContributorStats(userId: string, owner: string, repo: string): Promise<ContributorStat[]>;
+    private requestContributorStats;
     fetchPrFiles(userId: string, owner: string, repo: string, pullNumber: number): Promise<GithubPrDetails>;
     getRepoMeta(userId: string, owner: string, repo: string): Promise<{
         defaultBranch: string;
@@ -48,3 +51,4 @@ export declare class GithubService implements OnModuleInit, PrPublisher {
     postIssueComment(userId: string, owner: string, repo: string, issueNumber: number, body: string): Promise<void>;
     static verifyWebhookSignature(secret: string, rawBody: Buffer, signatureHeader: string | undefined): boolean;
 }
+export declare function mapGithubContributorStats(raw: unknown[]): ContributorStat[];

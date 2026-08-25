@@ -1,5 +1,5 @@
 import * as crypto from 'crypto';
-import { GithubService } from './github.service';
+import { GithubService, mapGithubContributorStats } from './github.service';
 
 /**
  * This check is the entire trust boundary for the webhook receiver — every
@@ -35,5 +35,44 @@ describe('GithubService.verifyWebhookSignature', () => {
 
   it('rejects a malformed signature header missing the sha256= prefix', () => {
     expect(GithubService.verifyWebhookSignature(secret, Buffer.from('x'), 'deadbeef')).toBe(false);
+  });
+});
+
+describe('mapGithubContributorStats', () => {
+  it('sums weekly additions/deletions and reports the most recent active week', () => {
+    const raw = [
+      {
+        total: 42,
+        author: { login: 'octocat' },
+        weeks: [
+          { w: 1_600_000_000, a: 100, d: 20, c: 5 },
+          { w: 1_600_604_800, a: 0, d: 0, c: 0 }, // quiet week — should not be picked as "last active"
+          { w: 1_601_209_600, a: 50, d: 10, c: 3 },
+        ],
+      },
+    ];
+
+    const [stat] = mapGithubContributorStats(raw);
+    expect(stat).toEqual({
+      author: 'octocat',
+      commits: 42,
+      additions: 150,
+      deletions: 30,
+      lastCommitAt: new Date(1_601_209_600 * 1000).toISOString(),
+    });
+  });
+
+  it('falls back to "unknown" when GitHub could not match the commit author to an account', () => {
+    const raw = [{ total: 3, author: null, weeks: [] }];
+    expect(mapGithubContributorStats(raw)[0].author).toBe('unknown');
+  });
+
+  it('sorts by commit count descending and drops malformed entries', () => {
+    const raw = [
+      { total: 5, author: { login: 'low' }, weeks: [] },
+      { total: 50, author: { login: 'high' }, weeks: [] },
+      { notAnEntry: true },
+    ];
+    expect(mapGithubContributorStats(raw).map((s) => s.author)).toEqual(['high', 'low']);
   });
 });
