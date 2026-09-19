@@ -6,12 +6,14 @@ import { WorkspaceActor, workspaceWhere } from '../common/workspace-scope';
 import type {
   AnalyticsOverview,
   AnalyticsTrend,
+  CriticalIssue,
   RiskiestItem,
   TopIssue,
   TrendPoint,
 } from './analytics.types';
 
 interface ResourceScore {
+  id: string;
   createdAt: Date;
   label: string;
   kind: 'audit' | 'scan';
@@ -51,7 +53,7 @@ export class AnalyticsService {
         ? Promise.resolve([])
         : this.prisma.audit.findMany({
             where: { ...scope, createdAt: { gte: since } },
-            select: { filename: true, verdict: true, findings: true, createdAt: true },
+            select: { id: true, filename: true, verdict: true, findings: true, createdAt: true },
           }),
       this.prisma.scanJob.findMany({
         where: {
@@ -61,6 +63,7 @@ export class AnalyticsService {
           ...(repoFilter ? { sourceName: { contains: repoFilter, mode: 'insensitive' } } : {}),
         },
         select: {
+          id: true,
           sourceName: true,
           sourceType: true,
           verdict: true,
@@ -78,6 +81,7 @@ export class AnalyticsService {
     const auditScores: ResourceScore[] = audits.map((a) => {
       const findings = ((a.findings as unknown as Finding[]) ?? []).filter(Boolean);
       return {
+        id: a.id,
         createdAt: a.createdAt,
         label: a.filename,
         kind: 'audit' as const,
@@ -112,6 +116,7 @@ export class AnalyticsService {
       );
 
       return {
+        id: s.id,
         createdAt: s.createdAt,
         label: s.sourceName,
         kind: 'scan' as const,
@@ -209,6 +214,7 @@ export class AnalyticsService {
       .slice(0, 5)
       .filter((r) => r.criticalCount > 0 || r.highCount > 0)
       .map((r) => ({
+        resourceId: r.id,
         label: r.label,
         kind: r.kind,
         verdict: r.verdict,
@@ -218,8 +224,21 @@ export class AnalyticsService {
       }));
 
     const grouped = new Map<string, TopIssue>();
+    const worstInstance = new Map<string, CriticalIssue>();
+    const severityBreakdown = { critical: 0, high: 0, medium: 0, low: 0 };
+    const categoryBreakdown: Record<string, number> = {};
+    let patchesAvailable = 0;
+    let totalFindings = 0;
+
     for (const r of resources) {
       for (const f of r.findings) {
+        totalFindings++;
+        if (f.severity in severityBreakdown) {
+          severityBreakdown[f.severity as keyof typeof severityBreakdown]++;
+        }
+        categoryBreakdown[f.category] = (categoryBreakdown[f.category] ?? 0) + 1;
+        if (f.examplePatch) patchesAvailable++;
+
         const key = `${f.category}::${f.title.trim().toLowerCase()}`;
         const existing = grouped.get(key);
         if (existing) {
@@ -228,10 +247,32 @@ export class AnalyticsService {
         } else {
           grouped.set(key, { category: f.category, title: f.title, count: 1, maxSeverity: f.severity });
         }
+
+        // Track the single worst-ranked (severity, then confidence) instance
+        // of this issue so criticalIssues can show a real finding, not just
+        // a recurrence count.
+        const worst = worstInstance.get(key);
+        const rank = SEVERITY_RANK[f.severity] * 1 + f.confidence;
+        const worstRank = worst ? SEVERITY_RANK[worst.severity] + worst.confidencePct / 100 : -1;
+        if (!worst || rank > worstRank) {
+          worstInstance.set(key, {
+            title: f.title,
+            category: f.category,
+            severity: f.severity,
+            confidencePct: Math.round(f.confidence * 100),
+            resourceId: r.id,
+            resourceLabel: r.label,
+            resourceKind: r.kind,
+          });
+        }
       }
     }
     const topIssues = [...grouped.values()]
       .sort((a, b) => b.count - a.count || SEVERITY_RANK[b.maxSeverity] - SEVERITY_RANK[a.maxSeverity])
+      .slice(0, 6);
+
+    const criticalIssues = [...worstInstance.values()]
+      .sort((a, b) => SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity] || b.confidencePct - a.confidencePct)
       .slice(0, 6);
 
     return {
@@ -244,6 +285,11 @@ export class AnalyticsService {
       scores,
       riskiest,
       topIssues,
+      severityBreakdown,
+      categoryBreakdown,
+      patchesAvailable,
+      totalFindings,
+      criticalIssues,
     };
   }
 

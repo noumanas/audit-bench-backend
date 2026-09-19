@@ -17,6 +17,7 @@ export interface UsageTotals {
     cacheSavingsPct: number;
 }
 export interface RiskiestItem {
+    resourceId: string;
     label: string;
     kind: 'audit' | 'scan';
     verdict: string | null;
@@ -30,6 +31,22 @@ export interface TopIssue {
     count: number;
     maxSeverity: string;
 }
+export interface SeverityBreakdown {
+    critical: number;
+    high: number;
+    medium: number;
+    low: number;
+}
+export type CategoryBreakdown = Partial<Record<string, number>>;
+export interface CriticalIssue {
+    title: string;
+    category: string;
+    severity: string;
+    confidencePct: number;
+    resourceId: string;
+    resourceLabel: string;
+    resourceKind: 'audit' | 'scan';
+}
 export interface AnalyticsOverview {
     windowDays: number;
     repoFilter: string | null;
@@ -40,6 +57,11 @@ export interface AnalyticsOverview {
     scores: ScoreSet;
     riskiest: RiskiestItem[];
     topIssues: TopIssue[];
+    severityBreakdown: SeverityBreakdown;
+    categoryBreakdown: CategoryBreakdown;
+    patchesAvailable: number;
+    totalFindings: number;
+    criticalIssues: CriticalIssue[];
 }
 export interface TrendPoint {
     date: string;

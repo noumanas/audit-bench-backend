@@ -20,6 +20,7 @@ export interface UsageTotals {
 }
 
 export interface RiskiestItem {
+  resourceId: string;
   label: string;
   kind: 'audit' | 'scan';
   verdict: string | null;
@@ -35,6 +36,28 @@ export interface TopIssue {
   maxSeverity: string;
 }
 
+export interface SeverityBreakdown {
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+}
+
+// Keyed by the six Finding categories (Security, Logic, Performance,
+// Architecture, Maintainability, Testing) — a Partial since a window with no
+// findings in a category simply omits that key rather than reporting a 0.
+export type CategoryBreakdown = Partial<Record<string, number>>;
+
+export interface CriticalIssue {
+  title: string;
+  category: string;
+  severity: string;
+  confidencePct: number;
+  resourceId: string;
+  resourceLabel: string;
+  resourceKind: 'audit' | 'scan';
+}
+
 export interface AnalyticsOverview {
   windowDays: number;
   repoFilter: string | null;
@@ -47,6 +70,16 @@ export interface AnalyticsOverview {
   scores: ScoreSet;
   riskiest: RiskiestItem[];
   topIssues: TopIssue[];
+  severityBreakdown: SeverityBreakdown;
+  categoryBreakdown: CategoryBreakdown;
+  // Findings that shipped a ready-to-apply examplePatch, out of all findings
+  // in the window — a real count, not an estimate.
+  patchesAvailable: number;
+  totalFindings: number;
+  // The single worst individual finding per category+title group, ranked by
+  // severity then confidence — distinct from topIssues (which ranks by how
+  // often an issue recurs); this ranks by how bad the worst instance is.
+  criticalIssues: CriticalIssue[];
 }
 
 export interface TrendPoint {
