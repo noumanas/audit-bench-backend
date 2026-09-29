@@ -81,6 +81,9 @@ let AuthService = class AuthService {
         if (!user.isActive) {
             throw new common_1.UnauthorizedException("This account has been suspended. Contact an administrator.");
         }
+        this.prisma.user
+            .update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
+            .catch(() => { });
         const payload = { sub: user.id, email: user.email };
         return {
             accessToken: this.jwt.sign(payload),

@@ -13,10 +13,15 @@ const SAFE_USER_SELECT = {
   email: true,
   name: true,
   createdAt: true,
+  lastLoginAt: true,
   plan: true,
   role: true,
   githubUsername: true,
   isActive: true,
+  // Real counts via a Prisma relation aggregate, not a separate query per
+  // user — cheap enough to include on every mutation response too, so the
+  // admin table's row never loses these after an edit/role/status change.
+  _count: { select: { audits: true, scanJobs: true } },
 } as const;
 
 const PLAN_REQUEST_INCLUDE = {

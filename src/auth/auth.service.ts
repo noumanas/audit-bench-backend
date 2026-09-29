@@ -111,6 +111,13 @@ export class AuthService {
       );
     }
 
+    // Fire-and-forget: a real sign-in (password, signup, or OAuth) shouldn't
+    // wait on this, and a failure here shouldn't block the session either —
+    // it's admin-visible metadata, not something login correctness depends on.
+    this.prisma.user
+      .update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
+      .catch(() => {});
+
     const payload: JwtPayload = { sub: user.id, email: user.email };
     return {
       accessToken: this.jwt.sign(payload),

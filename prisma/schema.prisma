@@ -182,6 +182,10 @@ model User {
   // tell it apart from a real JWT without attempting to verify it as one.
   apiKey          String?       @unique
   createdAt       DateTime      @default(now())
+  // Set on every password login, signup, and OAuth session — see
+  // AuthService.buildSession — but not on ordinary API/JWT requests, so it
+  // reflects actual sign-ins, not general activity.
+  lastLoginAt     DateTime?
   audits          Audit[]
   scanJobs        ScanJob[]
   planRequests    PlanRequest[] @relation("PlanRequestsByUser")
