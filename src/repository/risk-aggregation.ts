@@ -330,9 +330,12 @@ function estimateRemediation(
     });
   }
 
-  const totalEstimatedDays = Math.round(items.reduce((sum, i) => sum + i.estimatedDays, 0) * 10) / 10;
+  // Per-item weights like 0.1 × n produce float noise (3 × 0.1 = 0.30000000000000004)
+  // that otherwise lands verbatim in a client-facing report.
+  const roundedItems = items.map((i) => ({ ...i, estimatedDays: Math.round(i.estimatedDays * 100) / 100 }));
+  const totalEstimatedDays = Math.round(roundedItems.reduce((sum, i) => sum + i.estimatedDays, 0) * 10) / 10;
   return {
-    items,
+    items: roundedItems,
     totalEstimatedDays,
     estimatedCostLowUsd: Math.round(totalEstimatedDays * DAY_RATE_LOW_USD),
     estimatedCostHighUsd: Math.round(totalEstimatedDays * DAY_RATE_HIGH_USD),
