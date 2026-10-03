@@ -45,8 +45,8 @@ export interface ScanJobRiskInput {
 // Blended engineer-day rate used to turn a day estimate into a dollar range
 // — deliberately a range, not a single number, since a point estimate would
 // overclaim precision a static heuristic can't back up.
-const DAY_RATE_LOW_USD = 600;
-const DAY_RATE_HIGH_USD = 1000;
+export const DAY_RATE_LOW_USD = 600;
+export const DAY_RATE_HIGH_USD = 1000;
 
 // PRD's own framing: "Critical findings weighted highest, talent
 // concentration and test coverage weighted moderately." Security carries
@@ -333,7 +333,8 @@ function estimateRemediation(
   // Per-item weights like 0.1 × n produce float noise (3 × 0.1 = 0.30000000000000004)
   // that otherwise lands verbatim in a client-facing report.
   const roundedItems = items.map((i) => ({ ...i, estimatedDays: Math.round(i.estimatedDays * 100) / 100 }));
-  const totalEstimatedDays = Math.round(roundedItems.reduce((sum, i) => sum + i.estimatedDays, 0) * 10) / 10;
+  // Same 2dp as the items, so the line items in a report always add up to the total shown.
+  const totalEstimatedDays = Math.round(roundedItems.reduce((sum, i) => sum + i.estimatedDays, 0) * 100) / 100;
   return {
     items: roundedItems,
     totalEstimatedDays,

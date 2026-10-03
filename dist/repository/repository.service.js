@@ -32,6 +32,7 @@ const dependency_audit_1 = require("../analysis/dependency-audit");
 const license_audit_1 = require("../analysis/license-audit");
 const test_coverage_1 = require("../analysis/test-coverage");
 const architecture_detector_1 = require("../audit/architecture-detector");
+const tdd_assessment_1 = require("./tdd-assessment");
 const risk_aggregation_1 = require("./risk-aggregation");
 const types_1 = require("../common/types");
 const verdict_1 = require("../common/verdict");
@@ -288,7 +289,8 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
         if (!job || !(0, workspace_scope_1.canViewResource)(actor, job))
             throw new common_1.NotFoundException(`Scan ${id} not found`);
         const riskAggregation = job.status === 'completed' ? (0, risk_aggregation_1.aggregateRisk)(job) : null;
-        return { ...job, riskAggregation };
+        const tddAssessment = riskAggregation ? (0, tdd_assessment_1.assessTdd)(job, riskAggregation) : null;
+        return { ...job, riskAggregation, tddAssessment };
     }
     async setFindingStatus(actor, scanFileId, findingIndex, status) {
         if (!finding_schema_1.FINDING_STATUSES.includes(status)) {

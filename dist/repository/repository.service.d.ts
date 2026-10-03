@@ -141,6 +141,7 @@ export declare class RepositoryService {
     private buildScanUrl;
     findOne(actor: WorkspaceActor, id: string): Promise<{
         riskAggregation: import("./risk-aggregation").RiskAggregation | null;
+        tddAssessment: import("./tdd-assessment").TddAssessment | null;
         files: {
             id: string;
             createdAt: Date;

@@ -19,6 +19,7 @@ import { auditDependencies } from '../analysis/dependency-audit';
 import { auditLicenses } from '../analysis/license-audit';
 import { estimateTestCoverage } from '../analysis/test-coverage';
 import { buildArchitecturePrompt, architectureAssessmentSchema, ArchitectureAssessment } from '../audit/architecture-detector';
+import { assessTdd } from './tdd-assessment';
 import { aggregateRisk } from './risk-aggregation';
 import { ScannedFile, ContributorStat } from '../analysis/types';
 import { LlmProviderName, ZERO_USAGE, addUsage } from '../common/types';
@@ -391,7 +392,8 @@ export class RepositoryService {
     // and no reason to pay a write for it. Only meaningful once the scan has
     // actually finished gathering that data.
     const riskAggregation = job.status === 'completed' ? aggregateRisk(job) : null;
-    return { ...job, riskAggregation };
+    const tddAssessment = riskAggregation ? assessTdd(job, riskAggregation) : null;
+    return { ...job, riskAggregation, tddAssessment };
   }
 
   async setFindingStatus(actor: WorkspaceActor, scanFileId: string, findingIndex: number, status: FindingStatus) {

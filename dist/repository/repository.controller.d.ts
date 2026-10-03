@@ -78,6 +78,7 @@ export declare class RepositoryController {
     }[]>;
     findOne(user: RequestUser, id: string): Promise<{
         riskAggregation: import("./risk-aggregation").RiskAggregation | null;
+        tddAssessment: import("./tdd-assessment").TddAssessment | null;
         files: {
             id: string;
             createdAt: Date;
