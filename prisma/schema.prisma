@@ -96,6 +96,14 @@ model Plan {
   // null = unlimited. Each "Run investigation" consumes one, regardless of
   // how many turns it actually takes.
   monthlyInvestigationLimit  Int?
+  // null = unlimited. Repository scans (zip / GitHub repo / GitLab repo —
+  // not PR/MR reviews) that made a fresh AI call this calendar month; they
+  // also still count toward monthlyAuditLimit. See
+  // QuotaService.assertCanRunAiRepoScan.
+  monthlyRepoScanLimit       Int?
+  // Technical due diligence reports (the investor view + TDD assessment).
+  // Enterprise only — see QuotaService.canUseDueDiligence.
+  dueDiligence               Boolean @default(false)
   createdAt         DateTime       @default(now())
   users             User[]
   organizations     Organization[]
@@ -116,6 +124,8 @@ model Organization {
   slug         String               @unique
   plan         Plan                 @relation(fields: [planId], references: [id])
   planId       String
+  // Same rule as User.planExpiresAt, for the org's shared plan.
+  planExpiresAt DateTime?
   createdAt    DateTime             @default(now())
   members      User[]               @relation("OrganizationMembers")
   invites      OrganizationInvite[]
@@ -156,6 +166,10 @@ model User {
   name            String?
   plan            Plan          @relation(fields: [planId], references: [id])
   planId          String
+  // Paid plans run 30 days from approval (see common/plan-expiry.ts); past
+  // this, QuotaService treats the account as Free immediately and
+  // PlanExpiryService switches planId back to Free. null = no expiry (Free).
+  planExpiresAt   DateTime?
   role            Role          @default(user)
   // Flipped off by an admin to lock the account out immediately (checked at
   // login and on every authenticated request via JwtStrategy) without

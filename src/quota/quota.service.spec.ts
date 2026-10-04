@@ -170,3 +170,81 @@ describe('QuotaService.assertCanRunInvestigation', () => {
     await expect(quota.assertCanRunInvestigation('u1', 'super_admin', db as never)).resolves.toBeUndefined();
   });
 });
+
+function planDb(opts: {
+  plan: Record<string, unknown>;
+  planExpiresAt?: Date | null;
+  repoScansUsed?: number;
+  freePlan?: Record<string, unknown>;
+}) {
+  const freePlan = opts.freePlan ?? { slug: 'free', name: 'Free', monthlyRepoScanLimit: 1, dueDiligence: false };
+  return {
+    user: {
+      findUniqueOrThrow: jest.fn().mockResolvedValue({
+        id: 'u1',
+        organizationId: null,
+        organization: null,
+        planExpiresAt: opts.planExpiresAt ?? null,
+        plan: opts.plan,
+      }),
+    },
+    plan: { findUniqueOrThrow: jest.fn().mockResolvedValue(freePlan) },
+    scanJob: { count: jest.fn().mockResolvedValue(opts.repoScansUsed ?? 0) },
+  };
+}
+
+describe('QuotaService.assertCanRunAiRepoScan', () => {
+  const pro = { slug: 'pro', name: 'Pro', monthlyRepoScanLimit: 3, dueDiligence: false };
+
+  it('allows an AI repo scan under the monthly limit', async () => {
+    const db = planDb({ plan: pro, repoScansUsed: 2 });
+    await expect(new QuotaService({} as PrismaService).assertCanRunAiRepoScan('u1', db as never)).resolves.toBeUndefined();
+  });
+
+  it('rejects with a 429 once the monthly repo-scan limit is used', async () => {
+    const db = planDb({ plan: pro, repoScansUsed: 3 });
+    await expect(new QuotaService({} as PrismaService).assertCanRunAiRepoScan('u1', db as never)).rejects.toThrow(HttpException);
+  });
+
+  it('counts only AI repository scans this month, not PR/MR reviews', async () => {
+    const db = planDb({ plan: pro, repoScansUsed: 0 });
+    await new QuotaService({} as PrismaService).assertCanRunAiRepoScan('u1', db as never);
+    const where = db.scanJob.count.mock.calls[0][0].where;
+    expect(where.aiInvoked).toBe(true);
+    expect(where.sourceType).toEqual({ in: ['zip', 'github_repo', 'gitlab_repo'] });
+  });
+
+  it('never blocks an unlimited plan (Enterprise)', async () => {
+    const db = planDb({ plan: { slug: 'enterprise', name: 'Enterprise', monthlyRepoScanLimit: null, dueDiligence: true }, repoScansUsed: 500 });
+    await expect(new QuotaService({} as PrismaService).assertCanRunAiRepoScan('u1', db as never)).resolves.toBeUndefined();
+  });
+
+  it('applies Free limits as soon as a paid plan has expired', async () => {
+    const db = planDb({ plan: pro, planExpiresAt: new Date(Date.now() - 1000), repoScansUsed: 1 });
+    await expect(new QuotaService({} as PrismaService).assertCanRunAiRepoScan('u1', db as never)).rejects.toThrow(HttpException);
+  });
+});
+
+describe('QuotaService.canUseDueDiligence', () => {
+  const enterprise = { slug: 'enterprise', name: 'Enterprise', monthlyRepoScanLimit: null, dueDiligence: true };
+
+  it('allows Enterprise', async () => {
+    const db = planDb({ plan: enterprise, planExpiresAt: new Date(Date.now() + 86_400_000) });
+    await expect(new QuotaService({} as PrismaService).canUseDueDiligence('u1', 'user', db as never)).resolves.toBe(true);
+  });
+
+  it('denies every other plan', async () => {
+    const db = planDb({ plan: { slug: 'team', name: 'Team', monthlyRepoScanLimit: 20, dueDiligence: false } });
+    await expect(new QuotaService({} as PrismaService).canUseDueDiligence('u1', 'user', db as never)).resolves.toBe(false);
+  });
+
+  it('denies an expired Enterprise plan', async () => {
+    const db = planDb({ plan: enterprise, planExpiresAt: new Date(Date.now() - 1000) });
+    await expect(new QuotaService({} as PrismaService).canUseDueDiligence('u1', 'user', db as never)).resolves.toBe(false);
+  });
+
+  it('lets admin and super_admin through regardless of plan', async () => {
+    const db = planDb({ plan: { slug: 'free', name: 'Free', monthlyRepoScanLimit: 1, dueDiligence: false } });
+    await expect(new QuotaService({} as PrismaService).canUseDueDiligence('u1', 'super_admin', db as never)).resolves.toBe(true);
+  });
+});

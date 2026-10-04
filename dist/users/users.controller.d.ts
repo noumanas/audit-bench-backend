@@ -19,6 +19,8 @@ export declare class UsersController {
             maxRepositories: number | null;
             alignmentLabEnabled: boolean;
             monthlyInvestigationLimit: number | null;
+            monthlyRepoScanLimit: number | null;
+            dueDiligence: boolean;
         };
         organization: {
             name: string;
@@ -36,13 +38,19 @@ export declare class UsersController {
     }>;
     getUsage(user: RequestUser): Promise<{
         plan: {
+            name: string;
+            id: string;
+            createdAt: Date;
+            slug: string;
+            priceMonthlyCents: number;
             dailyAuditLimit: number | null;
             monthlyAuditLimit: number | null;
             repositoryScan: boolean;
             maxRepositories: number | null;
             alignmentLabEnabled: boolean;
             monthlyInvestigationLimit: number | null;
-            name: string;
+            monthlyRepoScanLimit: number | null;
+            dueDiligence: boolean;
         };
         scope: "organization" | "personal";
         organizationName: string | null;
@@ -50,6 +58,10 @@ export declare class UsersController {
         dailyLimit: number | null;
         monthlyUsed: number;
         monthlyLimit: number | null;
+        repoScansUsed: number;
+        repoScanLimit: number | null;
+        dueDiligence: boolean;
+        planExpiresAt: Date | null;
         dailyResetsAt: Date;
         monthlyResetsAt: Date;
     }>;
@@ -68,6 +80,8 @@ export declare class UsersController {
                 maxRepositories: number | null;
                 alignmentLabEnabled: boolean;
                 monthlyInvestigationLimit: number | null;
+                monthlyRepoScanLimit: number | null;
+                dueDiligence: boolean;
             };
             organization: {
                 name: string;
@@ -103,6 +117,8 @@ export declare class UsersController {
                 maxRepositories: number | null;
                 alignmentLabEnabled: boolean;
                 monthlyInvestigationLimit: number | null;
+                monthlyRepoScanLimit: number | null;
+                dueDiligence: boolean;
             };
             reviewedBy: {
                 email: string;
@@ -139,6 +155,8 @@ export declare class UsersController {
             maxRepositories: number | null;
             alignmentLabEnabled: boolean;
             monthlyInvestigationLimit: number | null;
+            monthlyRepoScanLimit: number | null;
+            dueDiligence: boolean;
         };
         reviewedBy: {
             email: string;

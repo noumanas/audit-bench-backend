@@ -14,6 +14,8 @@ const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 const prisma_service_1 = require("../prisma/prisma.service");
 const repo_key_1 = require("../common/repo-key");
+const plan_expiry_1 = require("../common/plan-expiry");
+const REPO_SCAN_SOURCE_TYPES = ['zip', 'github_repo', 'gitlab_repo'];
 function startOfDay(d = new Date()) {
     return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
@@ -41,8 +43,20 @@ let QuotaService = class QuotaService {
             include: { plan: true, organization: { include: { plan: true } } },
         });
     }
-    effectivePlan(user) {
-        return user.organization ? user.organization.plan : user.plan;
+    async effectivePlan(db, user) {
+        const owner = user.organization ?? user;
+        if ((0, plan_expiry_1.isPlanExpired)(owner.planExpiresAt) && owner.plan.slug !== 'free') {
+            return db.plan.findUniqueOrThrow({ where: { slug: 'free' } });
+        }
+        return owner.plan;
+    }
+    scopeOf(user) {
+        return user.organizationId ? { organizationId: user.organizationId } : { userId: user.id };
+    }
+    countAiRepoScans(db, scopeWhere, since) {
+        return db.scanJob.count({
+            where: { ...scopeWhere, createdAt: { gte: since }, aiInvoked: true, sourceType: { in: [...REPO_SCAN_SOURCE_TYPES] } },
+        });
     }
     async countUsage(db, scopeWhere, since) {
         const [audits, scans] = await Promise.all([
@@ -53,11 +67,13 @@ let QuotaService = class QuotaService {
     }
     async getUsage(userId, db = this.prisma) {
         const user = await this.loadUserWithPlan(db, userId);
-        const plan = this.effectivePlan(user);
-        const scopeWhere = user.organizationId ? { organizationId: user.organizationId } : { userId };
-        const [dailyUsed, monthlyUsed] = await Promise.all([
+        const plan = await this.effectivePlan(db, user);
+        const owner = user.organization ?? user;
+        const scopeWhere = this.scopeOf(user);
+        const [dailyUsed, monthlyUsed, repoScansUsed] = await Promise.all([
             this.countUsage(db, scopeWhere, startOfDay()),
             this.countUsage(db, scopeWhere, startOfMonth()),
+            this.countAiRepoScans(db, scopeWhere, startOfMonth()),
         ]);
         return {
             plan,
@@ -67,6 +83,10 @@ let QuotaService = class QuotaService {
             dailyLimit: plan.dailyAuditLimit,
             monthlyUsed,
             monthlyLimit: plan.monthlyAuditLimit,
+            repoScansUsed,
+            repoScanLimit: plan.monthlyRepoScanLimit,
+            dueDiligence: plan.dueDiligence,
+            planExpiresAt: plan.slug === 'free' ? null : owner.planExpiresAt,
             dailyResetsAt: startOfNextDay(),
             monthlyResetsAt: startOfNextMonth(),
         };
@@ -90,19 +110,19 @@ let QuotaService = class QuotaService {
     }
     async assertPlanAllowsRepositoryScan(userId, db = this.prisma) {
         const user = await this.loadUserWithPlan(db, userId);
-        const plan = this.effectivePlan(user);
+        const plan = await this.effectivePlan(db, user);
         if (!plan.repositoryScan) {
             throw new common_1.ForbiddenException(`Repository scanning isn't included in the ${plan.name} plan. Upgrade to Pro or higher.`);
         }
     }
     async assertCanScanNewRepository(userId, repoKey, db = this.prisma) {
         const user = await this.loadUserWithPlan(db, userId);
-        const plan = this.effectivePlan(user);
+        const plan = await this.effectivePlan(db, user);
         if (!plan.repositoryScan) {
             throw new common_1.ForbiddenException(`Repository scanning isn't included in the ${plan.name} plan. Upgrade to Pro or higher.`);
         }
         if (plan.maxRepositories != null) {
-            const scopeWhere = user.organizationId ? { organizationId: user.organizationId } : { userId };
+            const scopeWhere = this.scopeOf(user);
             const priorScans = await db.scanJob.findMany({
                 where: scopeWhere,
                 select: { sourceName: true, repoRef: true, prContext: true },
@@ -113,16 +133,36 @@ let QuotaService = class QuotaService {
             }
         }
     }
+    async assertCanRunAiRepoScan(userId, db = this.prisma) {
+        const user = await this.loadUserWithPlan(db, userId);
+        const plan = await this.effectivePlan(db, user);
+        if (plan.monthlyRepoScanLimit == null)
+            return;
+        const used = await this.countAiRepoScans(db, this.scopeOf(user), startOfMonth());
+        if (used >= plan.monthlyRepoScanLimit) {
+            throw new common_1.HttpException({
+                message: `Monthly AI repository scan limit reached (${used}/${plan.monthlyRepoScanLimit}) on the ${plan.name} plan. Resets at ${startOfNextMonth().toISOString()}.`,
+                resetsAt: startOfNextMonth(),
+                scope: 'repo_scans',
+            }, common_1.HttpStatus.TOO_MANY_REQUESTS);
+        }
+    }
+    async canUseDueDiligence(userId, role, db = this.prisma) {
+        if (role === 'admin' || role === 'super_admin')
+            return true;
+        const user = await this.loadUserWithPlan(db, userId);
+        return (await this.effectivePlan(db, user)).dueDiligence;
+    }
     async assertCanRunInvestigation(userId, role, db = this.prisma) {
         if (role === 'admin' || role === 'super_admin')
             return;
         const user = await this.loadUserWithPlan(db, userId);
-        const plan = this.effectivePlan(user);
+        const plan = await this.effectivePlan(db, user);
         if (!plan.alignmentLabEnabled) {
             throw new common_1.ForbiddenException(`Alignment Lab isn't included in the ${plan.name} plan. Upgrade to Team or higher.`);
         }
         if (plan.monthlyInvestigationLimit != null) {
-            const scopeWhere = user.organizationId ? { organizationId: user.organizationId } : { userId };
+            const scopeWhere = this.scopeOf(user);
             const used = await db.investigation.count({
                 where: { ...scopeWhere, createdAt: { gte: startOfMonth() } },
             });

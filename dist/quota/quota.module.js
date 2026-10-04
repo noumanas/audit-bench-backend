@@ -9,12 +9,13 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.QuotaModule = void 0;
 const common_1 = require("@nestjs/common");
 const quota_service_1 = require("./quota.service");
+const plan_expiry_service_1 = require("./plan-expiry.service");
 let QuotaModule = class QuotaModule {
 };
 exports.QuotaModule = QuotaModule;
 exports.QuotaModule = QuotaModule = __decorate([
     (0, common_1.Module)({
-        providers: [quota_service_1.QuotaService],
+        providers: [quota_service_1.QuotaService, plan_expiry_service_1.PlanExpiryService],
         exports: [quota_service_1.QuotaService],
     })
 ], QuotaModule);

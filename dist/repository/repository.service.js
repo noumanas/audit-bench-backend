@@ -142,8 +142,13 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
             provider: providerName,
             ...jobDataBase,
         };
+        const isRepoScan = REPO_WIDE_SOURCE_TYPES.has(jobDataBase.sourceType);
         return willInvokeAi
-            ? this.quota.withQuotaCheck((db) => this.quota.assertCanRunAudit(actor.id, db), (db) => db.scanJob.create({ data: jobData }))
+            ? this.quota.withQuotaCheck(async (db) => {
+                await this.quota.assertCanRunAudit(actor.id, db);
+                if (isRepoScan)
+                    await this.quota.assertCanRunAiRepoScan(actor.id, db);
+            }, (db) => db.scanJob.create({ data: jobData }))
             : this.prisma.scanJob.create({ data: jobData });
     }
     async anyFileNeedsFreshAiCall(files, providerName) {
@@ -289,7 +294,7 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
         if (!job || !(0, workspace_scope_1.canViewResource)(actor, job))
             throw new common_1.NotFoundException(`Scan ${id} not found`);
         const riskAggregation = job.status === 'completed' ? (0, risk_aggregation_1.aggregateRisk)(job) : null;
-        const tddAssessment = riskAggregation ? (0, tdd_assessment_1.assessTdd)(job, riskAggregation) : null;
+        const tddAssessment = riskAggregation && (await this.quota.canUseDueDiligence(actor.id, actor.role)) ? (0, tdd_assessment_1.assessTdd)(job, riskAggregation) : null;
         return { ...job, riskAggregation, tddAssessment };
     }
     async setFindingStatus(actor, scanFileId, findingIndex, status) {

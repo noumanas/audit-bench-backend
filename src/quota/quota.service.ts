@@ -2,6 +2,10 @@ import { ForbiddenException, HttpException, HttpStatus, Injectable } from '@nest
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { deriveRepoKey } from '../common/repo-key';
+import { isPlanExpired } from '../common/plan-expiry';
+
+/** Repository scans (not PR/MR reviews) — what monthlyRepoScanLimit counts. */
+const REPO_SCAN_SOURCE_TYPES = ['zip', 'github_repo', 'gitlab_repo'] as const;
 
 /** Either the top-level client or a client scoped to an in-flight transaction. */
 type Db = Prisma.TransactionClient;
@@ -42,20 +46,31 @@ export class QuotaService {
    * their own — their personal `plan` becomes dormant the moment they join
    * a team (see AuthService/UsersService, which still keep it up to date so
    * it's ready to use again if they ever leave).
+   *
+   * A paid plan past its `planExpiresAt` is treated as Free right away,
+   * before PlanExpiryService gets round to switching the row itself, so an
+   * expired account never gets an extra hour of paid limits.
    */
-  private effectivePlan(user: {
-    plan: {
-      dailyAuditLimit: number | null;
-      monthlyAuditLimit: number | null;
-      repositoryScan: boolean;
-      maxRepositories: number | null;
-      alignmentLabEnabled: boolean;
-      monthlyInvestigationLimit: number | null;
-      name: string;
-    };
-    organization: { plan: typeof user.plan } | null;
-  }) {
-    return user.organization ? user.organization.plan : user.plan;
+  private async effectivePlan(
+    db: Db,
+    user: Awaited<ReturnType<QuotaService['loadUserWithPlan']>>,
+  ): Promise<Awaited<ReturnType<QuotaService['loadUserWithPlan']>>['plan']> {
+    const owner = user.organization ?? user;
+    if (isPlanExpired(owner.planExpiresAt) && owner.plan.slug !== 'free') {
+      return db.plan.findUniqueOrThrow({ where: { slug: 'free' } });
+    }
+    return owner.plan;
+  }
+
+  private scopeOf(user: { id: string; organizationId: string | null }) {
+    return user.organizationId ? { organizationId: user.organizationId } : { userId: user.id };
+  }
+
+  /** AI-invoking repository scans this calendar month — see Plan.monthlyRepoScanLimit. */
+  private countAiRepoScans(db: Db, scopeWhere: { userId: string } | { organizationId: string }, since: Date) {
+    return db.scanJob.count({
+      where: { ...scopeWhere, createdAt: { gte: since }, aiInvoked: true, sourceType: { in: [...REPO_SCAN_SOURCE_TYPES] } },
+    });
   }
 
   /**
@@ -84,11 +99,13 @@ export class QuotaService {
 
   async getUsage(userId: string, db: Db = this.prisma) {
     const user = await this.loadUserWithPlan(db, userId);
-    const plan = this.effectivePlan(user);
-    const scopeWhere = user.organizationId ? { organizationId: user.organizationId } : { userId };
-    const [dailyUsed, monthlyUsed] = await Promise.all([
+    const plan = await this.effectivePlan(db, user);
+    const owner = user.organization ?? user;
+    const scopeWhere = this.scopeOf(user);
+    const [dailyUsed, monthlyUsed, repoScansUsed] = await Promise.all([
       this.countUsage(db, scopeWhere, startOfDay()),
       this.countUsage(db, scopeWhere, startOfMonth()),
+      this.countAiRepoScans(db, scopeWhere, startOfMonth()),
     ]);
 
     return {
@@ -99,6 +116,11 @@ export class QuotaService {
       dailyLimit: plan.dailyAuditLimit,
       monthlyUsed,
       monthlyLimit: plan.monthlyAuditLimit,
+      repoScansUsed,
+      repoScanLimit: plan.monthlyRepoScanLimit,
+      dueDiligence: plan.dueDiligence,
+      // null once expired too — the account is already on Free in effect.
+      planExpiresAt: plan.slug === 'free' ? null : owner.planExpiresAt,
       dailyResetsAt: startOfNextDay(),
       monthlyResetsAt: startOfNextMonth(),
     };
@@ -147,7 +169,7 @@ export class QuotaService {
    */
   async assertPlanAllowsRepositoryScan(userId: string, db: Db = this.prisma): Promise<void> {
     const user = await this.loadUserWithPlan(db, userId);
-    const plan = this.effectivePlan(user);
+    const plan = await this.effectivePlan(db, user);
     if (!plan.repositoryScan) {
       throw new ForbiddenException(`Repository scanning isn't included in the ${plan.name} plan. Upgrade to Pro or higher.`);
     }
@@ -163,13 +185,13 @@ export class QuotaService {
    */
   async assertCanScanNewRepository(userId: string, repoKey: string, db: Db = this.prisma): Promise<void> {
     const user = await this.loadUserWithPlan(db, userId);
-    const plan = this.effectivePlan(user);
+    const plan = await this.effectivePlan(db, user);
     if (!plan.repositoryScan) {
       throw new ForbiddenException(`Repository scanning isn't included in the ${plan.name} plan. Upgrade to Pro or higher.`);
     }
 
     if (plan.maxRepositories != null) {
-      const scopeWhere = user.organizationId ? { organizationId: user.organizationId } : { userId };
+      const scopeWhere = this.scopeOf(user);
       const priorScans = await db.scanJob.findMany({
         where: scopeWhere,
         select: { sourceName: true, repoRef: true, prContext: true },
@@ -181,6 +203,40 @@ export class QuotaService {
         );
       }
     }
+  }
+
+  /**
+   * Throws 429 once the plan's monthly AI repository-scan allowance is used
+   * up. Called only for a repository scan that will make a fresh AI call
+   * (see RepositoryService.gateAndCreateJob) — a clean or fully cached scan
+   * costs nothing and is never blocked, and PR/MR reviews don't count.
+   */
+  async assertCanRunAiRepoScan(userId: string, db: Db = this.prisma): Promise<void> {
+    const user = await this.loadUserWithPlan(db, userId);
+    const plan = await this.effectivePlan(db, user);
+    if (plan.monthlyRepoScanLimit == null) return;
+
+    const used = await this.countAiRepoScans(db, this.scopeOf(user), startOfMonth());
+    if (used >= plan.monthlyRepoScanLimit) {
+      throw new HttpException(
+        {
+          message: `Monthly AI repository scan limit reached (${used}/${plan.monthlyRepoScanLimit}) on the ${plan.name} plan. Resets at ${startOfNextMonth().toISOString()}.`,
+          resetsAt: startOfNextMonth(),
+          scope: 'repo_scans',
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+  }
+
+  /**
+   * Technical due diligence is Enterprise-only. admin/super_admin always
+   * pass, same support/testing bypass as Alignment Lab.
+   */
+  async canUseDueDiligence(userId: string, role: 'user' | 'admin' | 'super_admin', db: Db = this.prisma): Promise<boolean> {
+    if (role === 'admin' || role === 'super_admin') return true;
+    const user = await this.loadUserWithPlan(db, userId);
+    return (await this.effectivePlan(db, user)).dueDiligence;
   }
 
   /**
@@ -198,13 +254,13 @@ export class QuotaService {
     if (role === 'admin' || role === 'super_admin') return;
 
     const user = await this.loadUserWithPlan(db, userId);
-    const plan = this.effectivePlan(user);
+    const plan = await this.effectivePlan(db, user);
     if (!plan.alignmentLabEnabled) {
       throw new ForbiddenException(`Alignment Lab isn't included in the ${plan.name} plan. Upgrade to Team or higher.`);
     }
 
     if (plan.monthlyInvestigationLimit != null) {
-      const scopeWhere = user.organizationId ? { organizationId: user.organizationId } : { userId };
+      const scopeWhere = this.scopeOf(user);
       const used = await db.investigation.count({
         where: { ...scopeWhere, createdAt: { gte: startOfMonth() } },
       });

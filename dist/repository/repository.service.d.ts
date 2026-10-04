@@ -139,7 +139,9 @@ export declare class RepositoryService {
     private anyFileNeedsFreshAiCall;
     private processScan;
     private buildScanUrl;
-    findOne(actor: WorkspaceActor, id: string): Promise<{
+    findOne(actor: WorkspaceActor & {
+        role: 'user' | 'admin' | 'super_admin';
+    }, id: string): Promise<{
         riskAggregation: import("./risk-aggregation").RiskAggregation | null;
         tddAssessment: import("./tdd-assessment").TddAssessment | null;
         files: {

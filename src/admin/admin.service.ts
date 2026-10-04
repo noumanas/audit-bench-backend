@@ -1,3 +1,4 @@
+import { planExpiryFor } from '../common/plan-expiry';
 import {
   BadRequestException,
   ConflictException,
@@ -15,6 +16,7 @@ const SAFE_USER_SELECT = {
   createdAt: true,
   lastLoginAt: true,
   plan: true,
+  planExpiresAt: true,
   role: true,
   githubUsername: true,
   isActive: true,
@@ -61,9 +63,12 @@ export class AdminService {
 
     // Org-targeted request (see PlanRequest.organizationId) updates the
     // organization's shared plan; otherwise this is the requester's own.
+    // Approval starts a fresh 30-day term (approving again renews it).
+    const requestedPlan = await this.prisma.plan.findUniqueOrThrow({ where: { id: request.requestedPlanId } });
+    const planData = { planId: requestedPlan.id, planExpiresAt: planExpiryFor(requestedPlan) };
     const planUpdate = request.organizationId
-      ? this.prisma.organization.update({ where: { id: request.organizationId }, data: { planId: request.requestedPlanId } })
-      : this.prisma.user.update({ where: { id: request.userId }, data: { planId: request.requestedPlanId } });
+      ? this.prisma.organization.update({ where: { id: request.organizationId }, data: planData })
+      : this.prisma.user.update({ where: { id: request.userId }, data: planData });
 
     const [, updatedRequest] = await this.prisma.$transaction([
       planUpdate,
@@ -126,14 +131,17 @@ export class AdminService {
     const target = await this.prisma.user.findUnique({ where: { id: targetUserId } });
     if (!target) throw new NotFoundException('User not found');
 
+    let planExpiresAt: Date | null | undefined;
     if (data.planId) {
       const plan = await this.prisma.plan.findUnique({ where: { id: data.planId } });
       if (!plan) throw new BadRequestException('Unknown plan');
+      // Setting a plan by hand starts (or renews) its 30-day term, same as approving a request.
+      planExpiresAt = planExpiryFor(plan);
     }
 
     return this.prisma.user.update({
       where: { id: targetUserId },
-      data: { name: data.name, planId: data.planId },
+      data: { name: data.name, planId: data.planId, planExpiresAt },
       select: SAFE_USER_SELECT,
     });
   }

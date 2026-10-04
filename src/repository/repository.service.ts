@@ -215,9 +215,16 @@ export class RepositoryService {
       ...jobDataBase,
     };
 
+    // A repository scan (not a PR/MR review) that spends on AI also draws
+    // from the plan's monthly repo-scan allowance, checked in the same
+    // serializable transaction as the audit quota.
+    const isRepoScan = REPO_WIDE_SOURCE_TYPES.has(jobDataBase.sourceType);
     return willInvokeAi
       ? this.quota.withQuotaCheck(
-          (db) => this.quota.assertCanRunAudit(actor.id, db),
+          async (db) => {
+            await this.quota.assertCanRunAudit(actor.id, db);
+            if (isRepoScan) await this.quota.assertCanRunAiRepoScan(actor.id, db);
+          },
           (db) => db.scanJob.create({ data: jobData }),
         )
       : this.prisma.scanJob.create({ data: jobData });
@@ -380,7 +387,7 @@ export class RepositoryService {
     return origin ? `${origin}/app/repository/${jobId}` : undefined;
   }
 
-  async findOne(actor: WorkspaceActor, id: string) {
+  async findOne(actor: WorkspaceActor & { role: 'user' | 'admin' | 'super_admin' }, id: string) {
     const job = await this.prisma.scanJob.findUnique({
       where: { id },
       include: { files: true },
@@ -392,7 +399,9 @@ export class RepositoryService {
     // and no reason to pay a write for it. Only meaningful once the scan has
     // actually finished gathering that data.
     const riskAggregation = job.status === 'completed' ? aggregateRisk(job) : null;
-    const tddAssessment = riskAggregation ? assessTdd(job, riskAggregation) : null;
+    // The TDD assessment is the due diligence product — Enterprise only.
+    const tddAssessment =
+      riskAggregation && (await this.quota.canUseDueDiligence(actor.id, actor.role)) ? assessTdd(job, riskAggregation) : null;
     return { ...job, riskAggregation, tddAssessment };
   }
 

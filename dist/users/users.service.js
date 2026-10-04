@@ -62,7 +62,7 @@ let UsersService = class UsersService {
                 throw new common_1.ConflictException(`Your organization is already on the ${plan.name} plan`);
             }
             if (isSelfServicePlan(plan)) {
-                await this.prisma.organization.update({ where: { id: org.id }, data: { planId: plan.id } });
+                await this.prisma.organization.update({ where: { id: org.id }, data: { planId: plan.id, planExpiresAt: null } });
                 const updated = await this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: SAFE_USER_SELECT });
                 return { applied: true, user: updated };
             }
@@ -84,7 +84,7 @@ let UsersService = class UsersService {
         if (isSelfServicePlan(plan)) {
             const updated = await this.prisma.user.update({
                 where: { id: userId },
-                data: { planId: plan.id },
+                data: { planId: plan.id, planExpiresAt: null },
                 select: SAFE_USER_SELECT,
             });
             return { applied: true, user: updated };

@@ -14,5 +14,7 @@ export declare class PlansController {
         maxRepositories: number | null;
         alignmentLabEnabled: boolean;
         monthlyInvestigationLimit: number | null;
+        monthlyRepoScanLimit: number | null;
+        dueDiligence: boolean;
     }[]>;
 }
