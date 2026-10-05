@@ -5,6 +5,7 @@ import { Roles } from '../auth/roles.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { RequestUser } from '../auth/types';
 import { AdminService } from './admin.service';
+import { AdminUsageService } from './admin-usage.service';
 import { RejectPlanRequestDto } from './dto/reject-plan-request.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
@@ -14,11 +15,31 @@ import { UpdateUserDto } from './dto/update-user.dto';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('admin', 'super_admin')
 export class AdminController {
-  constructor(private readonly adminService: AdminService) {}
+  constructor(
+    private readonly adminService: AdminService,
+    private readonly usage: AdminUsageService,
+  ) {}
 
+  // Each user with their effective plan, quota meters (for the pool they
+  // draw from) and this month's own AI usage — see AdminUsageService.
   @Get('users')
   listUsers() {
-    return this.adminService.listUsers();
+    return this.usage.listUsersWithUsage();
+  }
+
+  @Get('usage/summary')
+  usageSummary() {
+    return this.usage.summary();
+  }
+
+  @Get('users/:id/usage')
+  userUsage(@Param('id') id: string) {
+    return this.usage.userDetail(id);
+  }
+
+  @Post('users/:id/renew-plan')
+  renewPlan(@Param('id') id: string) {
+    return this.usage.renewPlan(id);
   }
 
   @Get('plan-requests')
