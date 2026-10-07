@@ -46,8 +46,23 @@ function selectFilesToAnalyze(files: ScannedFile[], max: number): ScannedFile[] 
     .slice(0, max);
 }
 
+/** Extra behaviour for a scan that doesn't come from a signed-in user's own quota — see PublicScanService. */
+export interface ScanOptions {
+  /** Skip the plan/repository-count gate (the caller enforces its own limits). */
+  skipQuota?: boolean;
+  /** Never call the AI — Stage 1 and cross-file analysis only. */
+  localOnly?: boolean;
+  isPublic?: boolean;
+  shareId?: string;
+  requesterIpHash?: string;
+}
+
 interface JobDataBase {
   sourceName: string;
+  localOnly?: boolean;
+  isPublic?: boolean;
+  shareId?: string;
+  requesterIpHash?: string;
   sourceType: ScanSourceType;
   pullRequestUrl?: string;
   prContext?: Prisma.InputJsonValue;
@@ -100,8 +115,11 @@ export class RepositoryService {
     // GithubController/GitlabController). Absent for a zip upload, which
     // has no git host to source this from.
     contributorStats?: ContributorStat[],
+    opts: ScanOptions = {},
   ) {
-    await this.quota.assertCanScanNewRepository(actor.id, deriveRepoKey({ sourceName, repoRef }));
+    if (!opts.skipQuota) {
+      await this.quota.assertCanScanNewRepository(actor.id, deriveRepoKey({ sourceName, repoRef }));
+    }
 
     const providerName = this.llm.resolveProvider(provider);
     const maxFileSize = this.config.get<number>('MAX_FILE_SIZE_BYTES') || 200_000;
@@ -136,9 +154,13 @@ export class RepositoryService {
       licenseFindings: licenseFindings as unknown as Prisma.InputJsonValue,
       testCoverage: testCoverage as unknown as Prisma.InputJsonValue,
       ...(contributorStats ? { contributorStats: contributorStats as unknown as Prisma.InputJsonValue } : {}),
+      localOnly: opts.localOnly,
+      isPublic: opts.isPublic,
+      shareId: opts.shareId,
+      requesterIpHash: opts.requesterIpHash,
     });
 
-    void this.processScan(job.id, filesToAnalyze, providerName, repoContext);
+    void this.processScan(job.id, filesToAnalyze, providerName, repoContext, Boolean(opts.localOnly));
     return job;
   }
 
@@ -205,7 +227,7 @@ export class RepositoryService {
     // turns out entirely clean (or fully cache-hit) never touches quota,
     // and one that's already at its limit isn't blocked from attempting a
     // scan that might cost nothing. See QuotaService for the full rationale.
-    const willInvokeAi = await this.anyFileNeedsFreshAiCall(files, providerName);
+    const willInvokeAi = jobDataBase.localOnly ? false : await this.anyFileNeedsFreshAiCall(files, providerName);
     const jobData = {
       userId: actor.id,
       // Same team-visibility stamp as Audit — see AuditService.runAudit.
@@ -241,7 +263,13 @@ export class RepositoryService {
     return false;
   }
 
-  private async processScan(jobId: string, files: ScannedFile[], providerName: LlmProviderName, repoContext: string) {
+  private async processScan(
+    jobId: string,
+    files: ScannedFile[],
+    providerName: LlmProviderName,
+    repoContext: string,
+    localOnly = false,
+  ) {
     try {
       await this.prisma.scanJob.update({ where: { id: jobId }, data: { status: 'processing' } });
 
@@ -261,6 +289,7 @@ export class RepositoryService {
                 provider: providerName,
                 repoContext,
                 changedLineRanges: file.changedRanges,
+                localOnly,
               });
 
               if (fromCache) filesFromCache++;

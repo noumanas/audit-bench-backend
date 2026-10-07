@@ -19,6 +19,13 @@ export interface PipelineInput {
   repoContext?: string;
   /** Scopes the whole run to a PR/MR's changed lines — see filterStage1ToRanges. */
   changedLineRanges?: LineRange[];
+  /**
+   * Never call the AI: return Stage 1's findings even when it flags risky
+   * code. Used for free anonymous scans. A cached full result is still
+   * served (it costs nothing), but a local-only result is never cached, so
+   * it can't later stand in for a real AI review of the same code.
+   */
+  localOnly?: boolean;
 }
 
 export interface PipelineOptions {
@@ -64,6 +71,20 @@ export class PipelineService {
 
     let result: CachedAuditResult;
     let usage: TokenUsage = ZERO_USAGE;
+
+    if (!stage1.clean && input.localOnly) {
+      return {
+        result: {
+          verdict: verdictForSeverities(baseFindings),
+          summary: `Local checks found ${baseFindings.length} issue(s) and flagged ${stage1.riskyFunctions.length} function(s) that would get an AI review on a full scan.`,
+          findings: baseFindings,
+          stage1,
+          aiInvoked: false,
+        },
+        fromCache: false,
+        usage,
+      };
+    }
 
     if (stage1.clean) {
       result = {

@@ -1,3 +1,4 @@
+import { SubscriptionService } from '../revenue/subscription.service';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -35,7 +36,10 @@ function isSelfServicePlan(plan: { slug: string; priceMonthlyCents: number }): b
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly subscriptions: SubscriptionService,
+  ) {}
 
   async getProfile(userId: string) {
     const user = await this.prisma.user.findUnique({
@@ -73,6 +77,7 @@ export class UsersService {
 
       if (isSelfServicePlan(plan)) {
         await this.prisma.organization.update({ where: { id: org.id }, data: { planId: plan.id, planExpiresAt: null } });
+        await this.subscriptions.startTerm({ organizationId: org.id }, plan, { source: 'self_service', actorId: userId });
         const updated = await this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: SAFE_USER_SELECT });
         return { applied: true as const, user: updated };
       }
@@ -101,6 +106,8 @@ export class UsersService {
         data: { planId: plan.id, planExpiresAt: null },
         select: SAFE_USER_SELECT,
       });
+      // Switching to Free ends any paid term in the revenue ledger.
+      await this.subscriptions.startTerm({ userId }, plan, { source: 'self_service', actorId: userId });
       return { applied: true as const, user: updated };
     }
 

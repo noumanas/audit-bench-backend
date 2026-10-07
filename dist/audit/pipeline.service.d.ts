@@ -10,6 +10,7 @@ export interface PipelineInput {
     focusAreas?: string[];
     repoContext?: string;
     changedLineRanges?: LineRange[];
+    localOnly?: boolean;
 }
 export interface PipelineOptions {
     beforeAiCall?: () => Promise<void>;

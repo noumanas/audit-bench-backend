@@ -115,4 +115,21 @@ describe('PipelineService — Stage 1 → AI escalation', () => {
 
     expect(llm.completeStructured).not.toHaveBeenCalled();
   });
+
+  it('localOnly never calls the AI or caches a partial result, even when Stage 1 flags risky code', async () => {
+    (runStage1Module.runStage1 as jest.Mock).mockResolvedValue(makeStage1({ clean: false }));
+    const beforeAiCall = jest.fn();
+
+    const { result, usage, fromCache } = await pipeline.run(
+      { filename: 'a.ts', code: 'eval(x)', provider: 'openai', localOnly: true },
+      { beforeAiCall },
+    );
+
+    expect(llm.completeStructured).not.toHaveBeenCalled();
+    expect(beforeAiCall).not.toHaveBeenCalled();
+    expect(cache.store).not.toHaveBeenCalled();
+    expect(result.aiInvoked).toBe(false);
+    expect(fromCache).toBe(false);
+    expect(usage).toEqual({ inputTokens: 0, outputTokens: 0 });
+  });
 });

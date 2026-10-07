@@ -1,3 +1,4 @@
+import { SubscriptionService } from '../revenue/subscription.service';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -49,6 +50,7 @@ export class AdminUsageService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly quota: QuotaService,
+    private readonly subscriptions: SubscriptionService,
   ) {}
 
   /** AI usage today / this month, keyed by userId or organizationId. */
@@ -346,14 +348,19 @@ export class AdminUsageService {
    * expiry if it's still running (so renewing early never loses days),
    * otherwise from now.
    */
-  async renewPlan(userId: string) {
+  async renewPlan(userId: string, actorId?: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId }, include: { plan: true } });
     if (!user) throw new NotFoundException('User not found');
     if (user.plan.slug === 'free') throw new BadRequestException('Free plans have no term to renew');
+    // The next term starts when the current one ends; an account with no
+    // recorded term yet (granted before the revenue ledger) gets one now.
+    const next =
+      (await this.subscriptions.renew({ userId }, { actorId })) ??
+      (await this.subscriptions.startTerm({ userId }, user.plan, { source: 'renewal', actorId }));
     const base = user.planExpiresAt && user.planExpiresAt.getTime() > Date.now() ? user.planExpiresAt : new Date();
     return this.prisma.user.update({
       where: { id: userId },
-      data: { planExpiresAt: planExpiryFor(user.plan, base) },
+      data: { planExpiresAt: next?.endsAt ?? planExpiryFor(user.plan, base) },
       select: { id: true, planExpiresAt: true, plan: true },
     });
   }

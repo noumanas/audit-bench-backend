@@ -1,3 +1,4 @@
+import { SubscriptionService } from '../revenue/subscription.service';
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
@@ -11,10 +12,14 @@ import { PrismaService } from '../prisma/prisma.service';
 export class PlanExpiryService {
   private readonly logger = new Logger(PlanExpiryService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly subscriptions: SubscriptionService,
+  ) {}
 
   @Cron(CronExpression.EVERY_10_MINUTES)
   async downgradeExpiredPlans(now = new Date()): Promise<{ users: number; organizations: number }> {
+    await this.subscriptions.markExpired(now);
     const free = await this.prisma.plan.findUnique({ where: { slug: 'free' } });
     if (!free) return { users: 0, organizations: 0 };
 

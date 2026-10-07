@@ -1,11 +1,20 @@
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { ValidationPipe } from '@nestjs/common';
 import { json } from 'express';
 import cookieParser = require('cookie-parser');
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+
+  // Behind a load balancer every request arrives from the proxy's IP, which
+  // would make per-visitor limits (rate limiting, free public scans) shared
+  // by everyone. TRUST_PROXY tells Express to read the real client IP from
+  // X-Forwarded-For: a hop count ("1") or "true". Leave unset when the API
+  // is reached directly, or clients could spoof their IP.
+  const trustProxy = process.env.TRUST_PROXY;
+  if (trustProxy) app.set('trust proxy', /^\d+$/.test(trustProxy) ? Number(trustProxy) : trustProxy === 'true');
 
   // FRONTEND_ORIGIN accepts a comma-separated list, so both a deployed
   // frontend and localhost can be allowed at once during development.

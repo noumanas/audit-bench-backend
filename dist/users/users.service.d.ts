@@ -1,13 +1,18 @@
+import { SubscriptionService } from '../revenue/subscription.service';
 import { PrismaService } from '../prisma/prisma.service';
 export declare class UsersService {
     private readonly prisma;
-    constructor(prisma: PrismaService);
+    private readonly subscriptions;
+    constructor(prisma: PrismaService, subscriptions: SubscriptionService);
     getProfile(userId: string): Promise<{
+        id: string;
+        createdAt: Date;
+        name: string | null;
         plan: {
-            name: string;
             id: string;
             createdAt: Date;
             slug: string;
+            name: string;
             priceMonthlyCents: number;
             dailyAuditLimit: number | null;
             monthlyAuditLimit: number | null;
@@ -18,28 +23,28 @@ export declare class UsersService {
             monthlyRepoScanLimit: number | null;
             dueDiligence: boolean;
         };
-        organization: {
-            name: string;
-            id: string;
-            slug: string;
-        } | null;
         email: string;
-        name: string | null;
-        id: string;
-        badgeToken: string | null;
         role: import(".prisma/client").$Enums.Role;
         githubUsername: string | null;
-        createdAt: Date;
+        badgeToken: string | null;
         orgRole: import(".prisma/client").$Enums.OrgRole | null;
+        organization: {
+            id: string;
+            slug: string;
+            name: string;
+        } | null;
     }>;
     changePlan(userId: string, slug: string): Promise<{
         applied: true;
         user: {
+            id: string;
+            createdAt: Date;
+            name: string | null;
             plan: {
-                name: string;
                 id: string;
                 createdAt: Date;
                 slug: string;
+                name: string;
                 priceMonthlyCents: number;
                 dailyAuditLimit: number | null;
                 monthlyAuditLimit: number | null;
@@ -50,33 +55,30 @@ export declare class UsersService {
                 monthlyRepoScanLimit: number | null;
                 dueDiligence: boolean;
             };
-            organization: {
-                name: string;
-                id: string;
-                slug: string;
-            } | null;
             email: string;
-            name: string | null;
-            id: string;
-            badgeToken: string | null;
             role: import(".prisma/client").$Enums.Role;
             githubUsername: string | null;
-            createdAt: Date;
+            badgeToken: string | null;
             orgRole: import(".prisma/client").$Enums.OrgRole | null;
+            organization: {
+                id: string;
+                slug: string;
+                name: string;
+            } | null;
         };
         request?: undefined;
     } | {
         applied: false;
         request: {
             organization: {
-                name: string;
                 id: string;
+                name: string;
             } | null;
             requestedPlan: {
-                name: string;
                 id: string;
                 createdAt: Date;
                 slug: string;
+                name: string;
                 priceMonthlyCents: number;
                 dailyAuditLimit: number | null;
                 monthlyAuditLimit: number | null;
@@ -88,16 +90,16 @@ export declare class UsersService {
                 dueDiligence: boolean;
             };
             reviewedBy: {
-                email: string;
-                name: string | null;
                 id: string;
+                name: string | null;
+                email: string;
             } | null;
         } & {
+            status: import(".prisma/client").$Enums.PlanRequestStatus;
             id: string;
             createdAt: Date;
-            organizationId: string | null;
             userId: string;
-            status: import(".prisma/client").$Enums.PlanRequestStatus;
+            organizationId: string | null;
             note: string | null;
             reviewedAt: Date | null;
             requestedPlanId: string;
@@ -107,14 +109,14 @@ export declare class UsersService {
     }>;
     listMyPlanRequests(userId: string): Promise<({
         organization: {
-            name: string;
             id: string;
+            name: string;
         } | null;
         requestedPlan: {
-            name: string;
             id: string;
             createdAt: Date;
             slug: string;
+            name: string;
             priceMonthlyCents: number;
             dailyAuditLimit: number | null;
             monthlyAuditLimit: number | null;
@@ -126,16 +128,16 @@ export declare class UsersService {
             dueDiligence: boolean;
         };
         reviewedBy: {
-            email: string;
-            name: string | null;
             id: string;
+            name: string | null;
+            email: string;
         } | null;
     } & {
+        status: import(".prisma/client").$Enums.PlanRequestStatus;
         id: string;
         createdAt: Date;
-        organizationId: string | null;
         userId: string;
-        status: import(".prisma/client").$Enums.PlanRequestStatus;
+        organizationId: string | null;
         note: string | null;
         reviewedAt: Date | null;
         requestedPlanId: string;

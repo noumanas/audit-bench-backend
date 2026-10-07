@@ -1,3 +1,4 @@
+import { SubscriptionService } from '../revenue/subscription.service';
 import { planExpiryFor } from '../common/plan-expiry';
 import {
   BadRequestException,
@@ -37,7 +38,10 @@ const VALID_STATUSES: PlanRequestStatus[] = ['pending', 'approved', 'rejected'];
 
 @Injectable()
 export class AdminService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly subscriptions: SubscriptionService,
+  ) {}
 
   async listUsers() {
     return this.prisma.user.findMany({ select: SAFE_USER_SELECT, orderBy: { createdAt: 'desc' } });
@@ -78,6 +82,12 @@ export class AdminService {
         include: PLAN_REQUEST_INCLUDE,
       }),
     ]);
+    // Revenue ledger: close the old term, open the new one.
+    await this.subscriptions.startTerm(
+      request.organizationId ? { organizationId: request.organizationId } : { userId: request.userId },
+      requestedPlan,
+      { source: 'approval', actorId: adminId },
+    );
     return updatedRequest;
   }
 
@@ -123,7 +133,7 @@ export class AdminService {
     });
   }
 
-  async updateUserProfile(targetUserId: string, data: { name?: string; planId?: string }) {
+  async updateUserProfile(targetUserId: string, data: { name?: string; planId?: string }, actorId?: string) {
     if (data.name === undefined && data.planId === undefined) {
       throw new BadRequestException('Nothing to update');
     }
@@ -132,17 +142,20 @@ export class AdminService {
     if (!target) throw new NotFoundException('User not found');
 
     let planExpiresAt: Date | null | undefined;
+    let plan: Awaited<ReturnType<typeof this.prisma.plan.findUnique>> = null;
     if (data.planId) {
-      const plan = await this.prisma.plan.findUnique({ where: { id: data.planId } });
+      plan = await this.prisma.plan.findUnique({ where: { id: data.planId } });
       if (!plan) throw new BadRequestException('Unknown plan');
       // Setting a plan by hand starts (or renews) its 30-day term, same as approving a request.
       planExpiresAt = planExpiryFor(plan);
     }
 
-    return this.prisma.user.update({
+    const updated = await this.prisma.user.update({
       where: { id: targetUserId },
       data: { name: data.name, planId: data.planId, planExpiresAt },
       select: SAFE_USER_SELECT,
     });
+    if (plan) await this.subscriptions.startTerm({ userId: targetUserId }, plan, { source: 'admin', actorId });
+    return updated;
   }
 }

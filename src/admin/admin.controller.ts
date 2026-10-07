@@ -38,8 +38,8 @@ export class AdminController {
   }
 
   @Post('users/:id/renew-plan')
-  renewPlan(@Param('id') id: string) {
-    return this.usage.renewPlan(id);
+  renewPlan(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.usage.renewPlan(id, user.id);
   }
 
   @Get('plan-requests')
@@ -73,7 +73,7 @@ export class AdminController {
   }
 
   @Patch('users/:id')
-  updateProfile(@Param('id') id: string, @Body() dto: UpdateUserDto) {
-    return this.adminService.updateUserProfile(id, dto);
+  updateProfile(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() dto: UpdateUserDto) {
+    return this.adminService.updateUserProfile(id, dto, user.id);
   }
 }

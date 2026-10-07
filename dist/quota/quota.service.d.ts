@@ -11,8 +11,8 @@ export declare class QuotaService {
     private countUsage;
     getUsage(userId: string, db?: Db): Promise<{
         plan: {
-            name: string;
             id: string;
+            name: string;
             createdAt: Date;
             slug: string;
             priceMonthlyCents: number;

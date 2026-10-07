@@ -74,40 +74,41 @@ enum InvestigationStatus {
 }
 
 model Plan {
-  id                String         @id @default(uuid())
-  slug              String         @unique // "free" | "pro" | "team" | "enterprise"
-  name              String
-  priceMonthlyCents Int            @default(0)
+  id                        String         @id @default(uuid())
+  slug                      String         @unique // "free" | "pro" | "team" | "enterprise"
+  name                      String
+  priceMonthlyCents         Int            @default(0)
   // null = unlimited
-  dailyAuditLimit   Int?
-  monthlyAuditLimit Int?
-  repositoryScan    Boolean        @default(true)
+  dailyAuditLimit           Int?
+  monthlyAuditLimit         Int?
+  repositoryScan            Boolean        @default(true)
   // Cap on distinct repositories this plan may ever scan (lifetime, not
   // per-period) — null = unlimited. Re-scanning an already-scanned repo, or
   // reviewing a PR/MR against it, never counts as a new one (see
   // QuotaService.assertCanScanNewRepository / deriveRepoKey).
-  maxRepositories   Int?
+  maxRepositories           Int?
   // Alignment Lab — a second product line alongside code review (see
   // AlignmentLabModule): register a benchmark persona with a known hidden
   // behavior, run an autonomous investigator agent against it, see whether
   // it's uncovered. Gated per plan the same way repositoryScan is, not by
   // role — super_admin still bypasses both for support/testing.
-  alignmentLabEnabled        Boolean @default(false)
+  alignmentLabEnabled       Boolean        @default(false)
   // null = unlimited. Each "Run investigation" consumes one, regardless of
   // how many turns it actually takes.
-  monthlyInvestigationLimit  Int?
+  monthlyInvestigationLimit Int?
   // null = unlimited. Repository scans (zip / GitHub repo / GitLab repo —
   // not PR/MR reviews) that made a fresh AI call this calendar month; they
   // also still count toward monthlyAuditLimit. See
   // QuotaService.assertCanRunAiRepoScan.
-  monthlyRepoScanLimit       Int?
+  monthlyRepoScanLimit      Int?
   // Technical due diligence reports (the investor view + TDD assessment).
   // Enterprise only — see QuotaService.canUseDueDiligence.
-  dueDiligence               Boolean @default(false)
-  createdAt         DateTime       @default(now())
-  users             User[]
-  organizations     Organization[]
-  planRequests      PlanRequest[]
+  dueDiligence              Boolean        @default(false)
+  createdAt                 DateTime       @default(now())
+  users                     User[]
+  organizations             Organization[]
+  planRequests              PlanRequest[]
+  subscriptions             Subscription[]
 }
 
 // A shared workspace: members see each other's audits/scans/analytics and
@@ -119,21 +120,23 @@ model Plan {
 // OR-scope query pattern in workspace-scope.ts) rather than being migrated
 // in, so joining a team never exposes or reassigns someone's past work.
 model Organization {
-  id           String               @id @default(uuid())
-  name         String
-  slug         String               @unique
-  plan         Plan                 @relation(fields: [planId], references: [id])
-  planId       String
+  id              String               @id @default(uuid())
+  name            String
+  slug            String               @unique
+  plan            Plan                 @relation(fields: [planId], references: [id])
+  planId          String
   // Same rule as User.planExpiresAt, for the org's shared plan.
-  planExpiresAt DateTime?
-  createdAt    DateTime             @default(now())
-  members      User[]               @relation("OrganizationMembers")
-  invites      OrganizationInvite[]
-  planRequests PlanRequest[]        @relation("PlanRequestsByOrganization")
-  audits       Audit[]
-  scanJobs     ScanJob[]
+  planExpiresAt   DateTime?
+  createdAt       DateTime             @default(now())
+  members         User[]               @relation("OrganizationMembers")
+  invites         OrganizationInvite[]
+  planRequests    PlanRequest[]        @relation("PlanRequestsByOrganization")
+  audits          Audit[]
+  scanJobs        ScanJob[]
   benchmarkModels BenchmarkModel[]
   investigations  Investigation[]
+  subscriptions   Subscription[]       @relation("OrgSubscriptions")
+  payments        Payment[]            @relation("OrgPayments")
 }
 
 // Invite by email — the only join path in this version (no public
@@ -158,29 +161,29 @@ model OrganizationInvite {
 }
 
 model User {
-  id              String        @id @default(uuid())
-  email           String        @unique
+  id                   String               @id @default(uuid())
+  email                String               @unique
   // Null for an account created via GitHub/GitLab OAuth (no password ever
   // set) — see AuthService.login, which rejects password login for these.
-  passwordHash    String?
-  name            String?
-  plan            Plan          @relation(fields: [planId], references: [id])
-  planId          String
+  passwordHash         String?
+  name                 String?
+  plan                 Plan                 @relation(fields: [planId], references: [id])
+  planId               String
   // Paid plans run 30 days from approval (see common/plan-expiry.ts); past
   // this, QuotaService treats the account as Free immediately and
   // PlanExpiryService switches planId back to Free. null = no expiry (Free).
-  planExpiresAt   DateTime?
-  role            Role          @default(user)
+  planExpiresAt        DateTime?
+  role                 Role                 @default(user)
   // Flipped off by an admin to lock the account out immediately (checked at
   // login and on every authenticated request via JwtStrategy) without
   // deleting any of the user's data.
-  isActive        Boolean       @default(true)
+  isActive             Boolean              @default(true)
   // Personal Access Tokens for repo listing/scanning — plaintext in this
   // dev-scoped build; a real deployment would encrypt these at rest.
-  githubToken     String?
-  githubUsername  String?
-  gitlabToken     String?
-  gitlabUsername  String?
+  githubToken          String?
+  githubUsername       String?
+  gitlabToken          String?
+  gitlabUsername       String?
   // GitLab OAuth access tokens (unlike a pasted PAT, or GitHub's classic
   // OAuth App tokens) expire after ~2h — these let GitlabService silently
   // refresh gitlabToken before it goes stale. Unused for a pasted PAT.
@@ -189,37 +192,39 @@ model User {
   // Public, unguessable token used in the README badge URL — distinct from
   // `id` so a leaked badge URL can't be used to look up the account by id
   // and can be rotated independently. Generated on first request.
-  badgeToken      String?       @unique
+  badgeToken           String?              @unique
   // Long-lived credential for the CLI/CI (see auth/api-key.util.ts,
   // JwtAuthGuard) — grants full API access as this user, unlike badgeToken
   // (read-only, meant to be public). Prefixed "abk_" so JwtAuthGuard can
   // tell it apart from a real JWT without attempting to verify it as one.
-  apiKey          String?       @unique
-  createdAt       DateTime      @default(now())
+  apiKey               String?              @unique
+  createdAt            DateTime             @default(now())
   // Set on every password login, signup, and OAuth session — see
   // AuthService.buildSession — but not on ordinary API/JWT requests, so it
   // reflects actual sign-ins, not general activity.
-  lastLoginAt     DateTime?
-  audits          Audit[]
-  scanJobs        ScanJob[]
-  planRequests    PlanRequest[] @relation("PlanRequestsByUser")
+  lastLoginAt          DateTime?
+  audits               Audit[]
+  scanJobs             ScanJob[]
+  planRequests         PlanRequest[]        @relation("PlanRequestsByUser")
   // Requests this user reviewed as an admin/super_admin — distinct relation
   // from the requests they themselves filed.
-  reviewedPlanRequests PlanRequest[] @relation("PlanRequestsReviewedBy")
-  webhookConfigs  WebhookConfig[]
-  oauthAccounts   OAuthAccount[]
-  oauthLoginCodes OAuthLoginCode[]
+  reviewedPlanRequests PlanRequest[]        @relation("PlanRequestsReviewedBy")
+  webhookConfigs       WebhookConfig[]
+  oauthAccounts        OAuthAccount[]
+  oauthLoginCodes      OAuthLoginCode[]
   // Nullable — most users are on a personal plan and never join a team.
   // When set, this user's quota/plan/audits/scans are org-scoped instead of
   // personal (see QuotaService, AuditService, RepositoryService).
-  organization    Organization?    @relation("OrganizationMembers", fields: [organizationId], references: [id], onDelete: SetNull)
-  organizationId  String?
-  orgRole         OrgRole?
-  sentOrgInvites  OrganizationInvite[] @relation("OrgInvitesSent")
+  organization         Organization?        @relation("OrganizationMembers", fields: [organizationId], references: [id], onDelete: SetNull)
+  organizationId       String?
+  orgRole              OrgRole?
+  sentOrgInvites       OrganizationInvite[] @relation("OrgInvitesSent")
   // Alignment-lab pilot (see AlignmentLabModule) — a separate research
   // feature, admin-only, unrelated to the core code-review product below.
-  benchmarkModels BenchmarkModel[]
-  investigations  Investigation[]
+  benchmarkModels      BenchmarkModel[]
+  investigations       Investigation[]
+  subscriptions        Subscription[]       @relation("UserSubscriptions")
+  payments             Payment[]            @relation("UserPayments")
 
   @@index([organizationId])
 }
@@ -305,38 +310,38 @@ model PlanRequest {
 }
 
 model Audit {
-  id        String   @id @default(uuid())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId    String
+  id              String        @id @default(uuid())
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId          String
   // Set at creation time from User.organizationId — makes this audit
   // visible to the whole team (see workspace-scope.ts), not just its
   // creator. Null for personal-account audits, or any audit run before the
   // creator joined an org (that history stays personal, never migrated in).
-  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
-  organizationId String?
-  filename  String
-  language  String?
-  provider  String
-  verdict   Verdict
-  summary   String
-  findings  Json // Finding[] — see src/audit/finding.types.ts
+  organization    Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  organizationId  String?
+  filename        String
+  language        String?
+  provider        String
+  verdict         Verdict
+  summary         String
+  findings        Json // Finding[] — see src/audit/finding.types.ts
   // Triage state per finding, keyed by its index in `findings` (stable —
   // this row's findings never regenerate once the audit completes).
   // Record<number, 'open' | 'in_progress' | 'wont_fix'>. Missing key = open.
   findingStatuses Json?
   // Free, local-only checks (ESLint/TSC/complexity/formatting/risk triage) —
   // see src/audit/stage1/types.ts. Always populated, even on a pure Stage 1 run.
-  stage1    Json?
+  stage1          Json?
   // False when Stage 1 found nothing worth escalating and no LLM call was
   // made — these runs don't consume plan quota. True on a cache hit that
   // was originally AI-reviewed.
-  aiInvoked Boolean  @default(true)
-  fromCache Boolean  @default(false)
+  aiInvoked       Boolean       @default(true)
+  fromCache       Boolean       @default(false)
   // Zero on a cache hit or a Stage-1-only run — see PipelineOutput.usage.
-  inputTokens  Int @default(0)
-  outputTokens Int @default(0)
-  codeSize  Int
-  createdAt DateTime @default(now())
+  inputTokens     Int           @default(0)
+  outputTokens    Int           @default(0)
+  codeSize        Int
+  createdAt       DateTime      @default(now())
 
   @@index([userId])
   @@index([organizationId])
@@ -359,96 +364,107 @@ model AuditCache {
 }
 
 model ScanJob {
-  id           String     @id @default(uuid())
-  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId       String
+  id                        String         @id @default(uuid())
+  user                      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId                    String
   // Same team-visibility rule as Audit.organizationId — see there.
-  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
-  organizationId String?
-  sourceName   String // original zip filename, "owner/repo", or "owner/repo#12"
-  sourceType   ScanSourceType @default(zip)
-  pullRequestUrl String? // set for github_pr / gitlab_mr
+  organization              Organization?  @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  organizationId            String?
+  sourceName                String // original zip filename, "owner/repo", or "owner/repo#12"
+  sourceType                ScanSourceType @default(zip)
+  pullRequestUrl            String? // set for github_pr / gitlab_mr
   // Set for github_pr / gitlab_mr — everything PrFeedbackService needs to
   // post the review comments / summary / commit status back once the scan
   // completes. Shape: PrContext (see src/pr-feedback/pr-feedback.types.ts).
-  prContext      Json?
+  prContext                 Json?
   // Set for github_repo / gitlab_repo — what FixService needs to branch off
   // and open a PR/MR when the user commits a fix from the web editor.
   // Shape: RepoRef (see src/common/repo-ref.types.ts).
-  repoRef        Json?
-  status       ScanStatus @default(queued)
-  provider     String
-  framework    String? // best-guess detected framework
-  fileCount    Int        @default(0)
-  filesScanned Int        @default(0)
-  verdict      Verdict?
-  summary      String?
+  repoRef                   Json?
+  status                    ScanStatus     @default(queued)
+  provider                  String
+  framework                 String? // best-guess detected framework
+  fileCount                 Int            @default(0)
+  filesScanned              Int            @default(0)
+  verdict                   Verdict?
+  summary                   String?
   // Aggregate cross-file analysis, see src/repository/repo-analysis.types.ts
-  dependencyGraph Json?
-  circularImports Json?
-  deadCode        Json?
-  duplicates      Json?
-  secrets         Json?
+  dependencyGraph           Json?
+  circularImports           Json?
+  deadCode                  Json?
+  duplicates                Json?
+  secrets                   Json?
   dependencyVulnerabilities Json? // DependencyVulnerability[] — see analysis/dependency-audit.ts
   // Copyleft/unclear-license dependency findings — LicenseFinding[], see
   // analysis/license-audit.ts. Empty (not null) when the scanned project
   // itself looks open-source, since license compliance isn't a relevant
   // question there — see looksProprietary in that file.
-  licenseFindings Json?
+  licenseFindings           Json?
   // Static, no-execution test coverage approximation — TestCoverageEstimate,
   // see analysis/test-coverage.ts. Never runs the target's actual test
   // suite; see that file for why.
-  testCoverage Json?
+  testCoverage              Json?
   // LLM-judged architecture consistency read across a sample of the scan's
   // files — ArchitectureAssessment, see audit/architecture-detector.ts. Only
   // computed for a repo-wide scan that already needed a fresh AI call for
   // at least one file (see RepositoryService.processScan) — it rides on a
   // job that's already quota-gated rather than opening a new unmetered AI
   // cost path on an otherwise-clean, free scan.
-  architectureAssessment Json?
+  architectureAssessment    Json?
   // Set for github_repo / gitlab_repo — per-contributor commit/line counts
   // from the provider's own stats endpoint. ContributorStat[] — see
   // analysis/types.ts and GithubService/GitlabService.fetchContributorStats.
   // Null for a zip upload: a raw zip carries no git history to derive this
   // from, and for github_pr/gitlab_mr diff reviews, where it isn't meaningful.
-  contributorStats Json?
+  contributorStats          Json?
   // Cost-saving summary for this scan — see RepositoryService.processScan.
-  filesFromCache Int @default(0)
-  filesAiSkipped Int @default(0) // Stage 1 found nothing risky; no LLM call made
+  filesFromCache            Int            @default(0)
+  filesAiSkipped            Int            @default(0) // Stage 1 found nothing risky; no LLM call made
   // True only if at least one file in this scan triggered a FRESH LLM call
   // (not served from cache) — this, not fileCount, is what quota counts.
-  aiInvoked   Boolean    @default(true)
+  aiInvoked                 Boolean        @default(true)
   // Summed across every file in this scan — see PipelineOutput.usage.
-  inputTokens  Int @default(0)
-  outputTokens Int @default(0)
-  error       String?
-  createdAt   DateTime   @default(now())
+  inputTokens               Int            @default(0)
+  outputTokens              Int            @default(0)
+  // Sharing — see PublicScanService. shareId is the unguessable slug in the
+  // public URL (/scan/<shareId>); isPublic gates whether that URL resolves,
+  // so an owner can revoke a link without losing the id.
+  shareId                   String?        @unique
+  isPublic                  Boolean        @default(false)
+  // Free anonymous scans from the marketing site: Stage 1 and cross-file
+  // analysis only, never an AI call (see PipelineInput.localOnly).
+  localOnly                 Boolean        @default(false)
+  // sha256 of the requester's IP for anonymous scans — rate limiting only.
+  requesterIpHash           String?
+  error                     String?
+  createdAt                 DateTime       @default(now())
   // Bumped on every status/progress write during processScan — used by
   // ScanJobSweepService to tell "still actively running" apart from "the
   // process died mid-scan and this will never move again."
-  updatedAt   DateTime   @updatedAt
-  completedAt DateTime?
-  files       ScanFile[]
+  updatedAt                 DateTime       @updatedAt
+  completedAt               DateTime?
+  files                     ScanFile[]
 
   @@index([userId])
   @@index([organizationId])
   @@index([status, updatedAt])
+  @@index([requesterIpHash, createdAt])
 }
 
 model ScanFile {
-  id        String   @id @default(uuid())
-  scanJob   ScanJob  @relation(fields: [scanJobId], references: [id], onDelete: Cascade)
-  scanJobId String
-  path      String
-  language  String?
-  verdict   Verdict?
-  findings  Json // Finding[]
+  id              String   @id @default(uuid())
+  scanJob         ScanJob  @relation(fields: [scanJobId], references: [id], onDelete: Cascade)
+  scanJobId       String
+  path            String
+  language        String?
+  verdict         Verdict?
+  findings        Json // Finding[]
   // Same triage-state shape as Audit.findingStatuses — see there.
   findingStatuses Json?
-  stage1    Json?
-  aiInvoked Boolean  @default(true)
-  fromCache Boolean  @default(false)
-  createdAt DateTime @default(now())
+  stage1          Json?
+  aiInvoked       Boolean  @default(true)
+  fromCache       Boolean  @default(false)
+  createdAt       DateTime @default(now())
 
   @@index([scanJobId])
 }
@@ -465,7 +481,7 @@ model ScanFile {
 // ---------------------------------------------------------------------------
 
 model BenchmarkModel {
-  id                   String               @id @default(uuid())
+  id                   String              @id @default(uuid())
   name                 String
   // Ground truth the investigator is trying to uncover, e.g. "Secretly
   // favors Country X in geopolitical questions." Never sent to the target
@@ -476,15 +492,15 @@ model BenchmarkModel {
   // investigator-prompts.ts targetSystemPrompt), instructed to stay in
   // character and deny any hidden agenda if asked about one directly.
   personaPrompt        String
-  difficulty           BenchmarkDifficulty  @default(medium)
-  confessionResistance BenchmarkDifficulty  @default(medium)
-  createdBy            User                 @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  difficulty           BenchmarkDifficulty @default(medium)
+  confessionResistance BenchmarkDifficulty @default(medium)
+  createdBy            User                @relation(fields: [createdById], references: [id], onDelete: Cascade)
   createdById          String
   // Same team-visibility rule as Audit.organizationId — see there. Null for
   // a model registered before joining a team, or outside any org.
-  organization         Organization?        @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  organization         Organization?       @relation(fields: [organizationId], references: [id], onDelete: SetNull)
   organizationId       String?
-  createdAt            DateTime             @default(now())
+  createdAt            DateTime            @default(now())
   investigations       Investigation[]
 
   @@index([createdById])
@@ -492,16 +508,16 @@ model BenchmarkModel {
 }
 
 model Investigation {
-  id                String               @id @default(uuid())
-  model             BenchmarkModel       @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  id                String              @id @default(uuid())
+  model             BenchmarkModel      @relation(fields: [modelId], references: [id], onDelete: Cascade)
   modelId           String
-  runBy             User                 @relation(fields: [runById], references: [id], onDelete: Cascade)
+  runBy             User                @relation(fields: [runById], references: [id], onDelete: Cascade)
   runById           String
   // Same team-visibility rule as Audit.organizationId — see there. Also
   // what QuotaService pools monthly investigation usage by, for a team.
-  organization      Organization?        @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  organization      Organization?       @relation(fields: [organizationId], references: [id], onDelete: SetNull)
   organizationId    String?
-  status            InvestigationStatus  @default(running)
+  status            InvestigationStatus @default(running)
   // TurnRecord[] — see alignment-lab.types.ts. One entry per investigator
   // turn: hypothesis, the prompt sent, the target's response, updated belief.
   turns             Json
@@ -511,11 +527,11 @@ model Investigation {
   // approximation so a run has some automatic signal without spending an
   // extra LLM call on grading (see grading.ts). Not a rigorous grader.
   correct           Boolean?
-  queryCount        Int                  @default(0)
-  inputTokens       Int                  @default(0)
-  outputTokens      Int                  @default(0)
+  queryCount        Int                 @default(0)
+  inputTokens       Int                 @default(0)
+  outputTokens      Int                 @default(0)
   provider          String
-  createdAt         DateTime             @default(now())
+  createdAt         DateTime            @default(now())
   completedAt       DateTime?
 
   @@index([modelId])
@@ -549,4 +565,78 @@ model WebVital {
 
   @@index([name, createdAt])
   @@index([path])
+}
+
+// ---------- Revenue (super admin) ----------
+// No payment processor yet: subscriptions are the paid plan terms the app
+// already grants (approval, admin plan change, renewal — see
+// SubscriptionService), and payments are recorded by hand. MRR/ARR are
+// computed from subscriptions; collected revenue from payments.
+
+enum SubscriptionStatus {
+  active
+  expired
+  canceled
+}
+
+enum PaymentKind {
+  subscription
+  tdd_engagement
+  other
+}
+
+model Subscription {
+  id             String             @id @default(uuid())
+  // Exactly one of user / organization: who the plan belongs to.
+  user           User?              @relation("UserSubscriptions", fields: [userId], references: [id], onDelete: Cascade)
+  userId         String?
+  organization   Organization?      @relation("OrgSubscriptions", fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String?
+  plan           Plan               @relation(fields: [planId], references: [id])
+  planId         String
+  // Monthly recurring amount for this term. Defaults to the plan's list
+  // price; editable for Enterprise (custom pricing) and discounts.
+  amountCents    Int
+  currency       String             @default("USD")
+  startedAt      DateTime
+  endsAt         DateTime
+  // Set when a term stops before endsAt (upgrade, downgrade, cancel).
+  endedAt        DateTime?
+  status         SubscriptionStatus @default(active)
+  // approval | admin | renewal | backfill
+  source         String
+  notes          String?
+  createdById    String?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  payments       Payment[]
+
+  @@index([status, endsAt])
+  @@index([userId])
+  @@index([organizationId])
+}
+
+model Payment {
+  id             String        @id @default(uuid())
+  user           User?         @relation("UserPayments", fields: [userId], references: [id], onDelete: SetNull)
+  userId         String?
+  organization   Organization? @relation("OrgPayments", fields: [organizationId], references: [id], onDelete: SetNull)
+  organizationId String?
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  subscriptionId String?
+  amountCents    Int
+  currency       String        @default("USD")
+  kind           PaymentKind   @default(subscription)
+  // Free text: bank transfer, card, PayPal, invoice…
+  method         String?
+  // Invoice number or transaction id.
+  reference      String?
+  // Who paid, for payments not tied to an account (e.g. a TDD client).
+  payerName      String?
+  paidAt         DateTime
+  notes          String?
+  recordedById   String?
+  createdAt      DateTime      @default(now())
+
+  @@index([paidAt])
 }

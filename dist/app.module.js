@@ -12,6 +12,8 @@ const core_1 = require("@nestjs/core");
 const config_1 = require("@nestjs/config");
 const throttler_1 = require("@nestjs/throttler");
 const schedule_1 = require("@nestjs/schedule");
+const revenue_module_1 = require("./revenue/revenue.module");
+const public_scan_module_1 = require("./public-scan/public-scan.module");
 const app_controller_1 = require("./app.controller");
 const app_service_1 = require("./app.service");
 const prisma_module_1 = require("./prisma/prisma.module");
@@ -63,6 +65,8 @@ exports.AppModule = AppModule = __decorate([
             fix_module_1.FixModule,
             alignment_lab_module_1.AlignmentLabModule,
             web_vitals_module_1.WebVitalsModule,
+            public_scan_module_1.PublicScanModule,
+            revenue_module_1.RevenueModule,
         ],
         controllers: [app_controller_1.AppController],
         providers: [app_service_1.AppService, { provide: core_1.APP_GUARD, useClass: throttler_1.ThrottlerGuard }],

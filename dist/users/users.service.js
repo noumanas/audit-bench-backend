@@ -10,6 +10,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.UsersService = void 0;
+const subscription_service_1 = require("../revenue/subscription.service");
 const common_1 = require("@nestjs/common");
 const crypto = require("crypto");
 const prisma_service_1 = require("../prisma/prisma.service");
@@ -36,8 +37,10 @@ function isSelfServicePlan(plan) {
 }
 let UsersService = class UsersService {
     prisma;
-    constructor(prisma) {
+    subscriptions;
+    constructor(prisma, subscriptions) {
         this.prisma = prisma;
+        this.subscriptions = subscriptions;
     }
     async getProfile(userId) {
         const user = await this.prisma.user.findUnique({
@@ -63,6 +66,7 @@ let UsersService = class UsersService {
             }
             if (isSelfServicePlan(plan)) {
                 await this.prisma.organization.update({ where: { id: org.id }, data: { planId: plan.id, planExpiresAt: null } });
+                await this.subscriptions.startTerm({ organizationId: org.id }, plan, { source: 'self_service', actorId: userId });
                 const updated = await this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: SAFE_USER_SELECT });
                 return { applied: true, user: updated };
             }
@@ -87,6 +91,7 @@ let UsersService = class UsersService {
                 data: { planId: plan.id, planExpiresAt: null },
                 select: SAFE_USER_SELECT,
             });
+            await this.subscriptions.startTerm({ userId }, plan, { source: 'self_service', actorId: userId });
             return { applied: true, user: updated };
         }
         const pending = await this.prisma.planRequest.findFirst({
@@ -135,6 +140,7 @@ let UsersService = class UsersService {
 exports.UsersService = UsersService;
 exports.UsersService = UsersService = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [prisma_service_1.PrismaService])
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService,
+        subscription_service_1.SubscriptionService])
 ], UsersService);
 //# sourceMappingURL=users.service.js.map

@@ -17,18 +17,18 @@ export declare class AuditService {
         createdAt: Date;
         organizationId: string | null;
         userId: string;
-        provider: string;
         aiInvoked: boolean;
         fromCache: boolean;
+        provider: string;
         verdict: import(".prisma/client").$Enums.Verdict;
         summary: string;
         inputTokens: number;
         outputTokens: number;
         findings: Prisma.JsonValue;
         stage1: Prisma.JsonValue | null;
-        filename: string;
         language: string | null;
         findingStatuses: Prisma.JsonValue | null;
+        filename: string;
         codeSize: number;
     }>;
     findOne(actor: WorkspaceActor, id: string): Promise<{
@@ -36,18 +36,18 @@ export declare class AuditService {
         createdAt: Date;
         organizationId: string | null;
         userId: string;
-        provider: string;
         aiInvoked: boolean;
         fromCache: boolean;
+        provider: string;
         verdict: import(".prisma/client").$Enums.Verdict;
         summary: string;
         inputTokens: number;
         outputTokens: number;
         findings: Prisma.JsonValue;
         stage1: Prisma.JsonValue | null;
-        filename: string;
         language: string | null;
         findingStatuses: Prisma.JsonValue | null;
+        filename: string;
         codeSize: number;
     }>;
     findRecent(actor: WorkspaceActor, limit?: number): Promise<{
@@ -55,18 +55,18 @@ export declare class AuditService {
         createdAt: Date;
         organizationId: string | null;
         userId: string;
-        provider: string;
         aiInvoked: boolean;
         fromCache: boolean;
+        provider: string;
         verdict: import(".prisma/client").$Enums.Verdict;
         summary: string;
         inputTokens: number;
         outputTokens: number;
         findings: Prisma.JsonValue;
         stage1: Prisma.JsonValue | null;
-        filename: string;
         language: string | null;
         findingStatuses: Prisma.JsonValue | null;
+        filename: string;
         codeSize: number;
     }[]>;
     setFindingStatus(actor: WorkspaceActor, auditId: string, findingIndex: number, status: FindingStatus): Promise<{
@@ -74,18 +74,18 @@ export declare class AuditService {
         createdAt: Date;
         organizationId: string | null;
         userId: string;
-        provider: string;
         aiInvoked: boolean;
         fromCache: boolean;
+        provider: string;
         verdict: import(".prisma/client").$Enums.Verdict;
         summary: string;
         inputTokens: number;
         outputTokens: number;
         findings: Prisma.JsonValue;
         stage1: Prisma.JsonValue | null;
-        filename: string;
         language: string | null;
         findingStatuses: Prisma.JsonValue | null;
+        filename: string;
         codeSize: number;
     }>;
 }

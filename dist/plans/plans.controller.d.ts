@@ -3,8 +3,8 @@ export declare class PlansController {
     private readonly plansService;
     constructor(plansService: PlansService);
     findAll(): Promise<{
-        name: string;
         id: string;
+        name: string;
         createdAt: Date;
         slug: string;
         priceMonthlyCents: number;

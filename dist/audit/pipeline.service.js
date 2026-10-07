@@ -43,6 +43,19 @@ let PipelineService = PipelineService_1 = class PipelineService {
         const baseFindings = (0, to_findings_1.stage1ToFindings)(stage1);
         let result;
         let usage = types_1.ZERO_USAGE;
+        if (!stage1.clean && input.localOnly) {
+            return {
+                result: {
+                    verdict: (0, verdict_1.verdictForSeverities)(baseFindings),
+                    summary: `Local checks found ${baseFindings.length} issue(s) and flagged ${stage1.riskyFunctions.length} function(s) that would get an AI review on a full scan.`,
+                    findings: baseFindings,
+                    stage1,
+                    aiInvoked: false,
+                },
+                fromCache: false,
+                usage,
+            };
+        }
         if (stage1.clean) {
             result = {
                 verdict: (0, verdict_1.verdictForSeverities)(baseFindings),

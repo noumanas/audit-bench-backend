@@ -3,6 +3,8 @@ import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
+import { RevenueModule } from './revenue/revenue.module';
+import { PublicScanModule } from './public-scan/public-scan.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
@@ -53,6 +55,8 @@ import { WebVitalsModule } from './web-vitals/web-vitals.module';
     FixModule,
     AlignmentLabModule,
     WebVitalsModule,
+    PublicScanModule,
+    RevenueModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

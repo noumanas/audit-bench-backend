@@ -3,8 +3,8 @@ export declare class PlansService {
     private readonly prisma;
     constructor(prisma: PrismaService);
     findAll(): Promise<{
-        name: string;
         id: string;
+        name: string;
         createdAt: Date;
         slug: string;
         priceMonthlyCents: number;

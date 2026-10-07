@@ -72,8 +72,10 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
     async createScanJob(actor, file, provider) {
         return this.createScanJobFromBuffer(actor, file.buffer, file.originalname, provider);
     }
-    async createScanJobFromBuffer(actor, zipBuffer, sourceName, provider, sourceType = 'zip', repoRef, contributorStats) {
-        await this.quota.assertCanScanNewRepository(actor.id, (0, repo_key_1.deriveRepoKey)({ sourceName, repoRef }));
+    async createScanJobFromBuffer(actor, zipBuffer, sourceName, provider, sourceType = 'zip', repoRef, contributorStats, opts = {}) {
+        if (!opts.skipQuota) {
+            await this.quota.assertCanScanNewRepository(actor.id, (0, repo_key_1.deriveRepoKey)({ sourceName, repoRef }));
+        }
         const providerName = this.llm.resolveProvider(provider);
         const maxFileSize = this.config.get('MAX_FILE_SIZE_BYTES') || 200_000;
         const maxScanFiles = this.config.get('MAX_SCAN_FILES') || 40;
@@ -105,8 +107,12 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
             licenseFindings: licenseFindings,
             testCoverage: testCoverage,
             ...(contributorStats ? { contributorStats: contributorStats } : {}),
+            localOnly: opts.localOnly,
+            isPublic: opts.isPublic,
+            shareId: opts.shareId,
+            requesterIpHash: opts.requesterIpHash,
         });
-        void this.processScan(job.id, filesToAnalyze, providerName, repoContext);
+        void this.processScan(job.id, filesToAnalyze, providerName, repoContext, Boolean(opts.localOnly));
         return job;
     }
     async createDiffReview(actor, files, meta) {
@@ -134,7 +140,7 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
         return job;
     }
     async gateAndCreateJob(actor, files, providerName, jobDataBase) {
-        const willInvokeAi = await this.anyFileNeedsFreshAiCall(files, providerName);
+        const willInvokeAi = jobDataBase.localOnly ? false : await this.anyFileNeedsFreshAiCall(files, providerName);
         const jobData = {
             userId: actor.id,
             organizationId: actor.organizationId,
@@ -163,7 +169,7 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
         }
         return false;
     }
-    async processScan(jobId, files, providerName, repoContext) {
+    async processScan(jobId, files, providerName, repoContext, localOnly = false) {
         try {
             await this.prisma.scanJob.update({ where: { id: jobId }, data: { status: 'processing' } });
             const limit = pLimit(5);
@@ -179,6 +185,7 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
                         provider: providerName,
                         repoContext,
                         changedLineRanges: file.changedRanges,
+                        localOnly,
                     });
                     if (fromCache)
                         filesFromCache++;
