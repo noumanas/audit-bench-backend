@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.GithubService = void 0;
 exports.mapGithubContributorStats = mapGithubContributorStats;
 const common_1 = require("@nestjs/common");
+const git_host_errors_1 = require("../common/git-host-errors");
 const crypto = require("crypto");
 const prisma_service_1 = require("../prisma/prisma.service");
 const diff_ranges_1 = require("../common/diff-ranges");
@@ -75,7 +76,7 @@ let GithubService = class GithubService {
             headers: this.authHeaders(token),
         });
         if (!res.ok) {
-            throw new common_1.BadRequestException(`GitHub rejected the request (${res.status}) — token may be invalid or expired`);
+            throw (0, git_host_errors_1.gitHostRequestFailed)('GitHub', res.status);
         }
         const repos = await res.json();
         return repos.map((r) => ({
@@ -99,7 +100,7 @@ let GithubService = class GithubService {
             throw new common_1.NotFoundException(`Repository ${owner}/${repo} not found or not accessible with this token`);
         }
         if (!res.ok) {
-            throw new common_1.BadRequestException(`GitHub rejected the request (${res.status})`);
+            throw (0, git_host_errors_1.gitHostRequestFailed)('GitHub', res.status);
         }
         const branches = await res.json();
         return branches.map((b) => b.name);
@@ -113,7 +114,7 @@ let GithubService = class GithubService {
             throw new common_1.NotFoundException(`Repository ${owner}/${repo} not found or not accessible with this token`);
         }
         if (!res.ok) {
-            throw new common_1.BadRequestException(`GitHub rejected the request (${res.status})`);
+            throw (0, git_host_errors_1.gitHostRequestFailed)('GitHub', res.status);
         }
         const pulls = await res.json();
         return pulls.map((p) => ({
@@ -203,7 +204,7 @@ let GithubService = class GithubService {
         if (res.status === 404)
             throw new common_1.NotFoundException(`Repository ${owner}/${repo} not found or not accessible with this token`);
         if (!res.ok)
-            throw new common_1.BadRequestException(`GitHub rejected the request (${res.status})`);
+            throw (0, git_host_errors_1.gitHostRequestFailed)('GitHub', res.status);
         const data = await res.json();
         return { defaultBranch: data.default_branch };
     }
@@ -216,7 +217,7 @@ let GithubService = class GithubService {
         if (res.status === 404)
             throw new common_1.NotFoundException(`${path} not found at ${ref}`);
         if (!res.ok)
-            throw new common_1.BadRequestException(`GitHub rejected the request (${res.status})`);
+            throw (0, git_host_errors_1.gitHostRequestFailed)('GitHub', res.status);
         const data = await res.json();
         if (data.encoding !== 'base64' || typeof data.content !== 'string') {
             throw new common_1.BadRequestException('Unexpected content encoding from GitHub');

@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.GitlabService = void 0;
 exports.mapGitlabContributorStats = mapGitlabContributorStats;
 const common_1 = require("@nestjs/common");
+const git_host_errors_1 = require("../common/git-host-errors");
 const crypto = require("crypto");
 const config_1 = require("@nestjs/config");
 const prisma_service_1 = require("../prisma/prisma.service");
@@ -105,7 +106,7 @@ let GitlabService = class GitlabService {
             headers: this.authHeaders(token),
         });
         if (!res.ok) {
-            throw new common_1.BadRequestException(`GitLab rejected the request (${res.status}) — token may be invalid or expired`);
+            throw (0, git_host_errors_1.gitHostRequestFailed)('GitLab', res.status);
         }
         const projects = await res.json();
         return projects.map((p) => ({
@@ -128,7 +129,7 @@ let GitlabService = class GitlabService {
             throw new common_1.NotFoundException(`Project ${projectId} not found or not accessible with this token`);
         }
         if (!res.ok) {
-            throw new common_1.BadRequestException(`GitLab rejected the request (${res.status})`);
+            throw (0, git_host_errors_1.gitHostRequestFailed)('GitLab', res.status);
         }
         const branches = await res.json();
         return branches.map((b) => b.name);
@@ -142,7 +143,7 @@ let GitlabService = class GitlabService {
             throw new common_1.NotFoundException(`Project ${projectId} not found or not accessible with this token`);
         }
         if (!res.ok) {
-            throw new common_1.BadRequestException(`GitLab rejected the request (${res.status})`);
+            throw (0, git_host_errors_1.gitHostRequestFailed)('GitLab', res.status);
         }
         const mrs = await res.json();
         return mrs.map((m) => ({
@@ -187,7 +188,7 @@ let GitlabService = class GitlabService {
             throw new common_1.NotFoundException(`MR !${mrIid} not found in project ${projectId}, or not accessible with this token`);
         }
         if (!res.ok)
-            throw new common_1.BadRequestException(`GitLab rejected the request (${res.status})`);
+            throw (0, git_host_errors_1.gitHostRequestFailed)('GitLab', res.status);
         const mr = await res.json();
         const headSha = mr.diff_refs?.head_sha;
         const diffRefs = {
@@ -231,7 +232,7 @@ let GitlabService = class GitlabService {
         if (res.status === 404)
             throw new common_1.NotFoundException(`Project ${projectId} not found or not accessible with this token`);
         if (!res.ok)
-            throw new common_1.BadRequestException(`GitLab rejected the request (${res.status})`);
+            throw (0, git_host_errors_1.gitHostRequestFailed)('GitLab', res.status);
         const data = await res.json();
         return { defaultBranch: data.default_branch };
     }

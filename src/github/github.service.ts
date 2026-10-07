@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { gitHostRequestFailed } from '../common/git-host-errors';
 import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { GithubPrDetails, GithubPrFile, GithubPrSummary, GithubRepoSummary } from './github.types';
@@ -77,7 +78,7 @@ export class GithubService implements OnModuleInit, PrPublisher {
       headers: this.authHeaders(token),
     });
     if (!res.ok) {
-      throw new BadRequestException(`GitHub rejected the request (${res.status}) — token may be invalid or expired`);
+      throw gitHostRequestFailed('GitHub', res.status);
     }
 
     const repos = await res.json();
@@ -106,7 +107,7 @@ export class GithubService implements OnModuleInit, PrPublisher {
       throw new NotFoundException(`Repository ${owner}/${repo} not found or not accessible with this token`);
     }
     if (!res.ok) {
-      throw new BadRequestException(`GitHub rejected the request (${res.status})`);
+      throw gitHostRequestFailed('GitHub', res.status);
     }
 
     const branches: any[] = await res.json();
@@ -123,7 +124,7 @@ export class GithubService implements OnModuleInit, PrPublisher {
       throw new NotFoundException(`Repository ${owner}/${repo} not found or not accessible with this token`);
     }
     if (!res.ok) {
-      throw new BadRequestException(`GitHub rejected the request (${res.status})`);
+      throw gitHostRequestFailed('GitHub', res.status);
     }
 
     const pulls: any[] = await res.json();
@@ -243,7 +244,7 @@ export class GithubService implements OnModuleInit, PrPublisher {
     const token = await this.requireToken(userId);
     const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}`, { headers: this.authHeaders(token) });
     if (res.status === 404) throw new NotFoundException(`Repository ${owner}/${repo} not found or not accessible with this token`);
-    if (!res.ok) throw new BadRequestException(`GitHub rejected the request (${res.status})`);
+    if (!res.ok) throw gitHostRequestFailed('GitHub', res.status);
     const data = await res.json();
     return { defaultBranch: data.default_branch };
   }
@@ -256,7 +257,7 @@ export class GithubService implements OnModuleInit, PrPublisher {
       headers: this.authHeaders(token),
     });
     if (res.status === 404) throw new NotFoundException(`${path} not found at ${ref}`);
-    if (!res.ok) throw new BadRequestException(`GitHub rejected the request (${res.status})`);
+    if (!res.ok) throw gitHostRequestFailed('GitHub', res.status);
     const data = await res.json();
     if (data.encoding !== 'base64' || typeof data.content !== 'string') {
       throw new BadRequestException('Unexpected content encoding from GitHub');

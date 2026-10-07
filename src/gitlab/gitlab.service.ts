@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { gitHostRequestFailed } from '../common/git-host-errors';
 import * as crypto from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
@@ -117,7 +118,7 @@ export class GitlabService implements OnModuleInit, PrPublisher {
       headers: this.authHeaders(token),
     });
     if (!res.ok) {
-      throw new BadRequestException(`GitLab rejected the request (${res.status}) — token may be invalid or expired`);
+      throw gitHostRequestFailed('GitLab', res.status);
     }
 
     const projects = await res.json();
@@ -145,7 +146,7 @@ export class GitlabService implements OnModuleInit, PrPublisher {
       throw new NotFoundException(`Project ${projectId} not found or not accessible with this token`);
     }
     if (!res.ok) {
-      throw new BadRequestException(`GitLab rejected the request (${res.status})`);
+      throw gitHostRequestFailed('GitLab', res.status);
     }
 
     const branches: any[] = await res.json();
@@ -162,7 +163,7 @@ export class GitlabService implements OnModuleInit, PrPublisher {
       throw new NotFoundException(`Project ${projectId} not found or not accessible with this token`);
     }
     if (!res.ok) {
-      throw new BadRequestException(`GitLab rejected the request (${res.status})`);
+      throw gitHostRequestFailed('GitLab', res.status);
     }
 
     const mrs: any[] = await res.json();
@@ -230,7 +231,7 @@ export class GitlabService implements OnModuleInit, PrPublisher {
     if (res.status === 404) {
       throw new NotFoundException(`MR !${mrIid} not found in project ${projectId}, or not accessible with this token`);
     }
-    if (!res.ok) throw new BadRequestException(`GitLab rejected the request (${res.status})`);
+    if (!res.ok) throw gitHostRequestFailed('GitLab', res.status);
     const mr = await res.json();
     const headSha: string = mr.diff_refs?.head_sha;
     const diffRefs = {
@@ -277,7 +278,7 @@ export class GitlabService implements OnModuleInit, PrPublisher {
     const token = await this.requireToken(userId);
     const res = await fetch(`${this.baseUrl()}/projects/${projectId}`, { headers: this.authHeaders(token) });
     if (res.status === 404) throw new NotFoundException(`Project ${projectId} not found or not accessible with this token`);
-    if (!res.ok) throw new BadRequestException(`GitLab rejected the request (${res.status})`);
+    if (!res.ok) throw gitHostRequestFailed('GitLab', res.status);
     const data = await res.json();
     return { defaultBranch: data.default_branch };
   }
