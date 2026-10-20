@@ -9,7 +9,7 @@ import { PrContext, PrFeedback, PrFeedbackFinding, PrPublisher, REVIEW_FOOTER } 
 import { commentLines, inlineCommentBody } from '../pr-feedback/inline-comment';
 import { TokenCryptoService } from '../common/token-crypto.service';
 import { ContributorStat } from '../analysis/types';
-import { MergeReadiness } from '../common/merge-readiness';
+import { buildSummaryBody } from '../pr-feedback/summary-comment';
 import { GithubPull, fetchCiChecks, refetchIfMergeabilityPending, toPrSnapshot } from '../common/github-pr-snapshot';
 
 const GITHUB_API = 'https://api.github.com';
@@ -593,72 +593,6 @@ export function mapGithubContributorStats(raw: unknown[]): ContributorStat[] {
     .sort((a, b) => b.commits - a.commits);
 }
 
-/**
- * The review's top-level comment, CodeRabbit-style: how many inline comments
- * were posted, merge readiness, a collapsible prompt an AI coding agent can
- * paste to fix everything, collapsible review details, and how to talk back.
- */
-export function buildSummaryBody(feedback: PrFeedback, opts: { posted?: number; headSha?: string } = {}): string {
-  const verdictLabel = { pass: '✅ Pass', needs_work: '⚠️ Needs work', do_not_ship: '⛔ Do not ship' }[feedback.verdict];
-  const counts = feedback.findings.reduce<Record<string, number>>((acc, f) => {
-    acc[f.severity] = (acc[f.severity] || 0) + 1;
-    return acc;
-  }, {});
-  const countLine = ['critical', 'high', 'medium', 'low']
-    .filter((s) => counts[s])
-    .map((s) => `${counts[s]} ${s}`)
-    .join(', ');
-
-  const lines = [`### Audit Bench Ai review — ${verdictLabel}`, ''];
-  if (feedback.requestedBy) lines.push(`_Review requested by @${feedback.requestedBy}._`, '');
-  if (opts.posted !== undefined) lines.push(`**Actionable comments posted: ${opts.posted}**`, '');
-  if (feedback.readiness) lines.push(...readinessLines(feedback.readiness), '');
-  lines.push(countLine ? `**Findings:** ${countLine}` : '_No findings — all clear._');
-
-  if (feedback.findings.length) {
-    lines.push(
-      '',
-      '---',
-      '',
-      '<details>',
-      '<summary>🤖 Prompt to fix review comments</summary>',
-      '',
-      '````text',
-      'Verify each finding against the current code and only fix it if it still applies.',
-      '',
-      ...feedback.findings.slice(0, 50).flatMap((f) => [
-        `In \`@${f.path}\`${f.line ? ` around ${f.endLine && f.endLine > f.line ? `lines ${f.line} - ${f.endLine}` : `line ${f.line}`}` : ''}: ${f.title}. ${f.description}${f.suggestedFix ? ` Suggested fix: ${f.suggestedFix}` : ''}`,
-        '',
-      ]),
-      '````',
-      '',
-      '</details>',
-    );
-  }
-
-  const info = [
-    opts.headSha ? `- **Commit:** \`${opts.headSha.slice(0, 7)}\`` : null,
-    `- **Verdict:** ${verdictLabel}`,
-    `- **Scope:** ${feedback.summary}`,
-  ].filter(Boolean);
-  lines.push('', '<details>', '<summary>ℹ️ Review info</summary>', '', ...(info as string[]), '', '</details>');
-
-  lines.push(
-    '',
-    '💬 Reply to any inline comment and Audit Bench Ai will recheck that code and answer in the thread. Mention `@auditbench` in the conversation to ask about the whole PR.',
-  );
-  if (feedback.scanUrl) lines.push('', `[View the full report and fix with AI](${feedback.scanUrl})`);
-  lines.push('', REVIEW_FOOTER);
-  return lines.join('\n');
-}
-
-const READINESS_LABEL: Record<MergeReadiness['status'], string> = {
-  ready: '✅ Ready to merge',
-  ready_with_notes: '🟡 Ready to merge, with notes',
-  not_ready: '⛔ Not ready to merge',
-  merged: '🟣 Already merged',
-  closed: '⚪ Closed without merging',
-};
 
 async function githubErrorMessage(res: Response): Promise<string> {
   try {
@@ -681,14 +615,6 @@ export function explainPostFailure(status: number, message: string): string {
     return `${base} The token can't write to this repository. Check its scopes (repo or public_repo) and that it can access the repository.`;
   }
   return base;
-}
-
-/** Merge readiness from GitHub's state, CI and the findings — see common/merge-readiness.ts. */
-function readinessLines(readiness: MergeReadiness): string[] {
-  const lines = [`**Merge readiness: ${READINESS_LABEL[readiness.status]}**`];
-  if (readiness.blockers.length) lines.push('', '_Fix before merging:_', ...readiness.blockers.map((b) => `- ${b}`));
-  if (readiness.notes.length) lines.push('', '_Worth a look:_', ...readiness.notes.map((n) => `- ${n}`));
-  return lines;
 }
 
 /**
@@ -721,3 +647,5 @@ export interface GithubReviewComment {
   created_at: string;
   user: { login: string } | null;
 }
+
+export { buildSummaryBody };

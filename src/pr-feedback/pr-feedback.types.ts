@@ -1,6 +1,7 @@
 import { Verdict } from '@prisma/client';
 import { MergeReadiness } from '../common/merge-readiness';
 import { LineRange } from '../common/diff-ranges';
+import type { PrInsights, PreMergeCheck } from './pr-insights';
 
 export type PrContext =
   | {
@@ -47,6 +48,14 @@ export interface PrFeedback {
   changedRanges?: Record<string, LineRange[]>;
   /** Shown in the summary when Audit Bench Ai's own account posts on someone's request. */
   requestedBy?: string;
+  /** The reviewed commit, for "Merge risk … up to abc1234". */
+  headSha?: string;
+  /** AI walkthrough, merge risk and title/description/scope checks — absent for local-only reviews. */
+  insights?: PrInsights;
+  /** GitHub-state and findings checks (conflicts, CI, secrets, tests, size). */
+  checks?: PreMergeCheck[];
+  /** True for a free review made with local checks only (no AI). */
+  local?: boolean;
   /** GitHub PR reviews with a snapshot — conflicts, CI and blockers, rendered at the top of the summary. */
   readiness?: MergeReadiness;
 }

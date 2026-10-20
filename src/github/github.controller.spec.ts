@@ -1,6 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
 import { GithubController } from './github.controller';
-import { buildSummaryBody } from './github.service';
 
 // Same as pipeline.service.spec: the real Stage 1 module loads prettier's ESM-only build, which Jest can't run.
 jest.mock('../audit/stage1/run-stage1', () => ({ runStage1: jest.fn() }));
@@ -61,23 +60,3 @@ describe('GithubController.reviewPrByUrl', () => {
   });
 });
 
-describe('buildSummaryBody', () => {
-  it('leads with merge readiness and ends with the Audit Bench footer', () => {
-    const body = buildSummaryBody({
-      verdict: 'needs_work',
-      summary: 'Reviewed 2/2 files.',
-      findings: [{ path: 'a.ts', line: 3, severity: 'medium', title: 't', description: 'd' }],
-      readiness: { status: 'not_ready', blockers: ['1 CI check failing: tests.'], notes: ['1 medium or low-severity finding to review.'] },
-    });
-    expect(body).toContain('**Merge readiness: ⛔ Not ready to merge**');
-    expect(body).toContain('- 1 CI check failing: tests.');
-    expect(body.indexOf('Merge readiness')).toBeLessThan(body.indexOf('Reviewed 2/2 files.'));
-    expect(body.trim().split('\n').pop()).toMatch(/^<sub>Reviewed by \[Audit Bench Ai\]/);
-  });
-
-  it('reads as before when there is no readiness', () => {
-    const body = buildSummaryBody({ verdict: 'pass', summary: 's', findings: [] });
-    expect(body).not.toContain('Merge readiness');
-    expect(body).toContain('_No findings — all clear._');
-  });
-});

@@ -6,6 +6,8 @@ export interface PrSnapshot {
   repo: string;
   number: number;
   title: string;
+  /** The PR description, trimmed — read by the review's pre-merge checks. */
+  body?: string | null;
   url: string;
   state: 'open' | 'closed';
   merged: boolean;

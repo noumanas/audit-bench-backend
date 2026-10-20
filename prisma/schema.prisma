@@ -393,6 +393,11 @@ model ScanJob {
   changedRanges             Json?
   prPublishedAt             DateTime?
   prPublishError            String?
+  // AI read of a PR as a whole — walkthrough, merge risk and pre-merge
+  // checks (title, description, linked issues, scope). PrInsights, see
+  // src/pr-feedback/pr-insights.ts. One AI call per review; null for free
+  // local-only reviews.
+  prInsights                Json?
   status                    ScanStatus     @default(queued)
   provider                  String
   framework                 String? // best-guess detected framework

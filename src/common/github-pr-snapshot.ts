@@ -5,6 +5,7 @@ const GITHUB_API = 'https://api.github.com';
 /** The parts of GitHub's pull request payload a review reads. */
 export interface GithubPull {
   title: string;
+  body?: string | null;
   html_url: string;
   state: 'open' | 'closed';
   merged?: boolean;
@@ -83,6 +84,7 @@ export function toPrSnapshot(
     repo,
     number,
     title: pr.title,
+    body: (pr.body ?? '').slice(0, 4000),
     url: pr.html_url,
     state: pr.state,
     merged: Boolean(pr.merged),

@@ -27,6 +27,7 @@ import { worstVerdict } from '../common/verdict';
 import { Prisma, ScanSourceType } from '@prisma/client';
 import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
 import { PrSnapshot, readinessForScan } from '../common/merge-readiness';
+import { PrInsights, buildInsightsPrompt, deterministicChecks, prInsightsSchema } from '../pr-feedback/pr-insights';
 import { PrContext, PrFeedback } from '../pr-feedback/pr-feedback.types';
 import { Finding, FindingStatus, FindingStatuses, FINDING_STATUSES } from '../common/finding.schema';
 import { RepoRef } from '../common/repo-ref.types';
@@ -377,6 +378,31 @@ export class RepositoryService {
         }
       }
 
+      // One AI read of the PR as a whole (walkthrough, merge risk, title /
+      // description / linked-issue / scope checks) for the posted summary.
+      // Same rule as the architecture read: only on a review that already
+      // made a fresh, quota-gated AI call.
+      let prInsights: PrInsights | null = null;
+      if (job.sourceType === 'github_pr' && job.prSnapshot && anyFreshAiInvoked && files.length) {
+        try {
+          const { result, usage } = await this.llm.completeStructured<PrInsights>(
+            providerName,
+            buildInsightsPrompt({
+              snapshot: job.prSnapshot as unknown as PrSnapshot,
+              files,
+              findings: succeededByFile.flatMap(({ path, result: r }) =>
+                r.findings.map((f) => ({ path, severity: f.severity, title: f.title })),
+              ),
+            }),
+            prInsightsSchema,
+          );
+          prInsights = result;
+          totalUsage = addUsage(totalUsage, usage);
+        } catch (err) {
+          this.logger.warn(`PR insights failed for scan ${jobId}: ${(err as Error).message}`);
+        }
+      }
+
       let crossFileNote = '';
       if (REPO_WIDE_SOURCE_TYPES.has(job.sourceType)) {
         const depVulnCount = Array.isArray(job.dependencyVulnerabilities) ? job.dependencyVulnerabilities.length : 0;
@@ -405,6 +431,7 @@ export class RepositoryService {
           inputTokens: totalUsage.inputTokens,
           outputTokens: totalUsage.outputTokens,
           architectureAssessment: architectureAssessment as unknown as Prisma.InputJsonValue,
+          ...(prInsights ? { prInsights: prInsights as unknown as Prisma.InputJsonValue } : {}),
           completedAt: new Date(),
         },
       });
@@ -450,6 +477,7 @@ export class RepositoryService {
   /** A finished PR review as the feedback posted to the pull request, rebuilt from what's stored. */
   async buildPrFeedback(jobId: string, scanUrl?: string): Promise<PrFeedback> {
     const job = await this.prisma.scanJob.findUniqueOrThrow({ where: { id: jobId }, include: { files: true } });
+    const snapshot = job.sourceType === 'github_pr' ? (job.prSnapshot as unknown as PrSnapshot | null) : null;
     const findings = job.files.flatMap((file) =>
       ((Array.isArray(file.findings) ? file.findings : []) as unknown as Finding[]).map((f) => ({
         path: file.path,
@@ -472,6 +500,16 @@ export class RepositoryService {
       changedRanges: (job.changedRanges ?? undefined) as PrFeedback['changedRanges'],
       scanUrl,
       readiness: readinessForScan(job) ?? undefined,
+      headSha: snapshot?.headSha,
+      insights: (job.prInsights ?? undefined) as PrInsights | undefined,
+      checks: snapshot
+        ? deterministicChecks(snapshot, {
+            findings,
+            secrets: Array.isArray(job.secrets) ? job.secrets.length : 0,
+            changedPaths: Object.keys((job.changedRanges ?? {}) as object),
+          })
+        : undefined,
+      local: job.localOnly,
     };
   }
 
