@@ -15,6 +15,8 @@ export interface Finding {
   category: FindingCategory;
   title: string;
   line: number | null;
+  /** Last line of the problem code when it spans several lines; null or absent for a single line. */
+  endLine?: number | null;
   description: string;
   rootCause: string;
   suggestedFix: string;

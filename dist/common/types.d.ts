@@ -6,6 +6,7 @@ export interface Finding {
     category: FindingCategory;
     title: string;
     line: number | null;
+    endLine?: number | null;
     description: string;
     rootCause: string;
     suggestedFix: string;

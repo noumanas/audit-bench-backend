@@ -286,10 +286,17 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
                     findings: succeededByFile.flatMap(({ path, result }) => result.findings.map((f) => ({
                         path,
                         line: f.line,
+                        endLine: f.endLine ?? null,
                         severity: f.severity,
                         title: f.title,
                         description: f.description,
+                        category: f.category,
+                        rootCause: f.rootCause,
+                        suggestedFix: f.suggestedFix,
+                        examplePatch: f.examplePatch,
+                        confidence: f.confidence,
                     }))),
+                    changedRanges: Object.fromEntries(files.filter((f) => f.changedRanges).map((f) => [f.path, f.changedRanges])),
                     scanUrl: this.buildScanUrl(jobId),
                 };
                 if (job.prSnapshot) {

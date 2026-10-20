@@ -7,6 +7,7 @@ import { GitlabMrDetails, GitlabMrFile, GitlabMrSummary, GitlabProjectSummary } 
 import { parseChangedRanges } from '../common/diff-ranges';
 import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
 import { PrContext, PrFeedback, PrPublisher, REVIEW_FOOTER } from '../pr-feedback/pr-feedback.types';
+import { inlineCommentBody } from '../pr-feedback/inline-comment';
 import { gitlabInstanceUrl } from '../common/gitlab-url';
 import { TokenCryptoService } from '../common/token-crypto.service';
 import { ContributorStat } from '../analysis/types';
@@ -363,7 +364,7 @@ export class GitlabService implements OnModuleInit, PrPublisher {
   ): Promise<void> {
     const inline = feedback.findings.filter((f) => f.line !== null).slice(0, 50);
     for (const f of inline) {
-      const body = `**${severityLabel(f.severity)} — ${f.title}**\n\n${f.description}`;
+      const body = inlineCommentBody(f);
       const res = await fetch(`${this.baseUrl()}/projects/${projectId}/merge_requests/${mrIid}/discussions`, {
         method: 'POST',
         headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
@@ -443,11 +444,6 @@ export function mapGitlabContributorStats(raw: unknown[]): ContributorStat[] {
       }),
     )
     .sort((a, b) => b.commits - a.commits);
-}
-
-function severityLabel(severity: string): string {
-  const icons: Record<string, string> = { critical: '🔴 Critical', high: '🟠 High', medium: '🟡 Medium', low: '🔵 Low' };
-  return icons[severity] || severity;
 }
 
 function buildSummaryBody(feedback: PrFeedback): string {

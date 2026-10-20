@@ -19,6 +19,7 @@ const prisma_service_1 = require("../prisma/prisma.service");
 const diff_ranges_1 = require("../common/diff-ranges");
 const pr_feedback_service_1 = require("../pr-feedback/pr-feedback.service");
 const pr_feedback_types_1 = require("../pr-feedback/pr-feedback.types");
+const inline_comment_1 = require("../pr-feedback/inline-comment");
 const token_crypto_service_1 = require("../common/token-crypto.service");
 const github_pr_snapshot_1 = require("../common/github-pr-snapshot");
 const GITHUB_API = 'https://api.github.com';
@@ -300,12 +301,15 @@ let GithubService = class GithubService {
     }
     async postPrReview(token, owner, repo, pullNumber, headSha, feedback) {
         const comments = feedback.findings
-            .filter((f) => f.line !== null)
+            .map((f) => ({ f, at: (0, inline_comment_1.commentLines)(f, feedback.changedRanges?.[f.path]) }))
+            .filter((c) => c.at !== null)
             .slice(0, 50)
-            .map((f) => ({
+            .map(({ f, at }) => ({
             path: f.path,
-            line: f.line,
-            body: `**${severityLabel(f.severity)} — ${f.title}**\n\n${f.description}`,
+            ...(at.end > at.start ? { start_line: at.start, start_side: 'RIGHT' } : {}),
+            line: at.end,
+            side: 'RIGHT',
+            body: (0, inline_comment_1.inlineCommentBody)(f),
         }));
         const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${pullNumber}/reviews`, {
             method: 'POST',
@@ -375,10 +379,6 @@ function mapGithubContributorStats(raw) {
         };
     })
         .sort((a, b) => b.commits - a.commits);
-}
-function severityLabel(severity) {
-    const icons = { critical: '🔴 Critical', high: '🟠 High', medium: '🟡 Medium', low: '🔵 Low' };
-    return icons[severity] || severity;
 }
 function buildSummaryBody(feedback) {
     const verdictLabel = { pass: '✅ Pass', needs_work: '⚠️ Needs work', do_not_ship: '⛔ Do not ship' }[feedback.verdict];

@@ -9,6 +9,7 @@ const RESPONSE_SHAPE = `{
       "category": "Security" | "Logic" | "Performance" | "Architecture" | "Maintainability" | "Testing",
       "title": "a short, plain-language summary of the actual problem — no unexplained jargon or acronyms (avoid things like 'SSRF', 'prototype pollution', 'anti-pattern', 'race condition'); say what happens in everyday words, e.g. 'The server can be tricked into fetching internal URLs' instead of 'SSRF vulnerability'",
       "line": <the real file line number given for that function's snippet, offset by where the issue occurs — or null>,
+      "endLine": <the last line of the problem code when it spans several lines (same numbering as line), or null for a single line>,
       "description": "what is wrong and why it matters, written so a junior developer or non-technical reader can follow it — if you use a technical term, explain what it means in the same sentence",
       "rootCause": "the underlying mistake that produced this issue, in plain language",
       "suggestedFix": "concrete, actionable fix, described in plain language",

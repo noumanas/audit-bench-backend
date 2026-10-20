@@ -19,6 +19,7 @@ const prisma_service_1 = require("../prisma/prisma.service");
 const diff_ranges_1 = require("../common/diff-ranges");
 const pr_feedback_service_1 = require("../pr-feedback/pr-feedback.service");
 const pr_feedback_types_1 = require("../pr-feedback/pr-feedback.types");
+const inline_comment_1 = require("../pr-feedback/inline-comment");
 const gitlab_url_1 = require("../common/gitlab-url");
 const token_crypto_service_1 = require("../common/token-crypto.service");
 let GitlabService = class GitlabService {
@@ -286,7 +287,7 @@ let GitlabService = class GitlabService {
     async postMrDiscussions(token, projectId, mrIid, diffRefs, feedback) {
         const inline = feedback.findings.filter((f) => f.line !== null).slice(0, 50);
         for (const f of inline) {
-            const body = `**${severityLabel(f.severity)} — ${f.title}**\n\n${f.description}`;
+            const body = (0, inline_comment_1.inlineCommentBody)(f);
             const res = await fetch(`${this.baseUrl()}/projects/${projectId}/merge_requests/${mrIid}/discussions`, {
                 method: 'POST',
                 headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
@@ -354,10 +355,6 @@ function mapGitlabContributorStats(raw) {
         lastCommitAt: null,
     }))
         .sort((a, b) => b.commits - a.commits);
-}
-function severityLabel(severity) {
-    const icons = { critical: '🔴 Critical', high: '🟠 High', medium: '🟡 Medium', low: '🔵 Low' };
-    return icons[severity] || severity;
 }
 function buildSummaryBody(feedback) {
     const verdictLabel = { pass: '✅ Pass', needs_work: '⚠️ Needs work', do_not_ship: '⛔ Do not ship' }[feedback.verdict];

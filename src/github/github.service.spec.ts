@@ -76,3 +76,45 @@ describe('mapGithubContributorStats', () => {
     expect(mapGithubContributorStats(raw).map((s) => s.author)).toEqual(['high', 'low']);
   });
 });
+
+describe('GithubService.publish', () => {
+  const realFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = realFetch;
+  });
+
+  it('posts multi-line inline comments inside the diff and drops ones outside it', async () => {
+    const calls: Array<{ url: string; body: any }> = [];
+    global.fetch = jest.fn(async (url: string, init?: { body?: string }) => {
+      calls.push({ url, body: init?.body ? JSON.parse(init.body) : null });
+      return { ok: true, json: async () => ({}) };
+    }) as never;
+    const service = new GithubService(
+      { user: { findUniqueOrThrow: jest.fn().mockResolvedValue({ githubToken: 'enc' }) } } as never,
+      { register: jest.fn() } as never,
+      { decrypt: () => 'token' } as never,
+    );
+
+    await service.publish(
+      'u1',
+      { kind: 'github', owner: 'acme', repo: 'api', pullNumber: 7, headSha: 'sha', headRef: 'f', baseRef: 'main' },
+      {
+        verdict: 'needs_work',
+        summary: 's',
+        changedRanges: { 'src/a.ts': [{ start: 220, end: 260 }] },
+        findings: [
+          { path: 'src/a.ts', line: 233, endLine: 235, severity: 'medium', title: 'Range', description: 'd' },
+          { path: 'src/a.ts', line: 240, severity: 'high', title: 'Single', description: 'd' },
+          { path: 'src/a.ts', line: 10, severity: 'low', title: 'Outside the diff', description: 'd' },
+        ],
+      },
+    );
+
+    const review = calls.find((c) => c.url.endsWith('/pulls/7/reviews'))!.body;
+    expect(review.comments).toHaveLength(2);
+    expect(review.comments[0]).toMatchObject({ path: 'src/a.ts', start_line: 233, start_side: 'RIGHT', line: 235, side: 'RIGHT' });
+    expect(review.comments[1]).toMatchObject({ line: 240, side: 'RIGHT' });
+    expect(review.comments[1].start_line).toBeUndefined();
+    expect(review.comments[0].body).toMatch(/^!\[Medium\]\(.*\) \*\*Range\*\*/);
+  });
+});

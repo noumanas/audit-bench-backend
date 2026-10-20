@@ -5,6 +5,9 @@ export const findingSchema = z.object({
   category: z.enum(['Security', 'Logic', 'Performance', 'Architecture', 'Maintainability', 'Testing']),
   title: z.string().min(1),
   line: z.number().int().nullable().optional().default(null),
+  // Last line of the problem code when it spans several lines — lets a PR
+  // comment cover the whole range. Optional: older cached results lack it.
+  endLine: z.number().int().nullable().optional(),
   description: z.string().min(1),
   rootCause: z.string().min(1),
   suggestedFix: z.string().min(1),

@@ -7,6 +7,7 @@ exports.findingSchema = zod_1.z.object({
     category: zod_1.z.enum(['Security', 'Logic', 'Performance', 'Architecture', 'Maintainability', 'Testing']),
     title: zod_1.z.string().min(1),
     line: zod_1.z.number().int().nullable().optional().default(null),
+    endLine: zod_1.z.number().int().nullable().optional(),
     description: zod_1.z.string().min(1),
     rootCause: zod_1.z.string().min(1),
     suggestedFix: zod_1.z.string().min(1),

@@ -5,7 +5,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { GithubPrDetails, GithubPrFile, GithubPrSummary, GithubRepoSummary } from './github.types';
 import { parseChangedRanges } from '../common/diff-ranges';
 import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
-import { PrContext, PrFeedback, PrPublisher, REVIEW_FOOTER } from '../pr-feedback/pr-feedback.types';
+import { PrContext, PrFeedback, PrFeedbackFinding, PrPublisher, REVIEW_FOOTER } from '../pr-feedback/pr-feedback.types';
+import { commentLines, inlineCommentBody } from '../pr-feedback/inline-comment';
 import { TokenCryptoService } from '../common/token-crypto.service';
 import { ContributorStat } from '../analysis/types';
 import { MergeReadiness } from '../common/merge-readiness';
@@ -381,12 +382,16 @@ export class GithubService implements OnModuleInit, PrPublisher {
     feedback: PrFeedback,
   ): Promise<void> {
     const comments = feedback.findings
-      .filter((f) => f.line !== null)
+      .map((f) => ({ f, at: commentLines(f, feedback.changedRanges?.[f.path]) }))
+      .filter((c): c is { f: PrFeedbackFinding; at: { start: number; end: number } } => c.at !== null)
       .slice(0, 50) // GitHub review payloads get unreliable well past this
-      .map((f) => ({
+      .map(({ f, at }) => ({
         path: f.path,
-        line: f.line as number,
-        body: `**${severityLabel(f.severity)} — ${f.title}**\n\n${f.description}`,
+        // A range shows as "Comment on lines +start to +end" with the code above it.
+        ...(at.end > at.start ? { start_line: at.start, start_side: 'RIGHT' } : {}),
+        line: at.end,
+        side: 'RIGHT',
+        body: inlineCommentBody(f),
       }));
 
     const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${pullNumber}/reviews`, {
@@ -470,11 +475,6 @@ export function mapGithubContributorStats(raw: unknown[]): ContributorStat[] {
       };
     })
     .sort((a, b) => b.commits - a.commits);
-}
-
-function severityLabel(severity: string): string {
-  const icons: Record<string, string> = { critical: '🔴 Critical', high: '🟠 High', medium: '🟡 Medium', low: '🔵 Low' };
-  return icons[severity] || severity;
 }
 
 export function buildSummaryBody(feedback: PrFeedback): string {

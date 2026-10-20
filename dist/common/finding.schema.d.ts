@@ -16,6 +16,7 @@ export declare const findingSchema: z.ZodObject<{
     }>;
     title: z.ZodString;
     line: z.ZodDefault<z.ZodOptional<z.ZodNullable<z.ZodNumber>>>;
+    endLine: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
     description: z.ZodString;
     rootCause: z.ZodString;
     suggestedFix: z.ZodString;
@@ -46,6 +47,7 @@ export declare const auditResultSchema: z.ZodObject<{
         }>;
         title: z.ZodString;
         line: z.ZodDefault<z.ZodOptional<z.ZodNullable<z.ZodNumber>>>;
+        endLine: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
         description: z.ZodString;
         rootCause: z.ZodString;
         suggestedFix: z.ZodString;

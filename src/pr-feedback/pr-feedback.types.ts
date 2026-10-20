@@ -1,5 +1,6 @@
 import { Verdict } from '@prisma/client';
 import { MergeReadiness } from '../common/merge-readiness';
+import { LineRange } from '../common/diff-ranges';
 
 export type PrContext =
   | {
@@ -26,9 +27,15 @@ export type PrContext =
 export interface PrFeedbackFinding {
   path: string;
   line: number | null;
+  endLine?: number | null;
   severity: string;
   title: string;
   description: string;
+  category?: string;
+  rootCause?: string;
+  suggestedFix?: string;
+  examplePatch?: string | null;
+  confidence?: number;
 }
 
 export interface PrFeedback {
@@ -36,6 +43,8 @@ export interface PrFeedback {
   summary: string;
   findings: PrFeedbackFinding[];
   scanUrl?: string;
+  /** Each reviewed file's changed line ranges — an inline comment must land inside one. */
+  changedRanges?: Record<string, LineRange[]>;
   /** GitHub PR reviews with a snapshot — conflicts, CI and blockers, rendered at the top of the summary. */
   readiness?: MergeReadiness;
 }
