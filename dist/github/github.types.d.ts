@@ -1,3 +1,4 @@
+import { ScannedFile } from '../analysis/types';
 import { PrSnapshot } from '../common/merge-readiness';
 import { LineRange } from '../common/diff-ranges';
 export interface GithubRepoSummary {
@@ -33,4 +34,5 @@ export interface GithubPrDetails {
     headRef: string;
     baseRef: string;
     snapshot?: PrSnapshot;
+    repoFiles?: ScannedFile[];
 }

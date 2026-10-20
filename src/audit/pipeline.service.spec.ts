@@ -93,6 +93,35 @@ describe('PipelineService — Stage 1 → AI escalation', () => {
     expect(prompt).not.toContain('line1();\n');
   });
 
+  it("drops findings the team's learned rules suppress, and judges the verdict on what's left", async () => {
+    (runStage1Module.runStage1 as jest.Mock).mockResolvedValue(makeStage1({ clean: false }));
+    llm.completeStructured.mockResolvedValue({
+      result: {
+        verdict: 'do_not_ship',
+        summary: 's',
+        findings: [
+          { severity: 'critical', category: 'Logic', title: 'The `x` value is never checked', line: 1, description: 'd', rootCause: 'r', suggestedFix: 'f', examplePatch: null, confidence: 0.9 },
+          { severity: 'low', category: 'Maintainability', title: 'Long function', line: 2, description: 'd', rootCause: 'r', suggestedFix: 'f', examplePatch: null, confidence: 0.9 },
+        ],
+      },
+      usage: { inputTokens: 1, outputTokens: 1 },
+    });
+
+    const { result } = await pipeline.run({
+      filename: 'a.ts',
+      code: 'x',
+      provider: 'openai',
+      teamRules: 'Team rules (follow them; they override the defaults above):\n- We use tabs.',
+      suppressFingerprints: ['logic:checked-never-value'],
+      rulesKey: 'abc',
+    });
+
+    expect(result.findings.map((f) => f.title)).toEqual(['Long function']);
+    expect(result.verdict).toBe('pass');
+    expect(cache.hashFor).toHaveBeenCalledWith('x', 'openai', undefined, undefined, 'abc');
+    expect(llm.completeStructured.mock.calls[0][1]).toContain('- We use tabs.');
+  });
+
   it('keeps a free public PR review local-only', async () => {
     (runStage1Module.runStage1 as jest.Mock).mockResolvedValue(makeStage1({ clean: true }));
     const { result } = await pipeline.run({

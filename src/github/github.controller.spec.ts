@@ -31,13 +31,13 @@ describe('GithubController.reviewPrByUrl', () => {
   it('posts back to GitHub only when asked to', async () => {
     const { controller, repository, github } = setup();
     await controller.reviewPrByUrl(user, { prUrl: 'https://github.com/Netflix/metaflow/pull/3414/files', postToGithub: true });
-    expect(github.fetchPrFiles).toHaveBeenCalledWith('u1', 'Netflix', 'metaflow', 3414, { withSnapshot: true });
+    expect(github.fetchPrFiles).toHaveBeenCalledWith('u1', 'Netflix', 'metaflow', 3414, { withSnapshot: true, withRepoContext: true });
     expect(repository.createDiffReview.mock.calls[0][2]).toMatchObject({
       sourceName: 'Netflix/metaflow#3414',
       sourceType: 'github_pr',
       prContext: { kind: 'github', owner: 'Netflix', repo: 'metaflow', pullNumber: 3414, headSha: 'sha' },
     });
-    expect(repository.createDiffReview.mock.calls[0][3]).toEqual({ prSnapshot: snapshot() });
+    expect(repository.createDiffReview.mock.calls[0][3]).toEqual({ prSnapshot: snapshot(), repoFiles: undefined });
 
     await controller.reviewPrByUrl(user, { prUrl: 'Netflix/metaflow#3414', postToGithub: false });
     expect(repository.createDiffReview.mock.calls[1][2].prContext).toBeUndefined();

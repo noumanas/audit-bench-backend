@@ -5,7 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { LlmService } from '../llm/llm.service';
 import { QuotaService } from '../quota/quota.service';
 import { PipelineService } from '../audit/pipeline.service';
-import { AuditCacheService } from '../audit/cache.service';
+import { AuditCacheService, cacheExtraKey } from '../audit/cache.service';
 import { runStage1 } from '../audit/stage1/run-stage1';
 import { filterStage1ToRanges } from '../audit/stage1/filter-to-ranges';
 import { detectLanguage, ANALYZABLE_EXTENSIONS } from '../common/language';
@@ -18,7 +18,11 @@ import { scanSecrets } from '../analysis/secrets-scanner';
 import { auditDependencies } from '../analysis/dependency-audit';
 import { auditLicenses } from '../analysis/license-audit';
 import { estimateTestCoverage } from '../analysis/test-coverage';
-import { buildArchitecturePrompt, architectureAssessmentSchema, ArchitectureAssessment } from '../audit/architecture-detector';
+import {
+  buildArchitecturePrompt,
+  architectureAssessmentSchema,
+  ArchitectureAssessment,
+} from '../audit/architecture-detector';
 import { assessTdd } from './tdd-assessment';
 import { aggregateRisk } from './risk-aggregation';
 import { ScannedFile, ContributorStat } from '../analysis/types';
@@ -27,6 +31,15 @@ import { worstVerdict } from '../common/verdict';
 import { Prisma, ScanSourceType } from '@prisma/client';
 import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
 import { PrSnapshot, readinessForScan } from '../common/merge-readiness';
+import { matchesGlob } from '../common/finding-fingerprint';
+import { relatedContextFor } from '../analysis/related-context';
+import {
+  NO_RULES,
+  ReviewRules,
+  ReviewRulesService,
+  repoFromSourceName,
+  rulesPromptText,
+} from '../review-rules/review-rules.service';
 import { PrInsights, buildInsightsPrompt, deterministicChecks, prInsightsSchema } from '../pr-feedback/pr-insights';
 import { PrContext, PrFeedback } from '../pr-feedback/pr-feedback.types';
 import { Finding, FindingStatus, FindingStatuses, FINDING_STATUSES } from '../common/finding.schema';
@@ -43,9 +56,7 @@ function selectFilesToAnalyze(files: ScannedFile[], max: number): ScannedFile[] 
   // Prioritize likely-important source directories over config/scripts.
   const priority = (p: string) => (/(^|\/)(src|app|pages|api|lib)\//.test(p) ? 0 : 1);
 
-  return analyzable
-    .sort((a, b) => priority(a.path) - priority(b.path) || a.path.localeCompare(b.path))
-    .slice(0, max);
+  return analyzable.sort((a, b) => priority(a.path) - priority(b.path) || a.path.localeCompare(b.path)).slice(0, max);
 }
 
 /** Extra behaviour for a scan that doesn't come from a signed-in user's own quota — see PublicScanService. */
@@ -59,6 +70,8 @@ export interface ScanOptions {
   requesterIpHash?: string;
   /** GitHub PR reviews — merge state and CI checks, see common/merge-readiness.ts. */
   prSnapshot?: PrSnapshot;
+  /** PR/MR reviews: the whole repository at the PR's commit, to show the AI where changed code is used. Not stored. */
+  repoFiles?: ScannedFile[];
 }
 
 interface JobDataBase {
@@ -86,7 +99,7 @@ interface JobDataBase {
   contributorStats?: Prisma.InputJsonValue;
 }
 
-const REPO_WIDE_SOURCE_TYPES = new Set<ScanSourceType>(['zip', 'github_repo', 'gitlab_repo']);
+const REPO_WIDE_SOURCE_TYPES = new Set<ScanSourceType>(['zip', 'github_repo', 'gitlab_repo', 'bitbucket_repo']);
 
 @Injectable()
 export class RepositoryService {
@@ -100,7 +113,23 @@ export class RepositoryService {
     private readonly pipeline: PipelineService,
     private readonly cache: AuditCacheService,
     private readonly prFeedback: PrFeedbackService,
+    private readonly reviewRules: ReviewRulesService,
   ) {}
+
+  /** The team's rules for this source, and its files minus the paths those rules ignore. */
+  private async applyRules<T extends { path: string }>(
+    actor: WorkspaceActor,
+    sourceName: string,
+    sourceType: ScanSourceType,
+    files: T[],
+  ): Promise<{ rules: ReviewRules; files: T[] }> {
+    const rules = await this.reviewRules.rulesFor(
+      { id: actor.id, organizationId: actor.organizationId },
+      repoFromSourceName(sourceName, sourceType),
+    );
+    if (!rules.ignorePaths.length) return { rules, files };
+    return { rules, files: files.filter((f) => !rules.ignorePaths.some((g) => matchesGlob(f.path, g))) };
+  }
 
   async createScanJob(actor: WorkspaceActor, file: Express.Multer.File, provider?: string) {
     return this.createScanJobFromBuffer(actor, file.buffer, file.originalname, provider);
@@ -131,7 +160,8 @@ export class RepositoryService {
     const maxFileSize = this.config.get<number>('MAX_FILE_SIZE_BYTES') || 200_000;
     const maxScanFiles = this.config.get<number>('MAX_SCAN_FILES') || 40;
 
-    const files = extractZip(zipBuffer, maxFileSize);
+    // Free public scans run under the anonymous system account, which has no rules.
+    const { rules, files } = await this.applyRules(actor, sourceName, sourceType, extractZip(zipBuffer, maxFileSize));
     const framework = detectFramework(files);
     const { graph, circular } = buildDependencyGraph(files);
     const deadCode = findDeadCode(files, graph);
@@ -145,28 +175,34 @@ export class RepositoryService {
     const filesToAnalyze = selectFilesToAnalyze(files, maxScanFiles);
     const repoContext = `Detected framework: ${framework || 'unknown'}. Repository has ${files.length} files total; ${filesToAnalyze.length} selected for review.`;
 
-    const job = await this.gateAndCreateJob(actor, filesToAnalyze, providerName, {
-      sourceName,
-      sourceType,
-      repoRef: repoRef as unknown as Prisma.InputJsonValue,
-      fileCount: files.length,
-      framework,
-      dependencyGraph: graph as unknown as Prisma.InputJsonValue,
-      circularImports: circular as unknown as Prisma.InputJsonValue,
-      deadCode: deadCode as unknown as Prisma.InputJsonValue,
-      duplicates: duplicates as unknown as Prisma.InputJsonValue,
-      secrets: secrets as unknown as Prisma.InputJsonValue,
-      dependencyVulnerabilities: dependencyVulnerabilities as unknown as Prisma.InputJsonValue,
-      licenseFindings: licenseFindings as unknown as Prisma.InputJsonValue,
-      testCoverage: testCoverage as unknown as Prisma.InputJsonValue,
-      ...(contributorStats ? { contributorStats: contributorStats as unknown as Prisma.InputJsonValue } : {}),
-      localOnly: opts.localOnly,
-      isPublic: opts.isPublic,
-      shareId: opts.shareId,
-      requesterIpHash: opts.requesterIpHash,
-    });
+    const job = await this.gateAndCreateJob(
+      actor,
+      filesToAnalyze,
+      providerName,
+      {
+        sourceName,
+        sourceType,
+        repoRef: repoRef as unknown as Prisma.InputJsonValue,
+        fileCount: files.length,
+        framework,
+        dependencyGraph: graph as unknown as Prisma.InputJsonValue,
+        circularImports: circular as unknown as Prisma.InputJsonValue,
+        deadCode: deadCode as unknown as Prisma.InputJsonValue,
+        duplicates: duplicates as unknown as Prisma.InputJsonValue,
+        secrets: secrets as unknown as Prisma.InputJsonValue,
+        dependencyVulnerabilities: dependencyVulnerabilities as unknown as Prisma.InputJsonValue,
+        licenseFindings: licenseFindings as unknown as Prisma.InputJsonValue,
+        testCoverage: testCoverage as unknown as Prisma.InputJsonValue,
+        ...(contributorStats ? { contributorStats: contributorStats as unknown as Prisma.InputJsonValue } : {}),
+        localOnly: opts.localOnly,
+        isPublic: opts.isPublic,
+        shareId: opts.shareId,
+        requesterIpHash: opts.requesterIpHash,
+      },
+      rules.key,
+    );
 
-    void this.processScan(job.id, filesToAnalyze, providerName, repoContext, Boolean(opts.localOnly));
+    void this.processScan(job.id, filesToAnalyze, providerName, repoContext, Boolean(opts.localOnly), rules);
     return job;
   }
 
@@ -183,7 +219,7 @@ export class RepositoryService {
     files: ScannedFile[],
     meta: {
       sourceName: string;
-      sourceType: 'github_pr' | 'gitlab_mr';
+      sourceType: 'github_pr' | 'gitlab_mr' | 'bitbucket_pr';
       pullRequestUrl: string;
       provider?: string;
       /** Set so processScan can publish the review/summary/status back once the scan completes. */
@@ -202,41 +238,53 @@ export class RepositoryService {
     const maxFileSize = this.config.get<number>('MAX_FILE_SIZE_BYTES') || 200_000;
     const maxScanFiles = this.config.get<number>('MAX_SCAN_FILES') || 40;
 
-    const analyzable = files
+    const scoped = await this.applyRules(actor, meta.sourceName, meta.sourceType, files);
+    const rules = scoped.rules;
+    const analyzable = scoped.files
       .filter((f) => {
         const ext = f.path.split('.').pop()?.toLowerCase();
         return Boolean(ext && ANALYZABLE_EXTENSIONS.has(ext) && f.content.length <= maxFileSize);
       })
       .slice(0, maxScanFiles);
+    // Only worth computing when the AI will read it.
+    if (opts.repoFiles?.length && !opts.localOnly) {
+      for (const f of analyzable) f.relatedContext = relatedContextFor(f, opts.repoFiles) || undefined;
+    }
 
     const secrets = scanSecrets(analyzable);
     const repoContext = `Reviewing a pull/merge request — only the lines this PR/MR actually changed are in scope for each file. ${analyzable.length} file(s) changed.`;
 
-    const job = await this.gateAndCreateJob(actor, analyzable, providerName, {
-      sourceName: meta.sourceName,
-      sourceType: meta.sourceType,
-      pullRequestUrl: meta.pullRequestUrl,
-      prContext: meta.prContext as unknown as Prisma.InputJsonValue,
-      changedRanges: Object.fromEntries(
-        analyzable.filter((f) => f.changedRanges).map((f) => [f.path, f.changedRanges!]),
-      ) as unknown as Prisma.InputJsonValue,
-      fileCount: analyzable.length,
-      secrets: secrets as unknown as Prisma.InputJsonValue,
-      localOnly: opts.localOnly,
-      isPublic: opts.isPublic,
-      shareId: opts.shareId,
-      requesterIpHash: opts.requesterIpHash,
-      // Counted here, after the language and size filter, so "not reviewed" is accurate.
-      prSnapshot: opts.prSnapshot
-        ? ({
-            ...opts.prSnapshot,
-            filesReviewed: analyzable.length,
-            filesSkipped: Math.max(opts.prSnapshot.changedFiles - analyzable.length, 0),
-          } as unknown as Prisma.InputJsonValue)
-        : undefined,
-    });
+    const job = await this.gateAndCreateJob(
+      actor,
+      analyzable,
+      providerName,
+      {
+        sourceName: meta.sourceName,
+        sourceType: meta.sourceType,
+        pullRequestUrl: meta.pullRequestUrl,
+        prContext: meta.prContext as unknown as Prisma.InputJsonValue,
+        changedRanges: Object.fromEntries(
+          analyzable.filter((f) => f.changedRanges).map((f) => [f.path, f.changedRanges!]),
+        ) as unknown as Prisma.InputJsonValue,
+        fileCount: analyzable.length,
+        secrets: secrets as unknown as Prisma.InputJsonValue,
+        localOnly: opts.localOnly,
+        isPublic: opts.isPublic,
+        shareId: opts.shareId,
+        requesterIpHash: opts.requesterIpHash,
+        // Counted here, after the language and size filter, so "not reviewed" is accurate.
+        prSnapshot: opts.prSnapshot
+          ? ({
+              ...opts.prSnapshot,
+              filesReviewed: analyzable.length,
+              filesSkipped: Math.max(opts.prSnapshot.changedFiles - analyzable.length, 0),
+            } as unknown as Prisma.InputJsonValue)
+          : undefined,
+      },
+      rules.key,
+    );
 
-    void this.processScan(job.id, analyzable, providerName, repoContext, Boolean(opts.localOnly));
+    void this.processScan(job.id, analyzable, providerName, repoContext, Boolean(opts.localOnly), rules);
     return job;
   }
 
@@ -245,13 +293,16 @@ export class RepositoryService {
     files: ScannedFile[],
     providerName: LlmProviderName,
     jobDataBase: JobDataBase,
+    rulesKey?: string,
   ) {
     // Cheap, local-only pre-check: will this job make at least one fresh
     // LLM call? Only then does it need a quota gate — a scan/review that
     // turns out entirely clean (or fully cache-hit) never touches quota,
     // and one that's already at its limit isn't blocked from attempting a
     // scan that might cost nothing. See QuotaService for the full rationale.
-    const willInvokeAi = jobDataBase.localOnly ? false : await this.anyFileNeedsFreshAiCall(files, providerName);
+    const willInvokeAi = jobDataBase.localOnly
+      ? false
+      : await this.anyFileNeedsFreshAiCall(files, providerName, rulesKey);
     const jobData = {
       userId: actor.id,
       // Same team-visibility stamp as Audit — see AuditService.runAudit.
@@ -276,9 +327,19 @@ export class RepositoryService {
       : this.prisma.scanJob.create({ data: jobData });
   }
 
-  private async anyFileNeedsFreshAiCall(files: ScannedFile[], providerName: LlmProviderName): Promise<boolean> {
+  private async anyFileNeedsFreshAiCall(
+    files: ScannedFile[],
+    providerName: LlmProviderName,
+    rulesKey?: string,
+  ): Promise<boolean> {
     for (const file of files) {
-      const hash = this.cache.hashFor(file.content, providerName, [], file.changedRanges);
+      const hash = this.cache.hashFor(
+        file.content,
+        providerName,
+        [],
+        file.changedRanges,
+        cacheExtraKey(rulesKey, file.relatedContext),
+      );
       if (await this.cache.exists(hash)) continue; // cached — no fresh call needed for this file
       if (file.changedRanges?.length) return true; // PR/MR hunks always get an AI pass — see PipelineService.run
       const fullStage1 = await runStage1(file.content, file.path);
@@ -294,7 +355,10 @@ export class RepositoryService {
     providerName: LlmProviderName,
     repoContext: string,
     localOnly = false,
+    rules: ReviewRules = NO_RULES,
   ) {
+    const teamRules = rulesPromptText(rules) || undefined;
+    const suppressFingerprints = rules.suppress.map((r) => r.fingerprint).filter(Boolean);
     try {
       await this.prisma.scanJob.update({ where: { id: jobId }, data: { status: 'processing' } });
 
@@ -315,6 +379,10 @@ export class RepositoryService {
                 repoContext,
                 changedLineRanges: file.changedRanges,
                 localOnly,
+                teamRules,
+                suppressFingerprints,
+                rulesKey: rules.key || undefined,
+                relatedContext: file.relatedContext,
               });
 
               if (fromCache) filesFromCache++;
@@ -532,7 +600,9 @@ export class RepositoryService {
     const riskAggregation = job.status === 'completed' ? aggregateRisk(job) : null;
     // The TDD assessment is the due diligence product — Enterprise only.
     const tddAssessment =
-      riskAggregation && (await this.quota.canUseDueDiligence(actor.id, actor.role)) ? assessTdd(job, riskAggregation) : null;
+      riskAggregation && (await this.quota.canUseDueDiligence(actor.id, actor.role))
+        ? assessTdd(job, riskAggregation)
+        : null;
     return { ...job, riskAggregation, tddAssessment, mergeReadiness: readinessForScan(job) };
   }
 
@@ -544,7 +614,8 @@ export class RepositoryService {
       where: { id: scanFileId },
       include: { scanJob: true },
     });
-    if (!file || !canViewResource(actor, file.scanJob)) throw new NotFoundException(`Scan file ${scanFileId} not found`);
+    if (!file || !canViewResource(actor, file.scanJob))
+      throw new NotFoundException(`Scan file ${scanFileId} not found`);
 
     const findings = file.findings as unknown as unknown[];
     if (findingIndex < 0 || findingIndex >= findings.length) {
@@ -555,10 +626,32 @@ export class RepositoryService {
     if (status === 'open') delete statuses[findingIndex];
     else statuses[findingIndex] = status;
 
-    return this.prisma.scanFile.update({
+    const updated = await this.prisma.scanFile.update({
       where: { id: scanFileId },
       data: { findingStatuses: statuses as unknown as Prisma.InputJsonValue },
     });
+
+    // "Won't fix" teaches the team's review rules; reopening takes it back.
+    const repo = repoFromSourceName(file.scanJob.sourceName, file.scanJob.sourceType);
+    if (repo) {
+      const owner = { id: file.scanJob.userId, organizationId: file.scanJob.organizationId };
+      const sourceRef = `app:${scanFileId}:${findingIndex}`;
+      const f = findings[findingIndex] as Finding;
+      if (status === 'wont_fix') {
+        await this.reviewRules.recordFeedback(owner, {
+          repo,
+          path: file.path,
+          category: f.category,
+          title: f.title,
+          signal: 'wont_fix',
+          source: 'app',
+          sourceRef,
+        });
+      } else {
+        await this.reviewRules.withdrawFeedback(owner, sourceRef);
+      }
+    }
+    return updated;
   }
 
   async findRecent(actor: WorkspaceActor, limit = 20) {

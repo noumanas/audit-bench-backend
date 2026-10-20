@@ -58,7 +58,7 @@ let GithubController = class GithubController {
         return this.repositoryService.createScanJobFromBuffer(user, zipBuffer, `${dto.owner}/${dto.repo}`, dto.provider, 'github_repo', { kind: 'github', owner: dto.owner, repo: dto.repo, ref, defaultBranch }, contributorStats);
     }
     async reviewPr(user, dto) {
-        const { files, url, headSha, headRef, baseRef, snapshot } = await this.githubService.fetchPrFiles(user.id, dto.owner, dto.repo, dto.pullNumber, { withSnapshot: true });
+        const { files, url, headSha, headRef, baseRef, snapshot, repoFiles } = await this.githubService.fetchPrFiles(user.id, dto.owner, dto.repo, dto.pullNumber, { withSnapshot: true, withRepoContext: true });
         return this.repositoryService.createDiffReview(user, files, {
             sourceName: `${dto.owner}/${dto.repo}#${dto.pullNumber}`,
             sourceType: 'github_pr',
@@ -73,7 +73,7 @@ let GithubController = class GithubController {
                 headRef,
                 baseRef,
             },
-        }, { prSnapshot: snapshot });
+        }, { prSnapshot: snapshot, repoFiles });
     }
     async reviewPrByUrl(user, dto) {
         const parsed = (0, github_url_1.parseGithubPrUrl)(dto.prUrl);
@@ -81,9 +81,7 @@ let GithubController = class GithubController {
             throw new common_1.BadRequestException('Paste a GitHub pull request link, like https://github.com/owner/repo/pull/123');
         }
         const { owner, repo, number } = parsed;
-        const { files, url, headSha, headRef, baseRef, snapshot } = await this.githubService.fetchPrFiles(user.id, owner, repo, number, {
-            withSnapshot: true,
-        });
+        const { files, url, headSha, headRef, baseRef, snapshot, repoFiles } = await this.githubService.fetchPrFiles(user.id, owner, repo, number, { withSnapshot: true, withRepoContext: true });
         if (dto.postToGithub && snapshot && snapshot.state !== 'open') {
             throw new common_1.BadRequestException(`${owner}/${repo}#${number} is already ${snapshot.merged ? 'merged' : 'closed'}, so a review comment wouldn't help. Turn off "Post on GitHub" to review it in the app.`);
         }
@@ -103,7 +101,7 @@ let GithubController = class GithubController {
                     baseRef,
                 }
                 : undefined,
-        }, { prSnapshot: snapshot });
+        }, { prSnapshot: snapshot, repoFiles });
     }
 };
 exports.GithubController = GithubController;

@@ -20,6 +20,7 @@ const verdict_1 = require("../common/verdict");
 const run_stage1_1 = require("./stage1/run-stage1");
 const to_findings_1 = require("./stage1/to-findings");
 const filter_to_ranges_1 = require("./stage1/filter-to-ranges");
+const finding_fingerprint_1 = require("../common/finding-fingerprint");
 const focused_prompt_1 = require("./stage2/focused-prompt");
 const LOW_CONFIDENCE_THRESHOLD = 0.6;
 let PipelineService = PipelineService_1 = class PipelineService {
@@ -31,16 +32,16 @@ let PipelineService = PipelineService_1 = class PipelineService {
         this.cache = cache;
     }
     async run(input, opts = {}) {
-        const hash = this.cache.hashFor(input.code, input.provider, input.focusAreas, input.changedLineRanges);
+        const hash = this.cache.hashFor(input.code, input.provider, input.focusAreas, input.changedLineRanges, (0, cache_service_1.cacheExtraKey)(input.rulesKey, input.relatedContext));
+        const suppressed = new Set(input.suppressFingerprints ?? []);
+        const keep = (findings) => suppressed.size ? findings.filter((f) => !suppressed.has((0, finding_fingerprint_1.findingFingerprint)(f))) : findings;
         const cached = await this.cache.lookup(hash);
         if (cached) {
             return { result: cached, fromCache: true, usage: types_1.ZERO_USAGE };
         }
         const fullStage1 = await (0, run_stage1_1.runStage1)(input.code, input.filename);
-        const stage1 = input.changedLineRanges
-            ? (0, filter_to_ranges_1.filterStage1ToRanges)(fullStage1, input.changedLineRanges)
-            : fullStage1;
-        const baseFindings = (0, to_findings_1.stage1ToFindings)(stage1);
+        const stage1 = input.changedLineRanges ? (0, filter_to_ranges_1.filterStage1ToRanges)(fullStage1, input.changedLineRanges) : fullStage1;
+        const baseFindings = keep((0, to_findings_1.stage1ToFindings)(stage1));
         let result;
         let usage = types_1.ZERO_USAGE;
         const diffReview = !input.localOnly && Boolean(input.changedLineRanges?.length);
@@ -76,8 +77,10 @@ let PipelineService = PipelineService_1 = class PipelineService {
                     language: input.language,
                     code: input.code,
                     changedRanges: input.changedLineRanges,
+                    relatedContext: input.relatedContext,
                     repoContext: input.repoContext,
                     focusAreas: input.focusAreas,
+                    teamRules: input.teamRules,
                 })
                 : (0, focused_prompt_1.buildFocusedPrompt)({
                     filename: input.filename,
@@ -86,6 +89,7 @@ let PipelineService = PipelineService_1 = class PipelineService {
                     allFunctions: stage1.functions,
                     repoContext: input.repoContext,
                     focusAreas: input.focusAreas,
+                    teamRules: input.teamRules,
                 });
             const first = await this.llm.completeStructured(input.provider, prompt, finding_schema_1.auditResultSchema);
             let aiResult = first.result;
@@ -104,9 +108,13 @@ let PipelineService = PipelineService_1 = class PipelineService {
                     this.logger.warn(`Escalation pass failed, keeping first-pass result: ${err.message}`);
                 }
             }
-            const findings = [...baseFindings, ...aiResult.findings];
+            const aiFindings = keep(aiResult.findings);
+            const findings = [...baseFindings, ...aiFindings];
             result = {
-                verdict: (0, verdict_1.worstVerdict)([aiResult.verdict, (0, verdict_1.verdictForSeverities)(baseFindings)]),
+                verdict: (0, verdict_1.worstVerdict)([
+                    aiFindings.length === aiResult.findings.length ? aiResult.verdict : (0, verdict_1.verdictForSeverities)(aiFindings),
+                    (0, verdict_1.verdictForSeverities)(baseFindings),
+                ]),
                 summary: aiResult.summary,
                 findings,
                 stage1,

@@ -8,6 +8,7 @@ import { ScannedFile, ContributorStat } from '../analysis/types';
 import { Prisma, ScanSourceType } from '@prisma/client';
 import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
 import { PrSnapshot } from '../common/merge-readiness';
+import { ReviewRulesService } from '../review-rules/review-rules.service';
 import { PrContext, PrFeedback } from '../pr-feedback/pr-feedback.types';
 import { FindingStatus } from '../common/finding.schema';
 import { RepoRef } from '../common/repo-ref.types';
@@ -19,6 +20,7 @@ export interface ScanOptions {
     shareId?: string;
     requesterIpHash?: string;
     prSnapshot?: PrSnapshot;
+    repoFiles?: ScannedFile[];
 }
 export declare class RepositoryService {
     private readonly prisma;
@@ -28,8 +30,10 @@ export declare class RepositoryService {
     private readonly pipeline;
     private readonly cache;
     private readonly prFeedback;
+    private readonly reviewRules;
     private readonly logger;
-    constructor(prisma: PrismaService, llm: LlmService, config: ConfigService, quota: QuotaService, pipeline: PipelineService, cache: AuditCacheService, prFeedback: PrFeedbackService);
+    constructor(prisma: PrismaService, llm: LlmService, config: ConfigService, quota: QuotaService, pipeline: PipelineService, cache: AuditCacheService, prFeedback: PrFeedbackService, reviewRules: ReviewRulesService);
+    private applyRules;
     createScanJob(actor: WorkspaceActor, file: Express.Multer.File, provider?: string): Promise<{
         error: string | null;
         id: string;
@@ -122,7 +126,7 @@ export declare class RepositoryService {
     }>;
     createDiffReview(actor: WorkspaceActor, files: ScannedFile[], meta: {
         sourceName: string;
-        sourceType: 'github_pr' | 'gitlab_mr';
+        sourceType: 'github_pr' | 'gitlab_mr' | 'bitbucket_pr';
         pullRequestUrl: string;
         provider?: string;
         prContext?: PrContext;

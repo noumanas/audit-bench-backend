@@ -6,6 +6,7 @@ export interface FocusedPromptOptions {
     allFunctions: FunctionUnit[];
     repoContext?: string;
     focusAreas?: string[];
+    teamRules?: string;
 }
 export declare function buildFocusedPrompt(opts: FocusedPromptOptions): string;
 export interface DiffPromptOptions {
@@ -16,7 +17,9 @@ export interface DiffPromptOptions {
         start: number;
         end: number;
     }>;
+    relatedContext?: string;
     repoContext?: string;
     focusAreas?: string[];
+    teamRules?: string;
 }
 export declare function buildDiffPrompt(opts: DiffPromptOptions): string;

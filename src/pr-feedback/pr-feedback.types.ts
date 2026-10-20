@@ -14,6 +14,8 @@ export type PrContext =
       // the open PR's branch (posting review feedback only needs the sha).
       headRef: string;
       baseRef: string;
+      /** Set when the GitHub App started this review: it posts as the app's bot. */
+      installationId?: number;
     }
   | {
       kind: 'gitlab';
@@ -23,6 +25,16 @@ export type PrContext =
       diffRefs: { baseSha: string; startSha: string; headSha: string };
       sourceBranch: string;
       targetBranch: string;
+    }
+  | {
+      kind: 'bitbucket';
+      workspace: string;
+      repoSlug: string;
+      pullId: number;
+      /** Full commit hash of the PR's source branch head. */
+      headSha: string;
+      sourceBranch: string;
+      destinationBranch: string;
     };
 
 export interface PrFeedbackFinding {

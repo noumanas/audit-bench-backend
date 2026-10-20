@@ -22,7 +22,11 @@ const RISK_LABEL = { minimal: '⚪ Minimal', low: '🟢 Low', medium: '🟡 Medi
 const CHECK_ICON: Record<PreMergeCheck['status'], string> = { pass: '✅', warning: '⚠️', fail: '❌' };
 
 /** Table cells can't hold pipes or line breaks. */
-const cell = (s: string | null | undefined) => (s ?? '').replace(/\|/g, '\\|').replace(/\s*\n\s*/g, ' ').trim();
+const cell = (s: string | null | undefined) =>
+  (s ?? '')
+    .replace(/\|/g, '\\|')
+    .replace(/\s*\n\s*/g, ' ')
+    .trim();
 
 const details = (summary: string, body: string[], open = false) => [
   open ? '<details open>' : '<details>',
@@ -51,7 +55,10 @@ export function buildSummaryBody(feedback: PrFeedback, opts: { posted?: number; 
   if (opts.posted === undefined) lines.push(`### Audit Bench Ai review: ${VERDICT_LABEL[feedback.verdict]}`);
   else if (opts.posted > 0) lines.push(`**Actionable comments posted: ${opts.posted}**`);
   else if (feedback.findings.length === 0) lines.push('No actionable comments were generated in this review. 🎉');
-  else lines.push(`**Findings: ${feedback.findings.length}**, listed in the fix prompt below (they couldn't be placed as inline comments).`);
+  else
+    lines.push(
+      `**Findings: ${feedback.findings.length}**, listed in the fix prompt below (they couldn't be placed as inline comments).`,
+    );
   lines.push('');
 
   // Merge risk (AI) and readiness (GitHub state + findings).
@@ -94,17 +101,24 @@ export function buildSummaryBody(feedback: PrFeedback, opts: { posted?: number; 
         '',
         '| Check name | Status | Explanation | Resolution |',
         '| --- | :---: | --- | --- |',
-        ...failed.map((c) => `| ${cell(c.name)} | ${CHECK_ICON[c.status]} | ${cell(c.explanation)} | ${cell(c.resolution) || '-'} |`),
+        ...failed.map(
+          (c) =>
+            `| ${cell(c.name)} | ${CHECK_ICON[c.status]} | ${cell(c.explanation)} | ${cell(c.resolution) || '-'} |`,
+        ),
         '',
       );
     }
     if (passed.length) {
       body.push(
-        ...details(`✅ Passed checks: ${passed.length} passed`, [
-          '| Check name | Status | Explanation |',
-          '| --- | :---: | --- |',
-          ...passed.map((c) => `| ${cell(c.name)} | ✅ | ${cell(c.explanation)} |`),
-        ], !failed.length),
+        ...details(
+          `✅ Passed checks: ${passed.length} passed`,
+          [
+            '| Check name | Status | Explanation |',
+            '| --- | :---: | --- |',
+            ...passed.map((c) => `| ${cell(c.name)} | ✅ | ${cell(c.explanation)} |`),
+          ],
+          !failed.length,
+        ),
       );
     }
     lines.push(...details(`<b>Pre-merge checks:</b> ✅ ${passed.length} · ❌ ${failed.length}`, body, true), '');
@@ -115,7 +129,12 @@ export function buildSummaryBody(feedback: PrFeedback, opts: { posted?: number; 
       ...details('📝 Walkthrough', [
         insights.walkthrough,
         ...(insights.files.length
-          ? ['', '| File | Changes |', '| --- | --- |', ...insights.files.map((f) => `| \`${cell(f.path)}\` | ${cell(f.summary)} |`)]
+          ? [
+              '',
+              '| File | Changes |',
+              '| --- | --- |',
+              ...insights.files.map((f) => `| \`${cell(f.path)}\` | ${cell(f.summary)} |`),
+            ]
           : []),
       ]),
       '',
@@ -142,10 +161,12 @@ export function buildSummaryBody(feedback: PrFeedback, opts: { posted?: number; 
         '````text',
         'Verify each finding against the current code and only fix it if it still applies.',
         '',
-        ...feedback.findings.slice(0, 50).flatMap((f) => [
-          `In \`@${f.path}\`${f.line ? ` around ${f.endLine && f.endLine > f.line ? `lines ${f.line} - ${f.endLine}` : `line ${f.line}`}` : ''}: ${f.title}. ${f.description}${f.suggestedFix ? ` Suggested fix: ${f.suggestedFix}` : ''}`,
-          '',
-        ]),
+        ...feedback.findings
+          .slice(0, 50)
+          .flatMap((f) => [
+            `In \`@${f.path}\`${f.line ? ` around ${f.endLine && f.endLine > f.line ? `lines ${f.line} - ${f.endLine}` : `line ${f.line}`}` : ''}: ${f.title}. ${f.description}${f.suggestedFix ? ` Suggested fix: ${f.suggestedFix}` : ''}`,
+            '',
+          ]),
         '````',
       ]),
       '',
@@ -161,6 +182,53 @@ export function buildSummaryBody(feedback: PrFeedback, opts: { posted?: number; 
     'Thanks for using [Audit Bench Ai](https://auditbenchai.com/?utm_source=pr_review&utm_medium=comment)! Free pull request reviews for open source: paste any public PR at [auditbenchai.com/scan](https://auditbenchai.com/scan?utm_source=pr_review&utm_medium=comment).',
     '',
     REVIEW_FOOTER,
+  );
+  return lines.join('\n');
+}
+
+/**
+ * The summary for hosts whose Markdown shows HTML as text (Bitbucket): the
+ * same content as buildSummaryBody, without collapsible sections or tables.
+ */
+export function buildPlainSummary(feedback: PrFeedback, opts: { posted?: number; headSha?: string } = {}): string {
+  const sha = (opts.headSha ?? feedback.headSha)?.slice(0, 7);
+  const counts = ['critical', 'high', 'medium', 'low']
+    .map((s) => [s, feedback.findings.filter((f) => f.severity === s).length] as const)
+    .filter(([, n]) => n);
+  const lines = [`### Audit Bench Ai review: ${VERDICT_LABEL[feedback.verdict]}`, ''];
+  if (opts.posted !== undefined) {
+    lines.push(
+      opts.posted > 0
+        ? `**Actionable comments posted: ${opts.posted}**`
+        : feedback.findings.length
+          ? `**Findings: ${feedback.findings.length}**, listed below.`
+          : 'No actionable comments were generated in this review. 🎉',
+      '',
+    );
+  }
+  if (feedback.readiness) lines.push(`**Merge readiness:** ${READINESS_LABEL[feedback.readiness.status]}`, '');
+  lines.push(`**Findings:** ${counts.length ? counts.map(([s, n]) => `${n} ${s}`).join(', ') : 'none'}`, '');
+  if (feedback.summary) lines.push(`**Scope:** ${feedback.summary}${sha ? ` (commit \`${sha}\`)` : ''}`, '');
+  if (feedback.findings.length) {
+    lines.push(
+      '**Prompt to fix review comments** (paste into your AI coding agent):',
+      '',
+      '```text',
+      'Verify each finding against the current code and only fix it if it still applies.',
+      '',
+      ...feedback.findings
+        .slice(0, 50)
+        .flatMap((f) => [
+          `In \`@${f.path}\`${f.line ? ` around ${f.endLine && f.endLine > f.line ? `lines ${f.line} - ${f.endLine}` : `line ${f.line}`}` : ''}: ${f.title}. ${f.description}${f.suggestedFix ? ` Suggested fix: ${f.suggestedFix}` : ''}`,
+          '',
+        ]),
+      '```',
+      '',
+    );
+  }
+  if (feedback.scanUrl) lines.push(`[Open the full report and fix with AI](${feedback.scanUrl})`, '');
+  lines.push(
+    '_Reviewed by [Audit Bench Ai](https://auditbenchai.com/?utm_source=pr_review&utm_medium=comment). Free pull request reviews for open source at [auditbenchai.com/scan](https://auditbenchai.com/scan?utm_source=pr_review&utm_medium=comment)._',
   );
   return lines.join('\n');
 }

@@ -28,7 +28,7 @@ interface ResourceScore {
 }
 
 const SEVERITY_RANK: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1 };
-const PR_REVIEW_SOURCE_TYPES = new Set(['github_pr', 'gitlab_mr']);
+const PR_REVIEW_SOURCE_TYPES = new Set(['github_pr', 'gitlab_mr', 'bitbucket_pr']);
 
 function average(values: number[]): number {
   if (values.length === 0) return 100;

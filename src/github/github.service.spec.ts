@@ -93,6 +93,7 @@ describe('GithubService.publish', () => {
       { user: { findUniqueOrThrow: jest.fn().mockResolvedValue({ githubToken: 'enc' }) } } as never,
       { register: jest.fn() } as never,
       { decrypt: () => 'token' } as never,
+      {} as never,
     );
 
     await service.publish(
@@ -135,6 +136,7 @@ describe('GithubService.publish when GitHub refuses', () => {
       { user: { findUniqueOrThrow: jest.fn().mockResolvedValue({ githubToken: 'enc' }) } } as never,
       { register: jest.fn() } as never,
       { decrypt: () => 'token' } as never,
+      {} as never,
     );
     await expect(
       service.publish(

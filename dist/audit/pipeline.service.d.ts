@@ -11,6 +11,10 @@ export interface PipelineInput {
     repoContext?: string;
     changedLineRanges?: LineRange[];
     localOnly?: boolean;
+    teamRules?: string;
+    suppressFingerprints?: string[];
+    rulesKey?: string;
+    relatedContext?: string;
 }
 export interface PipelineOptions {
     beforeAiCall?: () => Promise<void>;

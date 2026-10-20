@@ -5,7 +5,7 @@ import { deriveRepoKey } from '../common/repo-key';
 import { isPlanExpired } from '../common/plan-expiry';
 
 /** Repository scans (not PR/MR reviews) — what monthlyRepoScanLimit counts. */
-const REPO_SCAN_SOURCE_TYPES = ['zip', 'github_repo', 'gitlab_repo'] as const;
+const REPO_SCAN_SOURCE_TYPES = ['zip', 'github_repo', 'gitlab_repo', 'bitbucket_repo'] as const;
 
 /** Either the top-level client or a client scoped to an in-flight transaction. */
 type Db = Prisma.TransactionClient;

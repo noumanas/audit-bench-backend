@@ -15,7 +15,7 @@ const client_1 = require("@prisma/client");
 const prisma_service_1 = require("../prisma/prisma.service");
 const repo_key_1 = require("../common/repo-key");
 const plan_expiry_1 = require("../common/plan-expiry");
-const REPO_SCAN_SOURCE_TYPES = ['zip', 'github_repo', 'gitlab_repo'];
+const REPO_SCAN_SOURCE_TYPES = ['zip', 'github_repo', 'gitlab_repo', 'bitbucket_repo'];
 function startOfDay(d = new Date()) {
     return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }

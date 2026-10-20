@@ -38,6 +38,9 @@ const types_1 = require("../common/types");
 const verdict_1 = require("../common/verdict");
 const pr_feedback_service_1 = require("../pr-feedback/pr-feedback.service");
 const merge_readiness_1 = require("../common/merge-readiness");
+const finding_fingerprint_1 = require("../common/finding-fingerprint");
+const related_context_1 = require("../analysis/related-context");
+const review_rules_service_1 = require("../review-rules/review-rules.service");
 const pr_insights_1 = require("../pr-feedback/pr-insights");
 const finding_schema_1 = require("../common/finding.schema");
 const repo_key_1 = require("../common/repo-key");
@@ -48,11 +51,9 @@ function selectFilesToAnalyze(files, max) {
         return ext && language_1.ANALYZABLE_EXTENSIONS.has(ext);
     });
     const priority = (p) => (/(^|\/)(src|app|pages|api|lib)\//.test(p) ? 0 : 1);
-    return analyzable
-        .sort((a, b) => priority(a.path) - priority(b.path) || a.path.localeCompare(b.path))
-        .slice(0, max);
+    return analyzable.sort((a, b) => priority(a.path) - priority(b.path) || a.path.localeCompare(b.path)).slice(0, max);
 }
-const REPO_WIDE_SOURCE_TYPES = new Set(['zip', 'github_repo', 'gitlab_repo']);
+const REPO_WIDE_SOURCE_TYPES = new Set(['zip', 'github_repo', 'gitlab_repo', 'bitbucket_repo']);
 let RepositoryService = RepositoryService_1 = class RepositoryService {
     prisma;
     llm;
@@ -61,8 +62,9 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
     pipeline;
     cache;
     prFeedback;
+    reviewRules;
     logger = new common_1.Logger(RepositoryService_1.name);
-    constructor(prisma, llm, config, quota, pipeline, cache, prFeedback) {
+    constructor(prisma, llm, config, quota, pipeline, cache, prFeedback, reviewRules) {
         this.prisma = prisma;
         this.llm = llm;
         this.config = config;
@@ -70,6 +72,13 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
         this.pipeline = pipeline;
         this.cache = cache;
         this.prFeedback = prFeedback;
+        this.reviewRules = reviewRules;
+    }
+    async applyRules(actor, sourceName, sourceType, files) {
+        const rules = await this.reviewRules.rulesFor({ id: actor.id, organizationId: actor.organizationId }, (0, review_rules_service_1.repoFromSourceName)(sourceName, sourceType));
+        if (!rules.ignorePaths.length)
+            return { rules, files };
+        return { rules, files: files.filter((f) => !rules.ignorePaths.some((g) => (0, finding_fingerprint_1.matchesGlob)(f.path, g))) };
     }
     async createScanJob(actor, file, provider) {
         return this.createScanJobFromBuffer(actor, file.buffer, file.originalname, provider);
@@ -81,7 +90,7 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
         const providerName = this.llm.resolveProvider(provider);
         const maxFileSize = this.config.get('MAX_FILE_SIZE_BYTES') || 200_000;
         const maxScanFiles = this.config.get('MAX_SCAN_FILES') || 40;
-        const files = (0, file_walker_1.extractZip)(zipBuffer, maxFileSize);
+        const { rules, files } = await this.applyRules(actor, sourceName, sourceType, (0, file_walker_1.extractZip)(zipBuffer, maxFileSize));
         const framework = (0, framework_detector_1.detectFramework)(files);
         const { graph, circular } = (0, dependency_graph_1.buildDependencyGraph)(files);
         const deadCode = (0, dead_code_1.findDeadCode)(files, graph);
@@ -113,8 +122,8 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
             isPublic: opts.isPublic,
             shareId: opts.shareId,
             requesterIpHash: opts.requesterIpHash,
-        });
-        void this.processScan(job.id, filesToAnalyze, providerName, repoContext, Boolean(opts.localOnly));
+        }, rules.key);
+        void this.processScan(job.id, filesToAnalyze, providerName, repoContext, Boolean(opts.localOnly), rules);
         return job;
     }
     async createDiffReview(actor, files, meta, opts = {}) {
@@ -124,12 +133,18 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
         const providerName = this.llm.resolveProvider(meta.provider);
         const maxFileSize = this.config.get('MAX_FILE_SIZE_BYTES') || 200_000;
         const maxScanFiles = this.config.get('MAX_SCAN_FILES') || 40;
-        const analyzable = files
+        const scoped = await this.applyRules(actor, meta.sourceName, meta.sourceType, files);
+        const rules = scoped.rules;
+        const analyzable = scoped.files
             .filter((f) => {
             const ext = f.path.split('.').pop()?.toLowerCase();
             return Boolean(ext && language_1.ANALYZABLE_EXTENSIONS.has(ext) && f.content.length <= maxFileSize);
         })
             .slice(0, maxScanFiles);
+        if (opts.repoFiles?.length && !opts.localOnly) {
+            for (const f of analyzable)
+                f.relatedContext = (0, related_context_1.relatedContextFor)(f, opts.repoFiles) || undefined;
+        }
         const secrets = (0, secrets_scanner_1.scanSecrets)(analyzable);
         const repoContext = `Reviewing a pull/merge request — only the lines this PR/MR actually changed are in scope for each file. ${analyzable.length} file(s) changed.`;
         const job = await this.gateAndCreateJob(actor, analyzable, providerName, {
@@ -151,12 +166,14 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
                     filesSkipped: Math.max(opts.prSnapshot.changedFiles - analyzable.length, 0),
                 }
                 : undefined,
-        });
-        void this.processScan(job.id, analyzable, providerName, repoContext, Boolean(opts.localOnly));
+        }, rules.key);
+        void this.processScan(job.id, analyzable, providerName, repoContext, Boolean(opts.localOnly), rules);
         return job;
     }
-    async gateAndCreateJob(actor, files, providerName, jobDataBase) {
-        const willInvokeAi = jobDataBase.localOnly ? false : await this.anyFileNeedsFreshAiCall(files, providerName);
+    async gateAndCreateJob(actor, files, providerName, jobDataBase, rulesKey) {
+        const willInvokeAi = jobDataBase.localOnly
+            ? false
+            : await this.anyFileNeedsFreshAiCall(files, providerName, rulesKey);
         const jobData = {
             userId: actor.id,
             organizationId: actor.organizationId,
@@ -173,9 +190,9 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
             }, (db) => db.scanJob.create({ data: jobData }))
             : this.prisma.scanJob.create({ data: jobData });
     }
-    async anyFileNeedsFreshAiCall(files, providerName) {
+    async anyFileNeedsFreshAiCall(files, providerName, rulesKey) {
         for (const file of files) {
-            const hash = this.cache.hashFor(file.content, providerName, [], file.changedRanges);
+            const hash = this.cache.hashFor(file.content, providerName, [], file.changedRanges, (0, cache_service_1.cacheExtraKey)(rulesKey, file.relatedContext));
             if (await this.cache.exists(hash))
                 continue;
             if (file.changedRanges?.length)
@@ -187,7 +204,9 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
         }
         return false;
     }
-    async processScan(jobId, files, providerName, repoContext, localOnly = false) {
+    async processScan(jobId, files, providerName, repoContext, localOnly = false, rules = review_rules_service_1.NO_RULES) {
+        const teamRules = (0, review_rules_service_1.rulesPromptText)(rules) || undefined;
+        const suppressFingerprints = rules.suppress.map((r) => r.fingerprint).filter(Boolean);
         try {
             await this.prisma.scanJob.update({ where: { id: jobId }, data: { status: 'processing' } });
             const limit = pLimit(5);
@@ -204,6 +223,10 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
                         repoContext,
                         changedLineRanges: file.changedRanges,
                         localOnly,
+                        teamRules,
+                        suppressFingerprints,
+                        rulesKey: rules.key || undefined,
+                        relatedContext: file.relatedContext,
                     });
                     if (fromCache)
                         filesFromCache++;
@@ -380,7 +403,9 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
         if (!job || !(0, workspace_scope_1.canViewResource)(actor, job))
             throw new common_1.NotFoundException(`Scan ${id} not found`);
         const riskAggregation = job.status === 'completed' ? (0, risk_aggregation_1.aggregateRisk)(job) : null;
-        const tddAssessment = riskAggregation && (await this.quota.canUseDueDiligence(actor.id, actor.role)) ? (0, tdd_assessment_1.assessTdd)(job, riskAggregation) : null;
+        const tddAssessment = riskAggregation && (await this.quota.canUseDueDiligence(actor.id, actor.role))
+            ? (0, tdd_assessment_1.assessTdd)(job, riskAggregation)
+            : null;
         return { ...job, riskAggregation, tddAssessment, mergeReadiness: (0, merge_readiness_1.readinessForScan)(job) };
     }
     async setFindingStatus(actor, scanFileId, findingIndex, status) {
@@ -402,10 +427,31 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
             delete statuses[findingIndex];
         else
             statuses[findingIndex] = status;
-        return this.prisma.scanFile.update({
+        const updated = await this.prisma.scanFile.update({
             where: { id: scanFileId },
             data: { findingStatuses: statuses },
         });
+        const repo = (0, review_rules_service_1.repoFromSourceName)(file.scanJob.sourceName, file.scanJob.sourceType);
+        if (repo) {
+            const owner = { id: file.scanJob.userId, organizationId: file.scanJob.organizationId };
+            const sourceRef = `app:${scanFileId}:${findingIndex}`;
+            const f = findings[findingIndex];
+            if (status === 'wont_fix') {
+                await this.reviewRules.recordFeedback(owner, {
+                    repo,
+                    path: file.path,
+                    category: f.category,
+                    title: f.title,
+                    signal: 'wont_fix',
+                    source: 'app',
+                    sourceRef,
+                });
+            }
+            else {
+                await this.reviewRules.withdrawFeedback(owner, sourceRef);
+            }
+        }
+        return updated;
     }
     async findRecent(actor, limit = 20) {
         return this.prisma.scanJob.findMany({
@@ -424,6 +470,7 @@ exports.RepositoryService = RepositoryService = RepositoryService_1 = __decorate
         quota_service_1.QuotaService,
         pipeline_service_1.PipelineService,
         cache_service_1.AuditCacheService,
-        pr_feedback_service_1.PrFeedbackService])
+        pr_feedback_service_1.PrFeedbackService,
+        review_rules_service_1.ReviewRulesService])
 ], RepositoryService);
 //# sourceMappingURL=repository.service.js.map

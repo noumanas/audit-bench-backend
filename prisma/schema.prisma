@@ -31,6 +31,8 @@ enum ScanSourceType {
   github_pr
   gitlab_repo
   gitlab_mr
+  bitbucket_repo
+  bitbucket_pr
 }
 
 enum Role {
@@ -182,6 +184,9 @@ model User {
   // dev-scoped build; a real deployment would encrypt these at rest.
   githubToken          String?
   githubUsername       String?
+  githubInstallations  GithubInstallation[]
+  reviewRules          ReviewRule[]
+  findingFeedback      FindingFeedback[]
   gitlabToken          String?
   gitlabUsername       String?
   // GitLab OAuth access tokens (unlike a pasted PAT, or GitHub's classic
@@ -189,6 +194,9 @@ model User {
   // refresh gitlabToken before it goes stale. Unused for a pasted PAT.
   gitlabRefreshToken   String?
   gitlabTokenExpiresAt DateTime?
+  // Bitbucket Cloud API token (Bearer), encrypted like the others — see BitbucketService.
+  bitbucketToken       String?
+  bitbucketUsername    String?
   // Public, unguessable token used in the README badge URL — distinct from
   // `id` so a leaked badge URL can't be used to look up the account by id
   // and can be rotated independently. Generated on first request.
@@ -656,4 +664,93 @@ model Payment {
   createdAt      DateTime      @default(now())
 
   @@index([paidAt])
+}
+
+// The Audit Bench Ai GitHub App's own credentials, created in one click by a
+// super admin through GitHub's app-manifest flow (see GithubAppService).
+// Secrets are encrypted with TokenCryptoService. A single row ("default");
+// GITHUB_APP_* environment variables take precedence when set.
+model GithubAppConfig {
+  id            String   @id @default("default")
+  appId         Int
+  slug          String
+  name          String
+  htmlUrl       String
+  clientId      String?
+  clientSecret  String? // encrypted
+  privateKey    String // encrypted PEM
+  webhookSecret String // encrypted
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// One installation of the GitHub App on a user or organization account.
+// userId is the Audit Bench account it belongs to: whose plan and quota its
+// reviews use. Null until someone links it (installs from GitHub directly).
+model GithubInstallation {
+  id                  Int      @id // GitHub's installation id
+  accountLogin        String
+  accountType         String // 'User' | 'Organization'
+  repositorySelection String // 'all' | 'selected'
+  user                User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId              String?
+  // Review every new or updated pull request automatically.
+  autoReview          Boolean  @default(true)
+  suspended           Boolean  @default(false)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([userId])
+}
+
+// A team's own review rules, applied to every review in scope. Owned by a
+// user; with organizationId set they apply to the whole team. repo narrows a
+// rule to one repository ("owner/repo"); null means all of them.
+//   instruction — plain-language guidance added to the AI's prompt
+//   ignore_path — a glob; matching files aren't reviewed
+//   suppress    — a kind of finding the team doesn't want; added to the
+//                 prompt and filtered out afterwards by fingerprint
+// source "learned" rules come from feedback (see ReviewRulesService.learn).
+model ReviewRule {
+  id             String   @id @default(uuid())
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId         String
+  organizationId String?
+  repo           String?
+  kind           String
+  text           String
+  // suppress rules: the finding fingerprint they match (see common/finding-fingerprint.ts).
+  fingerprint    String?
+  source         String   @default("manual")
+  enabled        Boolean  @default(true)
+  // learned rules: how many times the team dismissed this kind of finding.
+  evidence       Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([userId])
+  @@index([organizationId])
+}
+
+// One signal about one finding: a reaction on its PR comment, how a thread
+// about it ended, or its status in the app. Feeds learned rules.
+model FindingFeedback {
+  id             String   @id @default(uuid())
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId         String
+  organizationId String?
+  repo           String
+  path           String
+  category       String
+  title          String
+  fingerprint    String
+  // 'up' | 'down' | 'not_an_issue' | 'resolved' | 'wont_fix'
+  signal         String
+  source         String // 'reaction' | 'thread' | 'app'
+  // Dedupe key, so re-harvesting a PR's reactions doesn't double count.
+  sourceRef      String   @unique
+  createdAt      DateTime @default(now())
+
+  @@index([userId, repo, fingerprint])
+  @@index([organizationId, repo, fingerprint])
 }

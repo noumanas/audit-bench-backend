@@ -4,13 +4,16 @@ import { GithubPrDetails, GithubPrSummary, GithubRepoSummary } from './github.ty
 import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
 import { PrContext, PrFeedback, PrPublisher } from '../pr-feedback/pr-feedback.types';
 import { TokenCryptoService } from '../common/token-crypto.service';
+import { GithubAppAuthService, GithubAuth } from './github-app-auth.service';
+export type { GithubAuth };
 import { ContributorStat } from '../analysis/types';
 import { buildSummaryBody } from '../pr-feedback/summary-comment';
 export declare class GithubService implements OnModuleInit, PrPublisher {
     private readonly prisma;
     private readonly prFeedback;
     private readonly tokenCrypto;
-    constructor(prisma: PrismaService, prFeedback: PrFeedbackService, tokenCrypto: TokenCryptoService);
+    private readonly appAuth;
+    constructor(prisma: PrismaService, prFeedback: PrFeedbackService, tokenCrypto: TokenCryptoService, appAuth: GithubAppAuthService);
     onModuleInit(): void;
     private authHeaders;
     private requireToken;
@@ -22,26 +25,28 @@ export declare class GithubService implements OnModuleInit, PrPublisher {
         connected: boolean;
         username: string | null;
     }>;
-    listRepos(userId: string): Promise<GithubRepoSummary[]>;
-    listBranches(userId: string, owner: string, repo: string): Promise<string[]>;
-    listPullRequests(userId: string, owner: string, repo: string): Promise<GithubPrSummary[]>;
-    downloadRepoZip(userId: string, owner: string, repo: string, ref?: string): Promise<Buffer>;
-    fetchContributorStats(userId: string, owner: string, repo: string): Promise<ContributorStat[]>;
+    listRepos(auth: GithubAuth): Promise<GithubRepoSummary[]>;
+    listBranches(auth: GithubAuth, owner: string, repo: string): Promise<string[]>;
+    listPullRequests(auth: GithubAuth, owner: string, repo: string): Promise<GithubPrSummary[]>;
+    downloadRepoZip(auth: GithubAuth, owner: string, repo: string, ref?: string): Promise<Buffer>;
+    fetchContributorStats(auth: GithubAuth, owner: string, repo: string): Promise<ContributorStat[]>;
     private requestContributorStats;
-    fetchPrFiles(userId: string, owner: string, repo: string, pullNumber: number, opts?: {
+    fetchPrFiles(auth: GithubAuth, owner: string, repo: string, pullNumber: number, opts?: {
         withSnapshot?: boolean;
+        withRepoContext?: boolean;
     }): Promise<GithubPrDetails>;
-    getRepoMeta(userId: string, owner: string, repo: string): Promise<{
+    private repoFilesForContext;
+    getRepoMeta(auth: GithubAuth, owner: string, repo: string): Promise<{
         defaultBranch: string;
     }>;
-    getFileAtRef(userId: string, owner: string, repo: string, path: string, ref: string): Promise<{
+    getFileAtRef(auth: GithubAuth, owner: string, repo: string, path: string, ref: string): Promise<{
         content: string;
         sha: string;
     }>;
-    getBranchHeadSha(userId: string, owner: string, repo: string, branch: string): Promise<string>;
-    createBranch(userId: string, owner: string, repo: string, newBranch: string, fromSha: string): Promise<void>;
-    commitFileUpdate(userId: string, owner: string, repo: string, path: string, branch: string, content: string, message: string, sha: string): Promise<string>;
-    createPullRequest(userId: string, owner: string, repo: string, title: string, head: string, base: string, body: string): Promise<{
+    getBranchHeadSha(auth: GithubAuth, owner: string, repo: string, branch: string): Promise<string>;
+    createBranch(auth: GithubAuth, owner: string, repo: string, newBranch: string, fromSha: string): Promise<void>;
+    commitFileUpdate(auth: GithubAuth, owner: string, repo: string, path: string, branch: string, content: string, message: string, sha: string): Promise<string>;
+    createPullRequest(auth: GithubAuth, owner: string, repo: string, title: string, head: string, base: string, body: string): Promise<{
         url: string;
         number: number;
     }>;
@@ -53,11 +58,12 @@ export declare class GithubService implements OnModuleInit, PrPublisher {
     private postPrReview;
     private postCommitStatus;
     canPushTo(userId: string, owner: string, repo: string): Promise<boolean>;
-    getReviewComment(userId: string, owner: string, repo: string, commentId: number): Promise<GithubReviewComment>;
-    listReviewThread(userId: string, owner: string, repo: string, pullNumber: number, rootId: number): Promise<GithubReviewComment[]>;
-    replyToReviewComment(userId: string, owner: string, repo: string, pullNumber: number, rootId: number, body: string): Promise<void>;
-    resolveReviewThread(userId: string, owner: string, repo: string, pullNumber: number, rootId: number): Promise<boolean>;
-    postIssueComment(userId: string, owner: string, repo: string, issueNumber: number, body: string): Promise<void>;
+    getReviewComment(auth: GithubAuth, owner: string, repo: string, commentId: number): Promise<GithubReviewComment>;
+    listPullReviewComments(auth: GithubAuth, owner: string, repo: string, pullNumber: number): Promise<GithubReviewComment[]>;
+    listReviewThread(auth: GithubAuth, owner: string, repo: string, pullNumber: number, rootId: number): Promise<GithubReviewComment[]>;
+    replyToReviewComment(auth: GithubAuth, owner: string, repo: string, pullNumber: number, rootId: number, body: string): Promise<void>;
+    resolveReviewThread(auth: GithubAuth, owner: string, repo: string, pullNumber: number, rootId: number): Promise<boolean>;
+    postIssueComment(auth: GithubAuth, owner: string, repo: string, issueNumber: number, body: string): Promise<void>;
     static verifyWebhookSignature(secret: string, rawBody: Buffer, signatureHeader: string | undefined): boolean;
 }
 export declare function mapGithubContributorStats(raw: unknown[]): ContributorStat[];
@@ -75,5 +81,9 @@ export interface GithubReviewComment {
     user: {
         login: string;
     } | null;
+    reactions?: {
+        '+1'?: number;
+        '-1'?: number;
+    };
 }
 export { buildSummaryBody };

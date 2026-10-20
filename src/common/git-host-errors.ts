@@ -10,7 +10,7 @@ export const GIT_TOKEN_REJECTED = "git_token_rejected";
  * Always a 400 from our API: a 401 here would sign the user out of Audit Bench.
  */
 export function gitHostRequestFailed(
-  host: "GitHub" | "GitLab",
+  host: "GitHub" | "GitLab" | "Bitbucket",
   status: number,
 ): BadRequestException {
   if (status === 401) {

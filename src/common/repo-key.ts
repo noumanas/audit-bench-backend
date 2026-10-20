@@ -21,10 +21,12 @@ export function deriveRepoKey(input: RepoKeyInput): string {
   const repoRef = input.repoRef as RepoRef | null | undefined;
   if (repoRef?.kind === 'github') return `github:${repoRef.owner}/${repoRef.repo}`;
   if (repoRef?.kind === 'gitlab') return `gitlab:${repoRef.projectId}`;
+  if (repoRef?.kind === 'bitbucket') return `bitbucket:${repoRef.workspace}/${repoRef.repoSlug}`.toLowerCase();
 
   const prContext = input.prContext as PrContext | null | undefined;
   if (prContext?.kind === 'github') return `github:${prContext.owner}/${prContext.repo}`;
   if (prContext?.kind === 'gitlab') return `gitlab:${prContext.projectId}`;
+  if (prContext?.kind === 'bitbucket') return `bitbucket:${prContext.workspace}/${prContext.repoSlug}`.toLowerCase();
 
   return `zip:${input.sourceName}`;
 }

@@ -15,12 +15,13 @@ const llm_module_1 = require("../llm/llm.module");
 const quota_module_1 = require("../quota/quota.module");
 const pipeline_module_1 = require("../audit/pipeline.module");
 const pr_feedback_module_1 = require("../pr-feedback/pr-feedback.module");
+const review_rules_module_1 = require("../review-rules/review-rules.module");
 let RepositoryModule = class RepositoryModule {
 };
 exports.RepositoryModule = RepositoryModule;
 exports.RepositoryModule = RepositoryModule = __decorate([
     (0, common_1.Module)({
-        imports: [llm_module_1.LlmModule, quota_module_1.QuotaModule, pipeline_module_1.PipelineModule, pr_feedback_module_1.PrFeedbackModule],
+        imports: [llm_module_1.LlmModule, quota_module_1.QuotaModule, pipeline_module_1.PipelineModule, pr_feedback_module_1.PrFeedbackModule, review_rules_module_1.ReviewRulesModule],
         controllers: [repository_controller_1.RepositoryController],
         providers: [repository_service_1.RepositoryService, scan_job_sweep_service_1.ScanJobSweepService],
         exports: [repository_service_1.RepositoryService],

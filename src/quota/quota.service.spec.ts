@@ -211,7 +211,7 @@ describe('QuotaService.assertCanRunAiRepoScan', () => {
     await new QuotaService({} as PrismaService).assertCanRunAiRepoScan('u1', db as never);
     const where = db.scanJob.count.mock.calls[0][0].where;
     expect(where.aiInvoked).toBe(true);
-    expect(where.sourceType).toEqual({ in: ['zip', 'github_repo', 'gitlab_repo'] });
+    expect(where.sourceType).toEqual({ in: ['zip', 'github_repo', 'gitlab_repo', 'bitbucket_repo'] });
   });
 
   it('never blocks an unlimited plan (Enterprise)', async () => {

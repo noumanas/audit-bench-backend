@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { LlmService } from '../llm/llm.service';
-import { AuditCacheService, CachedAuditResult } from './cache.service';
+import { AuditCacheService, CachedAuditResult, cacheExtraKey } from './cache.service';
 import { auditResultSchema } from '../common/finding.schema';
 import { AuditResult, LlmProviderName, TokenUsage, ZERO_USAGE, addUsage } from '../common/types';
 import { verdictForSeverities, worstVerdict } from '../common/verdict';
@@ -8,6 +8,7 @@ import { LineRange } from '../common/diff-ranges';
 import { runStage1 } from './stage1/run-stage1';
 import { stage1ToFindings } from './stage1/to-findings';
 import { filterStage1ToRanges } from './stage1/filter-to-ranges';
+import { findingFingerprint } from '../common/finding-fingerprint';
 import { buildDiffPrompt, buildFocusedPrompt } from './stage2/focused-prompt';
 
 export interface PipelineInput {
@@ -26,6 +27,14 @@ export interface PipelineInput {
    * it can't later stand in for a real AI review of the same code.
    */
   localOnly?: boolean;
+  /** The team's rules as prompt text — see ReviewRulesService. */
+  teamRules?: string;
+  /** Learned "don't flag this" fingerprints: such findings are dropped, whatever the AI says. */
+  suppressFingerprints?: string[];
+  /** Changes whenever the rules do, so a cached review made under other rules isn't reused. */
+  rulesKey?: string;
+  /** PR/MR reviews: unchanged code elsewhere that uses what this file's changes touch. */
+  relatedContext?: string;
 }
 
 export interface PipelineOptions {
@@ -57,17 +66,24 @@ export class PipelineService {
   ) {}
 
   async run(input: PipelineInput, opts: PipelineOptions = {}): Promise<PipelineOutput> {
-    const hash = this.cache.hashFor(input.code, input.provider, input.focusAreas, input.changedLineRanges);
+    const hash = this.cache.hashFor(
+      input.code,
+      input.provider,
+      input.focusAreas,
+      input.changedLineRanges,
+      cacheExtraKey(input.rulesKey, input.relatedContext),
+    );
+    const suppressed = new Set(input.suppressFingerprints ?? []);
+    const keep = <T extends { category?: string | null; title: string }>(findings: T[]) =>
+      suppressed.size ? findings.filter((f) => !suppressed.has(findingFingerprint(f))) : findings;
     const cached = await this.cache.lookup(hash);
     if (cached) {
       return { result: cached, fromCache: true, usage: ZERO_USAGE };
     }
 
     const fullStage1 = await runStage1(input.code, input.filename);
-    const stage1 = input.changedLineRanges
-      ? filterStage1ToRanges(fullStage1, input.changedLineRanges)
-      : fullStage1;
-    const baseFindings = stage1ToFindings(stage1);
+    const stage1 = input.changedLineRanges ? filterStage1ToRanges(fullStage1, input.changedLineRanges) : fullStage1;
+    const baseFindings = keep(stage1ToFindings(stage1));
 
     let result: CachedAuditResult;
     let usage: TokenUsage = ZERO_USAGE;
@@ -111,8 +127,10 @@ export class PipelineService {
             language: input.language,
             code: input.code,
             changedRanges: input.changedLineRanges!,
+            relatedContext: input.relatedContext,
             repoContext: input.repoContext,
             focusAreas: input.focusAreas,
+            teamRules: input.teamRules,
           })
         : buildFocusedPrompt({
             filename: input.filename,
@@ -121,6 +139,7 @@ export class PipelineService {
             allFunctions: stage1.functions,
             repoContext: input.repoContext,
             focusAreas: input.focusAreas,
+            teamRules: input.teamRules,
           });
 
       const first = await this.llm.completeStructured<AuditResult>(input.provider, prompt, auditResultSchema);
@@ -145,9 +164,14 @@ export class PipelineService {
         }
       }
 
-      const findings = [...baseFindings, ...aiResult.findings];
+      const aiFindings = keep(aiResult.findings);
+      const findings = [...baseFindings, ...aiFindings];
       result = {
-        verdict: worstVerdict([aiResult.verdict, verdictForSeverities(baseFindings)]),
+        // If the team's rules removed findings, judge what's left rather than the AI's verdict on all of them.
+        verdict: worstVerdict([
+          aiFindings.length === aiResult.findings.length ? aiResult.verdict : verdictForSeverities(aiFindings),
+          verdictForSeverities(baseFindings),
+        ]),
         summary: aiResult.summary,
         findings,
         stage1,

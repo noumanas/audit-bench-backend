@@ -6,9 +6,10 @@ import { LlmModule } from '../llm/llm.module';
 import { QuotaModule } from '../quota/quota.module';
 import { PipelineModule } from '../audit/pipeline.module';
 import { PrFeedbackModule } from '../pr-feedback/pr-feedback.module';
+import { ReviewRulesModule } from '../review-rules/review-rules.module';
 
 @Module({
-  imports: [LlmModule, QuotaModule, PipelineModule, PrFeedbackModule],
+  imports: [LlmModule, QuotaModule, PipelineModule, PrFeedbackModule, ReviewRulesModule],
   controllers: [RepositoryController],
   providers: [RepositoryService, ScanJobSweepService],
   exports: [RepositoryService],

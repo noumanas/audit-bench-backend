@@ -8,11 +8,17 @@ import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
 import { PrContext, PrFeedback, PrFeedbackFinding, PrPublisher, REVIEW_FOOTER } from '../pr-feedback/pr-feedback.types';
 import { commentLines, inlineCommentBody } from '../pr-feedback/inline-comment';
 import { TokenCryptoService } from '../common/token-crypto.service';
-import { ContributorStat } from '../analysis/types';
+import { GithubAppAuthService, GithubAuth } from './github-app-auth.service';
+
+export type { GithubAuth };
+import { ContributorStat, ScannedFile } from '../analysis/types';
+import { extractZip } from '../analysis/file-walker';
 import { buildSummaryBody } from '../pr-feedback/summary-comment';
 import { GithubPull, fetchCiChecks, refetchIfMergeabilityPending, toPrSnapshot } from '../common/github-pr-snapshot';
 
 const GITHUB_API = 'https://api.github.com';
+/** Repos larger than this (GitHub reports KB) are reviewed without related-code context. */
+const REPO_CONTEXT_MAX_KB = 50 * 1024;
 
 @Injectable()
 export class GithubService implements OnModuleInit, PrPublisher {
@@ -20,6 +26,7 @@ export class GithubService implements OnModuleInit, PrPublisher {
     private readonly prisma: PrismaService,
     private readonly prFeedback: PrFeedbackService,
     private readonly tokenCrypto: TokenCryptoService,
+    private readonly appAuth: GithubAppAuthService,
   ) {}
 
   onModuleInit() {
@@ -35,8 +42,9 @@ export class GithubService implements OnModuleInit, PrPublisher {
     };
   }
 
-  private async requireToken(userId: string): Promise<string> {
-    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+  private async requireToken(auth: GithubAuth): Promise<string> {
+    if (typeof auth !== 'string') return this.appAuth.installationToken(auth.installationId);
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: auth } });
     if (!user.githubToken) {
       throw new BadRequestException('Connect a GitHub account first');
     }
@@ -74,34 +82,35 @@ export class GithubService implements OnModuleInit, PrPublisher {
     return { connected: Boolean(user.githubToken), username: user.githubUsername };
   }
 
-  async listRepos(userId: string): Promise<GithubRepoSummary[]> {
-    const token = await this.requireToken(userId);
+  async listRepos(auth: GithubAuth): Promise<GithubRepoSummary[]> {
+    const token = await this.requireToken(auth);
 
-    const res = await fetch(`${GITHUB_API}/user/repos?sort=updated&per_page=100&affiliation=owner,collaborator,organization_member`, {
-      headers: this.authHeaders(token),
-    });
+    const res = await fetch(
+      `${GITHUB_API}/user/repos?sort=updated&per_page=100&affiliation=owner,collaborator,organization_member`,
+      {
+        headers: this.authHeaders(token),
+      },
+    );
     if (!res.ok) {
       throw gitHostRequestFailed('GitHub', res.status);
     }
 
     const repos = await res.json();
-    return repos.map(
-      (r: any): GithubRepoSummary => ({
-        id: r.id,
-        owner: r.owner.login,
-        name: r.name,
-        fullName: r.full_name,
-        private: r.private,
-        description: r.description,
-        defaultBranch: r.default_branch,
-        updatedAt: r.updated_at,
-        htmlUrl: r.html_url,
-      }),
-    );
+    return repos.map((r: any): GithubRepoSummary => ({
+      id: r.id,
+      owner: r.owner.login,
+      name: r.name,
+      fullName: r.full_name,
+      private: r.private,
+      description: r.description,
+      defaultBranch: r.default_branch,
+      updatedAt: r.updated_at,
+      htmlUrl: r.html_url,
+    }));
   }
 
-  async listBranches(userId: string, owner: string, repo: string): Promise<string[]> {
-    const token = await this.requireToken(userId);
+  async listBranches(auth: GithubAuth, owner: string, repo: string): Promise<string[]> {
+    const token = await this.requireToken(auth);
 
     const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/branches?per_page=100`, {
       headers: this.authHeaders(token),
@@ -117,8 +126,8 @@ export class GithubService implements OnModuleInit, PrPublisher {
     return branches.map((b) => b.name as string);
   }
 
-  async listPullRequests(userId: string, owner: string, repo: string): Promise<GithubPrSummary[]> {
-    const token = await this.requireToken(userId);
+  async listPullRequests(auth: GithubAuth, owner: string, repo: string): Promise<GithubPrSummary[]> {
+    const token = await this.requireToken(auth);
 
     const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls?state=open&per_page=100`, {
       headers: this.authHeaders(token),
@@ -131,21 +140,19 @@ export class GithubService implements OnModuleInit, PrPublisher {
     }
 
     const pulls: any[] = await res.json();
-    return pulls.map(
-      (p: any): GithubPrSummary => ({
-        number: p.number,
-        title: p.title,
-        headRef: p.head.ref,
-        baseRef: p.base.ref,
-        draft: Boolean(p.draft),
-        updatedAt: p.updated_at,
-        htmlUrl: p.html_url,
-      }),
-    );
+    return pulls.map((p: any): GithubPrSummary => ({
+      number: p.number,
+      title: p.title,
+      headRef: p.head.ref,
+      baseRef: p.base.ref,
+      draft: Boolean(p.draft),
+      updatedAt: p.updated_at,
+      htmlUrl: p.html_url,
+    }));
   }
 
-  async downloadRepoZip(userId: string, owner: string, repo: string, ref?: string): Promise<Buffer> {
-    const token = await this.requireToken(userId);
+  async downloadRepoZip(auth: GithubAuth, owner: string, repo: string, ref?: string): Promise<Buffer> {
+    const token = await this.requireToken(auth);
 
     const path = ref ? `${owner}/${repo}/zipball/${ref}` : `${owner}/${repo}/zipball`;
     const res = await fetch(`${GITHUB_API}/repos/${path}`, { headers: this.authHeaders(token) });
@@ -168,8 +175,8 @@ export class GithubService implements OnModuleInit, PrPublisher {
    * to flag talent/bus-factor concentration on a repo scan (see
    * RepositoryService), not on a PR/MR diff review.
    */
-  async fetchContributorStats(userId: string, owner: string, repo: string): Promise<ContributorStat[]> {
-    const token = await this.requireToken(userId);
+  async fetchContributorStats(auth: GithubAuth, owner: string, repo: string): Promise<ContributorStat[]> {
+    const token = await this.requireToken(auth);
     const raw = await this.requestContributorStats(token, owner, repo);
     return raw ? mapGithubContributorStats(raw) : [];
   }
@@ -208,13 +215,13 @@ export class GithubService implements OnModuleInit, PrPublisher {
    * (binary, or too large) are skipped — nothing to review there.
    */
   async fetchPrFiles(
-    userId: string,
+    auth: GithubAuth,
     owner: string,
     repo: string,
     pullNumber: number,
-    opts: { withSnapshot?: boolean } = {},
+    opts: { withSnapshot?: boolean; withRepoContext?: boolean } = {},
   ): Promise<GithubPrDetails> {
-    const token = await this.requireToken(userId);
+    const token = await this.requireToken(auth);
 
     const prRes = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${pullNumber}`, {
       headers: this.authHeaders(token),
@@ -224,7 +231,8 @@ export class GithubService implements OnModuleInit, PrPublisher {
     }
     if (!prRes.ok) throw new BadRequestException(`GitHub rejected the request (${prRes.status})`);
     let pr = (await prRes.json()) as GithubPull;
-    if (opts.withSnapshot) pr = await refetchIfMergeabilityPending(pr, this.authHeaders(token), owner, repo, pullNumber);
+    if (opts.withSnapshot)
+      pr = await refetchIfMergeabilityPending(pr, this.authHeaders(token), owner, repo, pullNumber);
     const headSha: string = pr.head.sha;
 
     const filesRes = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${pullNumber}/files?per_page=100`, {
@@ -257,26 +265,59 @@ export class GithubService implements OnModuleInit, PrPublisher {
           rawFiles.length,
         )
       : undefined;
-    return { files, headSha, url: pr.html_url, headRef: pr.head.ref, baseRef: pr.base.ref, snapshot };
+    const repoFiles = opts.withRepoContext
+      ? await this.repoFilesForContext(auth, owner, repo, headSha, pr.base.repo.size)
+      : undefined;
+    return { files, headSha, url: pr.html_url, headRef: pr.head.ref, baseRef: pr.base.ref, snapshot, repoFiles };
+  }
+
+  /**
+   * The whole repository at a commit, for showing the AI where changed code
+   * is used. Skipped (undefined) for repos over REPO_CONTEXT_MAX_KB or if the
+   * download fails: context improves a review but never blocks one.
+   */
+  private async repoFilesForContext(
+    auth: GithubAuth,
+    owner: string,
+    repo: string,
+    sha: string,
+    sizeKb: number | undefined,
+  ): Promise<ScannedFile[] | undefined> {
+    if (sizeKb !== undefined && sizeKb > REPO_CONTEXT_MAX_KB) return undefined;
+    try {
+      return extractZip(await this.downloadRepoZip(auth, owner, repo, sha), 200_000);
+    } catch {
+      return undefined;
+    }
   }
 
   /** Repo metadata needed to resolve "the ref that was scanned" when none was explicitly given. */
-  async getRepoMeta(userId: string, owner: string, repo: string): Promise<{ defaultBranch: string }> {
-    const token = await this.requireToken(userId);
+  async getRepoMeta(auth: GithubAuth, owner: string, repo: string): Promise<{ defaultBranch: string }> {
+    const token = await this.requireToken(auth);
     const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}`, { headers: this.authHeaders(token) });
-    if (res.status === 404) throw new NotFoundException(`Repository ${owner}/${repo} not found or not accessible with this token`);
+    if (res.status === 404)
+      throw new NotFoundException(`Repository ${owner}/${repo} not found or not accessible with this token`);
     if (!res.ok) throw gitHostRequestFailed('GitHub', res.status);
     const data = await res.json();
     return { defaultBranch: data.default_branch };
   }
 
   /** Fetches a single file's content and blob sha at a given ref — the sha is required to update it. */
-  async getFileAtRef(userId: string, owner: string, repo: string, path: string, ref: string): Promise<{ content: string; sha: string }> {
-    const token = await this.requireToken(userId);
+  async getFileAtRef(
+    auth: GithubAuth,
+    owner: string,
+    repo: string,
+    path: string,
+    ref: string,
+  ): Promise<{ content: string; sha: string }> {
+    const token = await this.requireToken(auth);
     const encodedPath = path.split('/').map(encodeURIComponent).join('/');
-    const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/contents/${encodedPath}?ref=${encodeURIComponent(ref)}`, {
-      headers: this.authHeaders(token),
-    });
+    const res = await fetch(
+      `${GITHUB_API}/repos/${owner}/${repo}/contents/${encodedPath}?ref=${encodeURIComponent(ref)}`,
+      {
+        headers: this.authHeaders(token),
+      },
+    );
     if (res.status === 404) throw new NotFoundException(`${path} not found at ${ref}`);
     if (!res.ok) throw gitHostRequestFailed('GitHub', res.status);
     const data = await res.json();
@@ -286,8 +327,8 @@ export class GithubService implements OnModuleInit, PrPublisher {
     return { content: Buffer.from(data.content, 'base64').toString('utf8'), sha: data.sha };
   }
 
-  async getBranchHeadSha(userId: string, owner: string, repo: string, branch: string): Promise<string> {
-    const token = await this.requireToken(userId);
+  async getBranchHeadSha(auth: GithubAuth, owner: string, repo: string, branch: string): Promise<string> {
+    const token = await this.requireToken(auth);
     const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/git/ref/heads/${encodeURIComponent(branch)}`, {
       headers: this.authHeaders(token),
     });
@@ -296,8 +337,8 @@ export class GithubService implements OnModuleInit, PrPublisher {
     return data.object.sha;
   }
 
-  async createBranch(userId: string, owner: string, repo: string, newBranch: string, fromSha: string): Promise<void> {
-    const token = await this.requireToken(userId);
+  async createBranch(auth: GithubAuth, owner: string, repo: string, newBranch: string, fromSha: string): Promise<void> {
+    const token = await this.requireToken(auth);
     const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/git/refs`, {
       method: 'POST',
       headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
@@ -308,7 +349,7 @@ export class GithubService implements OnModuleInit, PrPublisher {
 
   /** Commits a full-file content update to `branch`. `sha` must be the file's current blob sha on that branch. */
   async commitFileUpdate(
-    userId: string,
+    auth: GithubAuth,
     owner: string,
     repo: string,
     path: string,
@@ -317,7 +358,7 @@ export class GithubService implements OnModuleInit, PrPublisher {
     message: string,
     sha: string,
   ): Promise<string> {
-    const token = await this.requireToken(userId);
+    const token = await this.requireToken(auth);
     const encodedPath = path.split('/').map(encodeURIComponent).join('/');
     const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/contents/${encodedPath}`, {
       method: 'PUT',
@@ -326,14 +367,16 @@ export class GithubService implements OnModuleInit, PrPublisher {
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      throw new BadRequestException(`GitHub rejected the commit (${res.status})${body.message ? `: ${body.message}` : ''}`);
+      throw new BadRequestException(
+        `GitHub rejected the commit (${res.status})${body.message ? `: ${body.message}` : ''}`,
+      );
     }
     const data = await res.json();
     return data.commit?.html_url || '';
   }
 
   async createPullRequest(
-    userId: string,
+    auth: GithubAuth,
     owner: string,
     repo: string,
     title: string,
@@ -341,7 +384,7 @@ export class GithubService implements OnModuleInit, PrPublisher {
     base: string,
     body: string,
   ): Promise<{ url: string; number: number }> {
-    const token = await this.requireToken(userId);
+    const token = await this.requireToken(auth);
     const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls`, {
       method: 'POST',
       headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
@@ -349,13 +392,21 @@ export class GithubService implements OnModuleInit, PrPublisher {
     });
     if (!res.ok) {
       const respBody = await res.json().catch(() => ({}));
-      throw new BadRequestException(`GitHub rejected creating the pull request (${res.status})${respBody.message ? `: ${respBody.message}` : ''}`);
+      throw new BadRequestException(
+        `GitHub rejected creating the pull request (${res.status})${respBody.message ? `: ${respBody.message}` : ''}`,
+      );
     }
     const data = await res.json();
     return { url: data.html_url, number: data.number };
   }
 
-  private async fetchFileContent(token: string, owner: string, repo: string, path: string, ref: string): Promise<string | null> {
+  private async fetchFileContent(
+    token: string,
+    owner: string,
+    repo: string,
+    path: string,
+    ref: string,
+  ): Promise<string | null> {
     const encodedPath = path.split('/').map(encodeURIComponent).join('/');
     const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/contents/${encodedPath}?ref=${ref}`, {
       headers: this.authHeaders(token),
@@ -368,7 +419,8 @@ export class GithubService implements OnModuleInit, PrPublisher {
 
   /** PrPublisher — posts the review (inline comments + summary) and the merge-blocking commit status. */
   async publish(userId: string, context: Extract<PrContext, { kind: 'github' }>, feedback: PrFeedback): Promise<void> {
-    const token = await this.requireToken(userId);
+    // Reviews started by the GitHub App post as its bot; the rest as the user.
+    const token = await this.requireToken(context.installationId ? { installationId: context.installationId } : userId);
     await this.postPrReview(token, context.owner, context.repo, context.pullNumber, context.headSha, feedback);
     await this.postCommitStatus(token, context.owner, context.repo, context.headSha, feedback);
   }
@@ -434,7 +486,13 @@ export class GithubService implements OnModuleInit, PrPublisher {
     throw new Error(explainPostFailure(fallback.status, (await githubErrorMessage(fallback)) || reviewError));
   }
 
-  private async postCommitStatus(token: string, owner: string, repo: string, sha: string, feedback: PrFeedback): Promise<void> {
+  private async postCommitStatus(
+    token: string,
+    owner: string,
+    repo: string,
+    sha: string,
+    feedback: PrFeedback,
+  ): Promise<void> {
     const { state, description } = commitStatusFor(feedback);
     await fetch(`${GITHUB_API}/repos/${owner}/${repo}/statuses/${sha}`, {
       method: 'POST',
@@ -460,8 +518,13 @@ export class GithubService implements OnModuleInit, PrPublisher {
   }
 
   /** One inline review comment. */
-  async getReviewComment(userId: string, owner: string, repo: string, commentId: number): Promise<GithubReviewComment> {
-    const token = await this.requireToken(userId);
+  async getReviewComment(
+    auth: GithubAuth,
+    owner: string,
+    repo: string,
+    commentId: number,
+  ): Promise<GithubReviewComment> {
+    const token = await this.requireToken(auth);
     const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/comments/${commentId}`, {
       headers: this.authHeaders(token),
     });
@@ -469,15 +532,37 @@ export class GithubService implements OnModuleInit, PrPublisher {
     return (await res.json()) as GithubReviewComment;
   }
 
+  /** Every inline review comment on a PR, with its reaction counts. */
+  async listPullReviewComments(
+    auth: GithubAuth,
+    owner: string,
+    repo: string,
+    pullNumber: number,
+  ): Promise<GithubReviewComment[]> {
+    const token = await this.requireToken(auth);
+    const all: GithubReviewComment[] = [];
+    for (let page = 1; page <= 5; page++) {
+      const res = await fetch(
+        `${GITHUB_API}/repos/${owner}/${repo}/pulls/${pullNumber}/comments?per_page=100&page=${page}`,
+        { headers: this.authHeaders(token) },
+      );
+      if (!res.ok) throw gitHostRequestFailed('GitHub', res.status);
+      const batch = (await res.json()) as GithubReviewComment[];
+      all.push(...batch);
+      if (batch.length < 100) break;
+    }
+    return all;
+  }
+
   /** Every comment in one inline thread — the root and its replies — oldest first. */
   async listReviewThread(
-    userId: string,
+    auth: GithubAuth,
     owner: string,
     repo: string,
     pullNumber: number,
     rootId: number,
   ): Promise<GithubReviewComment[]> {
-    const token = await this.requireToken(userId);
+    const token = await this.requireToken(auth);
     const thread: GithubReviewComment[] = [];
     for (let page = 1; page <= 5; page++) {
       const res = await fetch(
@@ -494,14 +579,14 @@ export class GithubService implements OnModuleInit, PrPublisher {
 
   /** Answers inside an inline thread, under its root comment. */
   async replyToReviewComment(
-    userId: string,
+    auth: GithubAuth,
     owner: string,
     repo: string,
     pullNumber: number,
     rootId: number,
     body: string,
   ): Promise<void> {
-    const token = await this.requireToken(userId);
+    const token = await this.requireToken(auth);
     const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${pullNumber}/comments/${rootId}/replies`, {
       method: 'POST',
       headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
@@ -515,8 +600,14 @@ export class GithubService implements OnModuleInit, PrPublisher {
    * can do this. Best effort: it needs write access to the repository, so on
    * a repo the user doesn't own the thread simply stays open.
    */
-  async resolveReviewThread(userId: string, owner: string, repo: string, pullNumber: number, rootId: number): Promise<boolean> {
-    const token = await this.requireToken(userId);
+  async resolveReviewThread(
+    auth: GithubAuth,
+    owner: string,
+    repo: string,
+    pullNumber: number,
+    rootId: number,
+  ): Promise<boolean> {
+    const token = await this.requireToken(auth);
     const graphql = async (query: string, variables: Record<string, unknown>) => {
       const res = await fetch(`${GITHUB_API}/graphql`, {
         method: 'POST',
@@ -526,11 +617,25 @@ export class GithubService implements OnModuleInit, PrPublisher {
       return res.ok ? ((await res.json()) as { data?: any; errors?: unknown[] }) : { errors: [res.status] };
     };
     const found = await graphql(
-      `query($owner: String!, $repo: String!, $number: Int!) {
-        repository(owner: $owner, name: $repo) { pullRequest(number: $number) {
-          reviewThreads(first: 100) { nodes { id isResolved comments(first: 1) { nodes { databaseId } } } }
-        } }
-      }`,
+      `
+        query ($owner: String!, $repo: String!, $number: Int!) {
+          repository(owner: $owner, name: $repo) {
+            pullRequest(number: $number) {
+              reviewThreads(first: 100) {
+                nodes {
+                  id
+                  isResolved
+                  comments(first: 1) {
+                    nodes {
+                      databaseId
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      `,
       { owner, repo, number: pullNumber },
     );
     const threads: Array<{ id: string; isResolved: boolean; comments: { nodes: Array<{ databaseId: number }> } }> =
@@ -539,15 +644,29 @@ export class GithubService implements OnModuleInit, PrPublisher {
     if (!thread) return false;
     if (thread.isResolved) return true;
     const done = await graphql(
-      `mutation($id: ID!) { resolveReviewThread(input: { threadId: $id }) { thread { isResolved } } }`,
+      `
+        mutation ($id: ID!) {
+          resolveReviewThread(input: { threadId: $id }) {
+            thread {
+              isResolved
+            }
+          }
+        }
+      `,
       { id: thread.id },
     );
     return Boolean(done.data?.resolveReviewThread?.thread?.isResolved);
   }
 
   /** Used by the webhook receiver to reply to an @-mention on a PR thread. */
-  async postIssueComment(userId: string, owner: string, repo: string, issueNumber: number, body: string): Promise<void> {
-    const token = await this.requireToken(userId);
+  async postIssueComment(
+    auth: GithubAuth,
+    owner: string,
+    repo: string,
+    issueNumber: number,
+    body: string,
+  ): Promise<void> {
+    const token = await this.requireToken(auth);
     await fetch(`${GITHUB_API}/repos/${owner}/${repo}/issues/${issueNumber}/comments`, {
       method: 'POST',
       headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
@@ -578,7 +697,9 @@ export function mapGithubContributorStats(raw: unknown[]): ContributorStat[] {
   return raw
     .filter((entry): entry is Record<string, any> => Boolean(entry) && typeof (entry as any).total === 'number')
     .map((entry): ContributorStat => {
-      const weeks: Array<{ w: number; a: number; d: number; c: number }> = Array.isArray(entry.weeks) ? entry.weeks : [];
+      const weeks: Array<{ w: number; a: number; d: number; c: number }> = Array.isArray(entry.weeks)
+        ? entry.weeks
+        : [];
       const additions = weeks.reduce((sum, w) => sum + (w.a || 0), 0);
       const deletions = weeks.reduce((sum, w) => sum + (w.d || 0), 0);
       const lastActiveWeek = [...weeks].reverse().find((w) => (w.c || 0) > 0);
@@ -592,7 +713,6 @@ export function mapGithubContributorStats(raw: unknown[]): ContributorStat[] {
     })
     .sort((a, b) => b.commits - a.commits);
 }
-
 
 async function githubErrorMessage(res: Response): Promise<string> {
   try {
@@ -610,7 +730,8 @@ export function explainPostFailure(status: number, message: string): string {
     return `${base} Fine-grained tokens can only comment on repositories they were granted access to. To comment on other people's public repositories, reconnect GitHub with a classic token that has the public_repo scope.`;
   }
   if (status === 401) return `${base} The GitHub token has expired or been revoked; reconnect GitHub with a new token.`;
-  if (status === 403 && /locked|limited/i.test(message)) return `${base} The conversation is locked or limited to collaborators.`;
+  if (status === 403 && /locked|limited/i.test(message))
+    return `${base} The conversation is locked or limited to collaborators.`;
   if (status === 403 || status === 404) {
     return `${base} The token can't write to this repository. Check its scopes (repo or public_repo) and that it can access the repository.`;
   }
@@ -646,6 +767,8 @@ export interface GithubReviewComment {
   original_start_line: number | null;
   created_at: string;
   user: { login: string } | null;
+  /** GitHub's reaction summary; "+1" and "-1" are 👍 and 👎. */
+  reactions?: { '+1'?: number; '-1'?: number };
 }
 
 export { buildSummaryBody };

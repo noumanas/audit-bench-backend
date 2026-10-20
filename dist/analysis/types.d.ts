@@ -3,6 +3,7 @@ export interface ScannedFile {
     path: string;
     content: string;
     changedRanges?: LineRange[];
+    relatedContext?: string;
 }
 export interface DependencyGraphResult {
     graph: Record<string, string[]>;

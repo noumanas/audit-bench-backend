@@ -82,14 +82,27 @@ describe('WebhooksService review-comment replies', () => {
       resolveProvider: () => 'openai',
       completeStructured: jest.fn().mockResolvedValue({ result: { status: 'resolved', reply: 'Looks fixed.' } }),
     };
-    const prisma = { webhookConfig: { findUnique: jest.fn().mockResolvedValue({ userId: 'u1', secret }) } };
+    const prisma = {
+      webhookConfig: { findUnique: jest.fn().mockResolvedValue({ userId: 'u1', secret }) },
+      user: { findUniqueOrThrow: jest.fn().mockResolvedValue({ id: 'u1', organizationId: 'org1' }) },
+    };
+    const reviewRules = { recordFeedback: jest.fn().mockResolvedValue(undefined) };
     const quota = { assertCanRunAudit: jest.fn().mockResolvedValue(undefined) };
-    const service = new WebhooksService(prisma as never, github as never, {} as never, llm as never, {} as never, quota as never);
-    return { service, github, llm, quota };
+    const service = new WebhooksService(
+      prisma as never,
+      github as never,
+      {} as never,
+      llm as never,
+      {} as never,
+      quota as never,
+      reviewRules as never,
+      {} as never,
+    );
+    return { service, github, llm, quota, reviewRules };
   };
 
   it('rechecks the code, resolves the thread and replies in it', async () => {
-    const { service, github, llm } = setup();
+    const { service, github, llm, reviewRules } = setup();
     const body = payload({});
     const { raw, sig } = sign(body);
     expect(await service.handleGithubEvent('pull_request_review_comment', raw, body, sig)).toEqual({ ok: true, status: 'resolved' });
@@ -99,6 +112,11 @@ describe('WebhooksService review-comment replies', () => {
     const [, , , pr, threadRoot, reply] = github.replyToReviewComment.mock.calls[0];
     expect([pr, threadRoot]).toEqual([7, 50]);
     expect(reply).toContain('**✅ Resolved: the fix is in**');
+    // The outcome teaches the team's rules, keyed to the thread so a later recheck replaces it.
+    expect(reviewRules.recordFeedback).toHaveBeenCalledWith(
+      { id: 'u1', organizationId: 'org1' },
+      expect.objectContaining({ repo: 'acme/api', path: 'src/a.ts', category: 'Security', title: 'Token is logged', signal: 'resolved', sourceRef: 'thread:acme/api:50' }),
+    );
   });
 
   it('ignores its own replies, so it never answers itself', async () => {

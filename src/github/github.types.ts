@@ -1,3 +1,4 @@
+import { ScannedFile } from '../analysis/types';
 import { PrSnapshot } from '../common/merge-readiness';
 import { LineRange } from '../common/diff-ranges';
 
@@ -38,4 +39,6 @@ export interface GithubPrDetails {
   baseRef: string;
   /** Merge state and CI checks — only when fetchPrFiles is asked for it. */
   snapshot?: PrSnapshot;
+  /** The repository at the PR's head commit, for related-code context — only when asked for, and the repo is small enough. */
+  repoFiles?: ScannedFile[];
 }

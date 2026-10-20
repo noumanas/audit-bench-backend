@@ -5,7 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { QuotaService } from '../quota/quota.service';
 import { isPlanExpired, planExpiryFor } from '../common/plan-expiry';
 
-const REPO_SCAN_SOURCE_TYPES = ['zip', 'github_repo', 'gitlab_repo'] as const;
+const REPO_SCAN_SOURCE_TYPES = ['zip', 'github_repo', 'gitlab_repo', 'bitbucket_repo'] as const;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function startOfDay(d = new Date()): Date {

@@ -10,17 +10,25 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuditCacheService = void 0;
+exports.cacheExtraKey = cacheExtraKey;
 const common_1 = require("@nestjs/common");
 const crypto_1 = require("crypto");
 const prisma_service_1 = require("../prisma/prisma.service");
+function cacheExtraKey(rulesKey, relatedContext) {
+    const parts = [
+        rulesKey,
+        relatedContext ? `ctx:${(0, crypto_1.createHash)('sha256').update(relatedContext).digest('hex').slice(0, 16)}` : undefined,
+    ].filter(Boolean);
+    return parts.length ? parts.join('|') : undefined;
+}
 let AuditCacheService = class AuditCacheService {
     prisma;
     constructor(prisma) {
         this.prisma = prisma;
     }
-    hashFor(content, provider, focusAreas = [], changedRanges) {
+    hashFor(content, provider, focusAreas = [], changedRanges, rulesKey) {
         const rangesPart = changedRanges ? `diff-v2:${changedRanges.map((r) => `${r.start}-${r.end}`).join(',')}` : '';
-        const normalized = `${content} ${provider} ${[...focusAreas].sort().join(',')} ${rangesPart}`;
+        const normalized = `${content} ${provider} ${[...focusAreas].sort().join(',')} ${rangesPart}${rulesKey ? ` rules:${rulesKey}` : ''}`;
         return (0, crypto_1.createHash)('sha256').update(normalized).digest('hex');
     }
     async exists(contentHash) {

@@ -31,6 +31,8 @@ export interface FocusedPromptOptions {
   allFunctions: FunctionUnit[];
   repoContext?: string;
   focusAreas?: string[];
+  /** The team's own rules and learned suppressions, as prompt text (see rulesPromptText). */
+  teamRules?: string;
 }
 
 /**
@@ -66,7 +68,7 @@ ${fn.code}
   return `You are a senior engineer auditing code — possibly AI-generated — before it ships to production. You are being shown ONLY the functions a static triage pass flagged as risky, not the whole file, to keep this review cheap. Line numbers given are real file line numbers — use them as-is when citing a finding's line.
 
 Focus areas: ${focus}.
-${opts.repoContext ? `\nRepository context:\n${opts.repoContext}\n` : ''}
+${opts.repoContext ? `\nRepository context:\n${opts.repoContext}\n` : ''}${opts.teamRules ? `\n${opts.teamRules}\n` : ''}
 File: ${opts.filename}${opts.language ? ` (${opts.language})` : ''}
 
 ${sections.join('\n\n')}
@@ -90,8 +92,12 @@ export interface DiffPromptOptions {
   language?: string;
   code: string;
   changedRanges: Array<{ start: number; end: number }>;
+  /** Unchanged code elsewhere in the repo that uses what this file's changes touch (see related-context.ts). */
+  relatedContext?: string;
   repoContext?: string;
   focusAreas?: string[];
+  /** The team's own rules and learned suppressions, as prompt text (see rulesPromptText). */
+  teamRules?: string;
 }
 
 /**
@@ -131,16 +137,16 @@ export function buildDiffPrompt(opts: DiffPromptOptions): string {
       .join('\n');
     sections.push(`--- Lines ${w.from}-${to} ---\n\`\`\`\n${body}\n\`\`\``);
   }
-  const truncated = budget <= 0 ? '\n(The rest of this file\'s changes were cut to keep the review small.)\n' : '';
+  const truncated = budget <= 0 ? "\n(The rest of this file's changes were cut to keep the review small.)\n" : '';
 
   return `You are a senior engineer reviewing a pull request before it merges. You are shown the changed regions of one file. Lines marked ">" are in the changed hunks (they include a few unchanged lines GitHub shows for context); unmarked lines are extra context. Each line shows its real line number in the new file — use those numbers as-is for "line" and "endLine".
 
 Focus areas: ${focus}.
-${opts.repoContext ? `\nRepository context:\n${opts.repoContext}\n` : ''}
+${opts.repoContext ? `\nRepository context:\n${opts.repoContext}\n` : ''}${opts.teamRules ? `\n${opts.teamRules}\n` : ''}
 File: ${opts.filename}${opts.language ? ` (${opts.language})` : ''}
 
 ${sections.join('\n\n')}
-${truncated}
+${truncated}${opts.relatedContext ? `\n${opts.relatedContext}\n\nIf the change alters behaviour, a signature or a return value these callers rely on, report it on the changed line and name the affected caller.\n` : ''}
 Return ONLY a JSON object, no markdown fences, no preamble, with this exact shape:
 ${RESPONSE_SHAPE}
 

@@ -69,12 +69,12 @@ export class GithubController {
 
   @Post('pr')
   async reviewPr(@CurrentUser() user: RequestUser, @Body() dto: ReviewPrDto) {
-    const { files, url, headSha, headRef, baseRef, snapshot } = await this.githubService.fetchPrFiles(
+    const { files, url, headSha, headRef, baseRef, snapshot, repoFiles } = await this.githubService.fetchPrFiles(
       user.id,
       dto.owner,
       dto.repo,
       dto.pullNumber,
-      { withSnapshot: true },
+      { withSnapshot: true, withRepoContext: true },
     );
     return this.repositoryService.createDiffReview(
       user,
@@ -94,7 +94,7 @@ export class GithubController {
           baseRef,
         },
       },
-      { prSnapshot: snapshot },
+      { prSnapshot: snapshot, repoFiles },
     );
   }
 
@@ -111,14 +111,12 @@ export class GithubController {
       throw new BadRequestException('Paste a GitHub pull request link, like https://github.com/owner/repo/pull/123');
     }
     const { owner, repo, number } = parsed;
-    const { files, url, headSha, headRef, baseRef, snapshot } = await this.githubService.fetchPrFiles(
+    const { files, url, headSha, headRef, baseRef, snapshot, repoFiles } = await this.githubService.fetchPrFiles(
       user.id,
       owner,
       repo,
       number,
-      {
-        withSnapshot: true,
-      },
+      { withSnapshot: true, withRepoContext: true },
     );
     if (dto.postToGithub && snapshot && snapshot.state !== 'open') {
       throw new BadRequestException(
@@ -146,7 +144,7 @@ export class GithubController {
             }
           : undefined,
       },
-      { prSnapshot: snapshot },
+      { prSnapshot: snapshot, repoFiles },
     );
   }
 }

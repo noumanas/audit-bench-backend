@@ -17,7 +17,7 @@ export interface GithubPull {
   changed_files?: number;
   commits?: number;
   head: { sha: string; ref: string; repo: { full_name: string } | null };
-  base: { ref: string; repo: { full_name: string; private: boolean } };
+  base: { ref: string; repo: { full_name: string; private: boolean; size?: number } };
 }
 
 /**

@@ -22,6 +22,9 @@ import { AnalyticsModule } from './analytics/analytics.module';
 import { AdminModule } from './admin/admin.module';
 import { BadgeModule } from './badge/badge.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
+import { GithubAppModule } from './github-app/github-app.module';
+import { ReviewRulesModule } from './review-rules/review-rules.module';
+import { BitbucketModule } from './bitbucket/bitbucket.module';
 import { FixModule } from './fix/fix.module';
 import { EmailModule } from './email/email.module';
 import { OrganizationModule } from './organization/organization.module';
@@ -52,6 +55,9 @@ import { WebVitalsModule } from './web-vitals/web-vitals.module';
     AdminModule,
     BadgeModule,
     WebhooksModule,
+    GithubAppModule,
+    ReviewRulesModule,
+    BitbucketModule,
     FixModule,
     AlignmentLabModule,
     WebVitalsModule,

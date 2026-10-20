@@ -46,8 +46,21 @@ export class WebhooksController {
     return this.webhooksService.handleGithubEvent(event, req.rawBody ?? Buffer.alloc(0), req.body, signature);
   }
 
+  @Post('bitbucket')
+  handleBitbucket(
+    @Req() req: Request & { rawBody?: Buffer },
+    @Headers('x-event-key') event: string,
+    @Headers('x-hub-signature') signature: string,
+  ) {
+    return this.webhooksService.handleBitbucketEvent(event, req.rawBody ?? Buffer.alloc(0), req.body, signature);
+  }
+
   @Post('gitlab')
-  handleGitlab(@Req() req: Request, @Headers('x-gitlab-event') event: string, @Headers('x-gitlab-token') token: string) {
+  handleGitlab(
+    @Req() req: Request,
+    @Headers('x-gitlab-event') event: string,
+    @Headers('x-gitlab-token') token: string,
+  ) {
     return this.webhooksService.handleGitlabEvent(event, req.body, token);
   }
 }

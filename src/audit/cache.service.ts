@@ -11,6 +11,19 @@ export interface CachedAuditResult extends AuditResult {
   aiInvoked: boolean;
 }
 
+/**
+ * The part of a cache key that isn't the code itself: the team's rules and
+ * the related code a PR review was shown. Empty when neither applies, so
+ * keys made before either existed stay valid.
+ */
+export function cacheExtraKey(rulesKey?: string, relatedContext?: string): string | undefined {
+  const parts = [
+    rulesKey,
+    relatedContext ? `ctx:${createHash('sha256').update(relatedContext).digest('hex').slice(0, 16)}` : undefined,
+  ].filter(Boolean);
+  return parts.length ? parts.join('|') : undefined;
+}
+
 @Injectable()
 export class AuditCacheService {
   constructor(private readonly prisma: PrismaService) {}
@@ -20,11 +33,18 @@ export class AuditCacheService {
    * a diff-scoped review (PR/MR) of the same content but different changed
    * ranges is a genuinely different result, so ranges are part of the key.
    */
-  hashFor(content: string, provider: string, focusAreas: string[] = [], changedRanges?: LineRange[]): string {
+  hashFor(
+    content: string,
+    provider: string,
+    focusAreas: string[] = [],
+    changedRanges?: LineRange[],
+    rulesKey?: string,
+  ): string {
     // "diff-v2": PR reviews now always get an AI pass (see PipelineService.run),
     // so results cached before that — often local-only "clean" ones — don't apply.
     const rangesPart = changedRanges ? `diff-v2:${changedRanges.map((r) => `${r.start}-${r.end}`).join(',')}` : '';
-    const normalized = `${content} ${provider} ${[...focusAreas].sort().join(',')} ${rangesPart}`;
+    // Only appended when a team has rules, so every existing cache key stays valid.
+    const normalized = `${content} ${provider} ${[...focusAreas].sort().join(',')} ${rangesPart}${rulesKey ? ` rules:${rulesKey}` : ''}`;
     return createHash('sha256').update(normalized).digest('hex');
   }
 

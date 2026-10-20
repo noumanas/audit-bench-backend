@@ -1,4 +1,4 @@
-import { commentLines, inlineCommentBody } from './inline-comment';
+import { commentLines, inlineCommentBody, parseFindingComment } from './inline-comment';
 
 const finding = {
   path: 'tests/mcp-live-smoke.test.mjs',
@@ -47,12 +47,22 @@ describe('inlineCommentBody', () => {
     expect(body).toContain('**Suggested fix:** Add cases where /auth.md redirects');
     expect(body).toContain("```mjs\nif (req.url === '/auth.md') {");
     expect(body.trim().split('\n').pop()).toBe(
-      '<sub>82% confidence · 💬 Reply here and Audit Bench Ai will recheck the code</sub>',
+      '<sub>82% confidence · 💬 Reply here and Audit Bench Ai will recheck the code · 👍/👎 teaches it what your team wants</sub>',
     );
   });
 
   it('fences a patch that itself contains backticks', () => {
     const body = inlineCommentBody({ ...finding, examplePatch: 'const s = ```x```;' });
     expect(body).toContain('````mjs\nconst s = ```x```;\n````');
+  });
+});
+
+describe('parseFindingComment', () => {
+  it('reads the category and title back out of our own comment', () => {
+    expect(parseFindingComment(inlineCommentBody(finding))).toEqual({ category: 'Testing', title: 'Auth-link failures lack tests' });
+  });
+
+  it('ignores comments that are not ours', () => {
+    expect(parseFindingComment('**Looks good** to me')).toBeNull();
   });
 });

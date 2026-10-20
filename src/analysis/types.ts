@@ -6,6 +6,8 @@ export interface ScannedFile {
   content: string;
   /** Set for a PR/MR review — scopes the audit to just these changed lines. */
   changedRanges?: LineRange[];
+  /** PR/MR reviews: where the rest of the repo uses what this file's changes touch (see related-context.ts). */
+  relatedContext?: string;
 }
 
 export interface DependencyGraphResult {

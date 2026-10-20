@@ -20,18 +20,23 @@ const diff_ranges_1 = require("../common/diff-ranges");
 const pr_feedback_service_1 = require("../pr-feedback/pr-feedback.service");
 const inline_comment_1 = require("../pr-feedback/inline-comment");
 const token_crypto_service_1 = require("../common/token-crypto.service");
+const github_app_auth_service_1 = require("./github-app-auth.service");
+const file_walker_1 = require("../analysis/file-walker");
 const summary_comment_1 = require("../pr-feedback/summary-comment");
 Object.defineProperty(exports, "buildSummaryBody", { enumerable: true, get: function () { return summary_comment_1.buildSummaryBody; } });
 const github_pr_snapshot_1 = require("../common/github-pr-snapshot");
 const GITHUB_API = 'https://api.github.com';
+const REPO_CONTEXT_MAX_KB = 50 * 1024;
 let GithubService = class GithubService {
     prisma;
     prFeedback;
     tokenCrypto;
-    constructor(prisma, prFeedback, tokenCrypto) {
+    appAuth;
+    constructor(prisma, prFeedback, tokenCrypto, appAuth) {
         this.prisma = prisma;
         this.prFeedback = prFeedback;
         this.tokenCrypto = tokenCrypto;
+        this.appAuth = appAuth;
     }
     onModuleInit() {
         this.prFeedback.register('github', this);
@@ -44,8 +49,10 @@ let GithubService = class GithubService {
             'User-Agent': 'ai-code-auditor',
         };
     }
-    async requireToken(userId) {
-        const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    async requireToken(auth) {
+        if (typeof auth !== 'string')
+            return this.appAuth.installationToken(auth.installationId);
+        const user = await this.prisma.user.findUniqueOrThrow({ where: { id: auth } });
         if (!user.githubToken) {
             throw new common_1.BadRequestException('Connect a GitHub account first');
         }
@@ -75,8 +82,8 @@ let GithubService = class GithubService {
         const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
         return { connected: Boolean(user.githubToken), username: user.githubUsername };
     }
-    async listRepos(userId) {
-        const token = await this.requireToken(userId);
+    async listRepos(auth) {
+        const token = await this.requireToken(auth);
         const res = await fetch(`${GITHUB_API}/user/repos?sort=updated&per_page=100&affiliation=owner,collaborator,organization_member`, {
             headers: this.authHeaders(token),
         });
@@ -96,8 +103,8 @@ let GithubService = class GithubService {
             htmlUrl: r.html_url,
         }));
     }
-    async listBranches(userId, owner, repo) {
-        const token = await this.requireToken(userId);
+    async listBranches(auth, owner, repo) {
+        const token = await this.requireToken(auth);
         const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/branches?per_page=100`, {
             headers: this.authHeaders(token),
         });
@@ -110,8 +117,8 @@ let GithubService = class GithubService {
         const branches = await res.json();
         return branches.map((b) => b.name);
     }
-    async listPullRequests(userId, owner, repo) {
-        const token = await this.requireToken(userId);
+    async listPullRequests(auth, owner, repo) {
+        const token = await this.requireToken(auth);
         const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls?state=open&per_page=100`, {
             headers: this.authHeaders(token),
         });
@@ -132,8 +139,8 @@ let GithubService = class GithubService {
             htmlUrl: p.html_url,
         }));
     }
-    async downloadRepoZip(userId, owner, repo, ref) {
-        const token = await this.requireToken(userId);
+    async downloadRepoZip(auth, owner, repo, ref) {
+        const token = await this.requireToken(auth);
         const path = ref ? `${owner}/${repo}/zipball/${ref}` : `${owner}/${repo}/zipball`;
         const res = await fetch(`${GITHUB_API}/repos/${path}`, { headers: this.authHeaders(token) });
         if (res.status === 404) {
@@ -145,8 +152,8 @@ let GithubService = class GithubService {
         const arrayBuffer = await res.arrayBuffer();
         return Buffer.from(arrayBuffer);
     }
-    async fetchContributorStats(userId, owner, repo) {
-        const token = await this.requireToken(userId);
+    async fetchContributorStats(auth, owner, repo) {
+        const token = await this.requireToken(auth);
         const raw = await this.requestContributorStats(token, owner, repo);
         return raw ? mapGithubContributorStats(raw) : [];
     }
@@ -169,8 +176,8 @@ let GithubService = class GithubService {
         }
         return null;
     }
-    async fetchPrFiles(userId, owner, repo, pullNumber, opts = {}) {
-        const token = await this.requireToken(userId);
+    async fetchPrFiles(auth, owner, repo, pullNumber, opts = {}) {
+        const token = await this.requireToken(auth);
         const prRes = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${pullNumber}`, {
             headers: this.authHeaders(token),
         });
@@ -206,10 +213,23 @@ let GithubService = class GithubService {
         const snapshot = opts.withSnapshot
             ? (0, github_pr_snapshot_1.toPrSnapshot)(pr, owner, repo, pullNumber, await (0, github_pr_snapshot_1.fetchCiChecks)(this.authHeaders(token), owner, repo, headSha), files.length, rawFiles.length)
             : undefined;
-        return { files, headSha, url: pr.html_url, headRef: pr.head.ref, baseRef: pr.base.ref, snapshot };
+        const repoFiles = opts.withRepoContext
+            ? await this.repoFilesForContext(auth, owner, repo, headSha, pr.base.repo.size)
+            : undefined;
+        return { files, headSha, url: pr.html_url, headRef: pr.head.ref, baseRef: pr.base.ref, snapshot, repoFiles };
     }
-    async getRepoMeta(userId, owner, repo) {
-        const token = await this.requireToken(userId);
+    async repoFilesForContext(auth, owner, repo, sha, sizeKb) {
+        if (sizeKb !== undefined && sizeKb > REPO_CONTEXT_MAX_KB)
+            return undefined;
+        try {
+            return (0, file_walker_1.extractZip)(await this.downloadRepoZip(auth, owner, repo, sha), 200_000);
+        }
+        catch {
+            return undefined;
+        }
+    }
+    async getRepoMeta(auth, owner, repo) {
+        const token = await this.requireToken(auth);
         const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}`, { headers: this.authHeaders(token) });
         if (res.status === 404)
             throw new common_1.NotFoundException(`Repository ${owner}/${repo} not found or not accessible with this token`);
@@ -218,8 +238,8 @@ let GithubService = class GithubService {
         const data = await res.json();
         return { defaultBranch: data.default_branch };
     }
-    async getFileAtRef(userId, owner, repo, path, ref) {
-        const token = await this.requireToken(userId);
+    async getFileAtRef(auth, owner, repo, path, ref) {
+        const token = await this.requireToken(auth);
         const encodedPath = path.split('/').map(encodeURIComponent).join('/');
         const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/contents/${encodedPath}?ref=${encodeURIComponent(ref)}`, {
             headers: this.authHeaders(token),
@@ -234,8 +254,8 @@ let GithubService = class GithubService {
         }
         return { content: Buffer.from(data.content, 'base64').toString('utf8'), sha: data.sha };
     }
-    async getBranchHeadSha(userId, owner, repo, branch) {
-        const token = await this.requireToken(userId);
+    async getBranchHeadSha(auth, owner, repo, branch) {
+        const token = await this.requireToken(auth);
         const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/git/ref/heads/${encodeURIComponent(branch)}`, {
             headers: this.authHeaders(token),
         });
@@ -244,8 +264,8 @@ let GithubService = class GithubService {
         const data = await res.json();
         return data.object.sha;
     }
-    async createBranch(userId, owner, repo, newBranch, fromSha) {
-        const token = await this.requireToken(userId);
+    async createBranch(auth, owner, repo, newBranch, fromSha) {
+        const token = await this.requireToken(auth);
         const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/git/refs`, {
             method: 'POST',
             headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
@@ -254,8 +274,8 @@ let GithubService = class GithubService {
         if (!res.ok)
             throw new common_1.BadRequestException(`GitHub rejected creating branch "${newBranch}" (${res.status})`);
     }
-    async commitFileUpdate(userId, owner, repo, path, branch, content, message, sha) {
-        const token = await this.requireToken(userId);
+    async commitFileUpdate(auth, owner, repo, path, branch, content, message, sha) {
+        const token = await this.requireToken(auth);
         const encodedPath = path.split('/').map(encodeURIComponent).join('/');
         const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/contents/${encodedPath}`, {
             method: 'PUT',
@@ -269,8 +289,8 @@ let GithubService = class GithubService {
         const data = await res.json();
         return data.commit?.html_url || '';
     }
-    async createPullRequest(userId, owner, repo, title, head, base, body) {
-        const token = await this.requireToken(userId);
+    async createPullRequest(auth, owner, repo, title, head, base, body) {
+        const token = await this.requireToken(auth);
         const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls`, {
             method: 'POST',
             headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
@@ -296,7 +316,7 @@ let GithubService = class GithubService {
         return Buffer.from(data.content, 'base64').toString('utf8');
     }
     async publish(userId, context, feedback) {
-        const token = await this.requireToken(userId);
+        const token = await this.requireToken(context.installationId ? { installationId: context.installationId } : userId);
         await this.postPrReview(token, context.owner, context.repo, context.pullNumber, context.headSha, feedback);
         await this.postCommitStatus(token, context.owner, context.repo, context.headSha, feedback);
     }
@@ -357,8 +377,8 @@ let GithubService = class GithubService {
         const body = (await res.json());
         return Boolean(body.permissions?.push || body.permissions?.maintain || body.permissions?.admin);
     }
-    async getReviewComment(userId, owner, repo, commentId) {
-        const token = await this.requireToken(userId);
+    async getReviewComment(auth, owner, repo, commentId) {
+        const token = await this.requireToken(auth);
         const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/comments/${commentId}`, {
             headers: this.authHeaders(token),
         });
@@ -366,8 +386,22 @@ let GithubService = class GithubService {
             throw (0, git_host_errors_1.gitHostRequestFailed)('GitHub', res.status);
         return (await res.json());
     }
-    async listReviewThread(userId, owner, repo, pullNumber, rootId) {
-        const token = await this.requireToken(userId);
+    async listPullReviewComments(auth, owner, repo, pullNumber) {
+        const token = await this.requireToken(auth);
+        const all = [];
+        for (let page = 1; page <= 5; page++) {
+            const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${pullNumber}/comments?per_page=100&page=${page}`, { headers: this.authHeaders(token) });
+            if (!res.ok)
+                throw (0, git_host_errors_1.gitHostRequestFailed)('GitHub', res.status);
+            const batch = (await res.json());
+            all.push(...batch);
+            if (batch.length < 100)
+                break;
+        }
+        return all;
+    }
+    async listReviewThread(auth, owner, repo, pullNumber, rootId) {
+        const token = await this.requireToken(auth);
         const thread = [];
         for (let page = 1; page <= 5; page++) {
             const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${pullNumber}/comments?per_page=100&page=${page}`, { headers: this.authHeaders(token) });
@@ -380,8 +414,8 @@ let GithubService = class GithubService {
         }
         return thread.sort((a, b) => a.created_at.localeCompare(b.created_at));
     }
-    async replyToReviewComment(userId, owner, repo, pullNumber, rootId, body) {
-        const token = await this.requireToken(userId);
+    async replyToReviewComment(auth, owner, repo, pullNumber, rootId, body) {
+        const token = await this.requireToken(auth);
         const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${pullNumber}/comments/${rootId}/replies`, {
             method: 'POST',
             headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
@@ -390,8 +424,8 @@ let GithubService = class GithubService {
         if (!res.ok)
             throw (0, git_host_errors_1.gitHostRequestFailed)('GitHub', res.status);
     }
-    async resolveReviewThread(userId, owner, repo, pullNumber, rootId) {
-        const token = await this.requireToken(userId);
+    async resolveReviewThread(auth, owner, repo, pullNumber, rootId) {
+        const token = await this.requireToken(auth);
         const graphql = async (query, variables) => {
             const res = await fetch(`${GITHUB_API}/graphql`, {
                 method: 'POST',
@@ -400,22 +434,44 @@ let GithubService = class GithubService {
             });
             return res.ok ? (await res.json()) : { errors: [res.status] };
         };
-        const found = await graphql(`query($owner: String!, $repo: String!, $number: Int!) {
-        repository(owner: $owner, name: $repo) { pullRequest(number: $number) {
-          reviewThreads(first: 100) { nodes { id isResolved comments(first: 1) { nodes { databaseId } } } }
-        } }
-      }`, { owner, repo, number: pullNumber });
+        const found = await graphql(`
+        query ($owner: String!, $repo: String!, $number: Int!) {
+          repository(owner: $owner, name: $repo) {
+            pullRequest(number: $number) {
+              reviewThreads(first: 100) {
+                nodes {
+                  id
+                  isResolved
+                  comments(first: 1) {
+                    nodes {
+                      databaseId
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      `, { owner, repo, number: pullNumber });
         const threads = found.data?.repository?.pullRequest?.reviewThreads?.nodes ?? [];
         const thread = threads.find((t) => t.comments.nodes[0]?.databaseId === rootId);
         if (!thread)
             return false;
         if (thread.isResolved)
             return true;
-        const done = await graphql(`mutation($id: ID!) { resolveReviewThread(input: { threadId: $id }) { thread { isResolved } } }`, { id: thread.id });
+        const done = await graphql(`
+        mutation ($id: ID!) {
+          resolveReviewThread(input: { threadId: $id }) {
+            thread {
+              isResolved
+            }
+          }
+        }
+      `, { id: thread.id });
         return Boolean(done.data?.resolveReviewThread?.thread?.isResolved);
     }
-    async postIssueComment(userId, owner, repo, issueNumber, body) {
-        const token = await this.requireToken(userId);
+    async postIssueComment(auth, owner, repo, issueNumber, body) {
+        const token = await this.requireToken(auth);
         await fetch(`${GITHUB_API}/repos/${owner}/${repo}/issues/${issueNumber}/comments`, {
             method: 'POST',
             headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
@@ -437,13 +493,16 @@ exports.GithubService = GithubService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         pr_feedback_service_1.PrFeedbackService,
-        token_crypto_service_1.TokenCryptoService])
+        token_crypto_service_1.TokenCryptoService,
+        github_app_auth_service_1.GithubAppAuthService])
 ], GithubService);
 function mapGithubContributorStats(raw) {
     return raw
         .filter((entry) => Boolean(entry) && typeof entry.total === 'number')
         .map((entry) => {
-        const weeks = Array.isArray(entry.weeks) ? entry.weeks : [];
+        const weeks = Array.isArray(entry.weeks)
+            ? entry.weeks
+            : [];
         const additions = weeks.reduce((sum, w) => sum + (w.a || 0), 0);
         const deletions = weeks.reduce((sum, w) => sum + (w.d || 0), 0);
         const lastActiveWeek = [...weeks].reverse().find((w) => (w.c || 0) > 0);

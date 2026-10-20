@@ -5,4 +5,5 @@
  */
 export type RepoRef =
   | { kind: 'github'; owner: string; repo: string; ref: string; defaultBranch: string }
-  | { kind: 'gitlab'; projectId: number; ref: string; defaultBranch: string };
+  | { kind: 'gitlab'; projectId: number; ref: string; defaultBranch: string }
+  | { kind: 'bitbucket'; workspace: string; repoSlug: string; ref: string; defaultBranch: string };

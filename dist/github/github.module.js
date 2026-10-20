@@ -9,6 +9,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.GithubModule = void 0;
 const common_1 = require("@nestjs/common");
 const github_service_1 = require("./github.service");
+const github_app_auth_service_1 = require("./github-app-auth.service");
 const github_controller_1 = require("./github.controller");
 const repository_module_1 = require("../repository/repository.module");
 const pr_feedback_module_1 = require("../pr-feedback/pr-feedback.module");
@@ -19,8 +20,8 @@ exports.GithubModule = GithubModule = __decorate([
     (0, common_1.Module)({
         imports: [repository_module_1.RepositoryModule, pr_feedback_module_1.PrFeedbackModule],
         controllers: [github_controller_1.GithubController],
-        providers: [github_service_1.GithubService],
-        exports: [github_service_1.GithubService],
+        providers: [github_service_1.GithubService, github_app_auth_service_1.GithubAppAuthService],
+        exports: [github_service_1.GithubService, github_app_auth_service_1.GithubAppAuthService],
     })
 ], GithubModule);
 //# sourceMappingURL=github.module.js.map

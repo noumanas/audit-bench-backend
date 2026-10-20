@@ -31,6 +31,9 @@ const analytics_module_1 = require("./analytics/analytics.module");
 const admin_module_1 = require("./admin/admin.module");
 const badge_module_1 = require("./badge/badge.module");
 const webhooks_module_1 = require("./webhooks/webhooks.module");
+const github_app_module_1 = require("./github-app/github-app.module");
+const review_rules_module_1 = require("./review-rules/review-rules.module");
+const bitbucket_module_1 = require("./bitbucket/bitbucket.module");
 const fix_module_1 = require("./fix/fix.module");
 const email_module_1 = require("./email/email.module");
 const organization_module_1 = require("./organization/organization.module");
@@ -62,6 +65,9 @@ exports.AppModule = AppModule = __decorate([
             admin_module_1.AdminModule,
             badge_module_1.BadgeModule,
             webhooks_module_1.WebhooksModule,
+            github_app_module_1.GithubAppModule,
+            review_rules_module_1.ReviewRulesModule,
+            bitbucket_module_1.BitbucketModule,
             fix_module_1.FixModule,
             alignment_lab_module_1.AlignmentLabModule,
             web_vitals_module_1.WebVitalsModule,
