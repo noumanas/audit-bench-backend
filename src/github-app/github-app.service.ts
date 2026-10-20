@@ -1,4 +1,11 @@
-import { ForbiddenException, Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -222,6 +229,11 @@ export class GithubAppService {
       default_events: ['pull_request', 'pull_request_review_comment', 'issue_comment'],
     };
     const owner = org?.trim();
+    if (owner && !/^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/.test(owner)) {
+      throw new BadRequestException(
+        `"${owner}" isn't a GitHub organization login. Leave it empty for your personal account.`,
+      );
+    }
     const action = `https://github.com/${owner ? `organizations/${encodeURIComponent(owner)}/` : ''}settings/apps/new?state=${encodeURIComponent(this.signState('manifest', userId))}`;
     return { action, manifest: JSON.stringify(manifest) };
   }
