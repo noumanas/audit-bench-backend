@@ -45,6 +45,8 @@ export interface PrFeedback {
   scanUrl?: string;
   /** Each reviewed file's changed line ranges — an inline comment must land inside one. */
   changedRanges?: Record<string, LineRange[]>;
+  /** Shown in the summary when Audit Bench Ai's own account posts on someone's request. */
+  requestedBy?: string;
   /** GitHub PR reviews with a snapshot — conflicts, CI and blockers, rendered at the top of the summary. */
   readiness?: MergeReadiness;
 }

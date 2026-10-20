@@ -434,10 +434,22 @@ export class RepositoryService {
    * disappearing. Also behind the report's "Retry posting" button.
    */
   async publishPrFeedback(jobId: string): Promise<{ prPublishedAt: Date | null; prPublishError: string | null }> {
-    const job = await this.prisma.scanJob.findUniqueOrThrow({ where: { id: jobId }, include: { files: true } });
+    const job = await this.prisma.scanJob.findUniqueOrThrow({ where: { id: jobId } });
     if (!job.prContext || job.status !== 'completed') {
       return { prPublishedAt: job.prPublishedAt, prPublishError: job.prPublishError };
     }
+    const feedback = await this.buildPrFeedback(jobId, this.buildScanUrl(jobId));
+    const outcome = await this.prFeedback.publish(job.userId, job.prContext as unknown as PrContext, feedback);
+    const data = outcome.ok
+      ? { prPublishedAt: new Date(), prPublishError: null }
+      : { prPublishedAt: null, prPublishError: outcome.error };
+    await this.prisma.scanJob.update({ where: { id: jobId }, data });
+    return data;
+  }
+
+  /** A finished PR review as the feedback posted to the pull request, rebuilt from what's stored. */
+  async buildPrFeedback(jobId: string, scanUrl?: string): Promise<PrFeedback> {
+    const job = await this.prisma.scanJob.findUniqueOrThrow({ where: { id: jobId }, include: { files: true } });
     const findings = job.files.flatMap((file) =>
       ((Array.isArray(file.findings) ? file.findings : []) as unknown as Finding[]).map((f) => ({
         path: file.path,
@@ -453,20 +465,14 @@ export class RepositoryService {
         confidence: f.confidence,
       })),
     );
-    const feedback: PrFeedback = {
+    return {
       verdict: job.verdict ?? 'pass',
       summary: job.summary ?? '',
       findings,
       changedRanges: (job.changedRanges ?? undefined) as PrFeedback['changedRanges'],
-      scanUrl: this.buildScanUrl(jobId),
+      scanUrl,
       readiness: readinessForScan(job) ?? undefined,
     };
-    const outcome = await this.prFeedback.publish(job.userId, job.prContext as unknown as PrContext, feedback);
-    const data = outcome.ok
-      ? { prPublishedAt: new Date(), prPublishError: null }
-      : { prPublishedAt: null, prPublishError: outcome.error };
-    await this.prisma.scanJob.update({ where: { id: jobId }, data });
-    return data;
   }
 
   private buildScanUrl(jobId: string): string | undefined {

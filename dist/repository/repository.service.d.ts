@@ -8,7 +8,7 @@ import { ScannedFile, ContributorStat } from '../analysis/types';
 import { Prisma, ScanSourceType } from '@prisma/client';
 import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
 import { PrSnapshot } from '../common/merge-readiness';
-import { PrContext } from '../pr-feedback/pr-feedback.types';
+import { PrContext, PrFeedback } from '../pr-feedback/pr-feedback.types';
 import { FindingStatus } from '../common/finding.schema';
 import { RepoRef } from '../common/repo-ref.types';
 import { WorkspaceActor } from '../common/workspace-scope';
@@ -179,6 +179,7 @@ export declare class RepositoryService {
         prPublishedAt: Date | null;
         prPublishError: string | null;
     }>;
+    buildPrFeedback(jobId: string, scanUrl?: string): Promise<PrFeedback>;
     private buildScanUrl;
     findOne(actor: WorkspaceActor & {
         role: 'user' | 'admin' | 'super_admin';

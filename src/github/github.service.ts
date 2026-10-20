@@ -373,6 +373,22 @@ export class GithubService implements OnModuleInit, PrPublisher {
     await this.postCommitStatus(token, context.owner, context.repo, context.headSha, feedback);
   }
 
+  /**
+   * Posts a review with a given token — Audit Bench Ai's own account, for a
+   * free public review the PR's author asked for. No commit status: that
+   * needs write access the account doesn't have on other people's repos.
+   */
+  async postReviewWithToken(
+    token: string,
+    owner: string,
+    repo: string,
+    pullNumber: number,
+    headSha: string,
+    feedback: PrFeedback,
+  ): Promise<void> {
+    await this.postPrReview(token, owner, repo, pullNumber, headSha, feedback);
+  }
+
   private async postPrReview(
     token: string,
     owner: string,
@@ -429,6 +445,18 @@ export class GithubService implements OnModuleInit, PrPublisher {
       // existing user already configured against "audit/bench".
       body: JSON.stringify({ state, description, context: 'audit/bench' }),
     });
+  }
+
+  /** Whether the user's own connected token can push to the repository (a maintainer, not just a reader). */
+  async canPushTo(userId: string, owner: string, repo: string): Promise<boolean> {
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    if (!user.githubToken) return false;
+    const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}`, {
+      headers: this.authHeaders(this.tokenCrypto.decrypt(user.githubToken)),
+    });
+    if (!res.ok) return false;
+    const body = (await res.json()) as { permissions?: { push?: boolean; maintain?: boolean; admin?: boolean } };
+    return Boolean(body.permissions?.push || body.permissions?.maintain || body.permissions?.admin);
   }
 
   /** One inline review comment. */
@@ -582,6 +610,7 @@ export function buildSummaryBody(feedback: PrFeedback, opts: { posted?: number; 
     .join(', ');
 
   const lines = [`### Audit Bench Ai review — ${verdictLabel}`, ''];
+  if (feedback.requestedBy) lines.push(`_Review requested by @${feedback.requestedBy}._`, '');
   if (opts.posted !== undefined) lines.push(`**Actionable comments posted: ${opts.posted}**`, '');
   if (feedback.readiness) lines.push(...readinessLines(feedback.readiness), '');
   lines.push(countLine ? `**Findings:** ${countLine}` : '_No findings — all clear._');

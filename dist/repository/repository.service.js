@@ -304,10 +304,20 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
         return this.publishPrFeedback(id);
     }
     async publishPrFeedback(jobId) {
-        const job = await this.prisma.scanJob.findUniqueOrThrow({ where: { id: jobId }, include: { files: true } });
+        const job = await this.prisma.scanJob.findUniqueOrThrow({ where: { id: jobId } });
         if (!job.prContext || job.status !== 'completed') {
             return { prPublishedAt: job.prPublishedAt, prPublishError: job.prPublishError };
         }
+        const feedback = await this.buildPrFeedback(jobId, this.buildScanUrl(jobId));
+        const outcome = await this.prFeedback.publish(job.userId, job.prContext, feedback);
+        const data = outcome.ok
+            ? { prPublishedAt: new Date(), prPublishError: null }
+            : { prPublishedAt: null, prPublishError: outcome.error };
+        await this.prisma.scanJob.update({ where: { id: jobId }, data });
+        return data;
+    }
+    async buildPrFeedback(jobId, scanUrl) {
+        const job = await this.prisma.scanJob.findUniqueOrThrow({ where: { id: jobId }, include: { files: true } });
         const findings = job.files.flatMap((file) => (Array.isArray(file.findings) ? file.findings : []).map((f) => ({
             path: file.path,
             line: f.line,
@@ -321,20 +331,14 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
             examplePatch: f.examplePatch,
             confidence: f.confidence,
         })));
-        const feedback = {
+        return {
             verdict: job.verdict ?? 'pass',
             summary: job.summary ?? '',
             findings,
             changedRanges: (job.changedRanges ?? undefined),
-            scanUrl: this.buildScanUrl(jobId),
+            scanUrl,
             readiness: (0, merge_readiness_1.readinessForScan)(job) ?? undefined,
         };
-        const outcome = await this.prFeedback.publish(job.userId, job.prContext, feedback);
-        const data = outcome.ok
-            ? { prPublishedAt: new Date(), prPublishError: null }
-            : { prPublishedAt: null, prPublishError: outcome.error };
-        await this.prisma.scanJob.update({ where: { id: jobId }, data });
-        return data;
     }
     buildScanUrl(jobId) {
         const origin = (this.config.get('FRONTEND_ORIGIN') || '').split(',')[0]?.trim();

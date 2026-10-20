@@ -141,7 +141,12 @@ describe('PublicScanService.getShared', () => {
   };
 
   const service = (row: unknown) =>
-    new PublicScanService({ scanJob: { findUnique: jest.fn().mockResolvedValue(row) } } as never, {} as never, {} as never);
+    new PublicScanService(
+      { scanJob: { findUnique: jest.fn().mockResolvedValue(row) } } as never,
+      {} as never,
+      { get: () => undefined } as never,
+      {} as never,
+    );
 
   it('never exposes secret locations, contributor identities or account details', async () => {
     const out = await service(job).getShared('abc');
@@ -199,5 +204,87 @@ describe('PublicScanService.getShared', () => {
 
   it('returns 404 once the owner stops sharing', async () => {
     await expect(service({ ...job, isPublic: false }).getShared('abc')).rejects.toThrow(NotFoundException);
+  });
+});
+
+describe('PublicScanService.postToPullRequest', () => {
+  const realFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = realFetch;
+  });
+
+  const job = {
+    id: 'job1',
+    shareId: 'share1',
+    isPublic: true,
+    sourceType: 'github_pr',
+    sourceName: 'acme/api#9',
+    status: 'completed',
+    prPublishedAt: null,
+    prSnapshot: { owner: 'acme', repo: 'api', number: 9, headSha: 'sha9' },
+  };
+
+  const setup = (opts: { username?: string | null; prAuthor?: string; canPush?: boolean; recentPost?: boolean; botToken?: string } = {}) => {
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      json: async () => ({ state: 'open', html_url: 'https://github.com/acme/api/pull/9', user: { login: opts.prAuthor ?? 'dev' } }),
+    })) as never;
+    const prisma = {
+      scanJob: {
+        findUnique: jest.fn().mockResolvedValue(job),
+        findFirst: jest.fn().mockResolvedValue(opts.recentPost ? { id: 'other' } : null),
+        update: jest.fn().mockResolvedValue(undefined),
+      },
+      user: { findUniqueOrThrow: jest.fn().mockResolvedValue({ githubUsername: opts.username === undefined ? 'dev' : opts.username }) },
+    };
+    const repositories = { buildPrFeedback: jest.fn().mockResolvedValue({ verdict: 'pass', summary: 's', findings: [] }) };
+    const config = {
+      get: (k: string) =>
+        ({ GITHUB_BOT_TOKEN: opts.botToken === undefined ? 'bot-token' : opts.botToken, FRONTEND_ORIGIN: 'https://auditbenchai.com' })[k],
+    };
+    const github = {
+      canPushTo: jest.fn().mockResolvedValue(Boolean(opts.canPush)),
+      postReviewWithToken: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = new PublicScanService(prisma as never, repositories as never, config as never, github as never);
+    return { service, github, prisma, repositories };
+  };
+
+  it("posts as Audit Bench Ai for the PR's author, linking the public report", async () => {
+    const { service, github, repositories, prisma } = setup({ username: 'Dev', prAuthor: 'dev' });
+    await service.postToPullRequest({ id: 'u1' }, 'share1');
+    expect(repositories.buildPrFeedback).toHaveBeenCalledWith('job1', 'https://auditbenchai.com/scan/share1');
+    const [token, owner, repo, number, sha, feedback] = github.postReviewWithToken.mock.calls[0];
+    expect([token, owner, repo, number, sha]).toEqual(['bot-token', 'acme', 'api', 9, 'sha9']);
+    expect(feedback.requestedBy).toBe('Dev');
+    expect(prisma.scanJob.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ prPublishError: null }) }));
+  });
+
+  it('lets a maintainer post too', async () => {
+    const { service, github } = setup({ username: 'lead', prAuthor: 'dev', canPush: true });
+    await service.postToPullRequest({ id: 'u1' }, 'share1');
+    expect(github.postReviewWithToken).toHaveBeenCalled();
+  });
+
+  it("refuses anyone who isn't the author or a maintainer", async () => {
+    const { service, github } = setup({ username: 'stranger', prAuthor: 'dev', canPush: false });
+    await expect(service.postToPullRequest({ id: 'u1' }, 'share1')).rejects.toThrow(/Only the pull request's author \(@dev\)/);
+    expect(github.postReviewWithToken).not.toHaveBeenCalled();
+  });
+
+  it('needs a GitHub-verified identity', async () => {
+    const { service } = setup({ username: null });
+    await expect(service.postToPullRequest({ id: 'u1' }, 'share1')).rejects.toThrow(/Connect GitHub/);
+  });
+
+  it('posts at most once per PR per day', async () => {
+    const { service, github } = setup({ recentPost: true });
+    await expect(service.postToPullRequest({ id: 'u1' }, 'share1')).rejects.toThrow(/already posted a review on this pull request today/);
+    expect(github.postReviewWithToken).not.toHaveBeenCalled();
+  });
+
+  it('is off until the bot token is configured', async () => {
+    const { service } = setup({ botToken: '' });
+    await expect(service.postToPullRequest({ id: 'u1' }, 'share1')).rejects.toThrow(/isn't set up yet/);
   });
 });

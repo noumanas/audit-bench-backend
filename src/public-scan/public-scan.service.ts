@@ -1,12 +1,15 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   HttpException,
   HttpStatus,
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
+import { GithubService } from '../github/github.service';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import { Prisma } from '@prisma/client';
@@ -50,6 +53,7 @@ export class PublicScanService {
     private readonly prisma: PrismaService,
     private readonly repositories: RepositoryService,
     private readonly config: ConfigService,
+    private readonly github: GithubService,
   ) {}
 
   private githubHeaders(): Record<string, string> {
@@ -153,6 +157,68 @@ export class PublicScanService {
     );
     this.logger.log(`Public scan started for ${sourceName}@${ref} (${shareId})`);
     return { shareId, reused: false };
+  }
+
+  /**
+   * Posts a free public PR review on the pull request as Audit Bench Ai's
+   * own GitHub account (GITHUB_BOT_TOKEN). Only for the PR's author or a
+   * maintainer, verified through their GitHub-linked account: letting any
+   * visitor make the account comment on strangers' PRs would be spam, and
+   * GitHub suspends accounts for it. At most one post per PR per day.
+   */
+  async postToPullRequest(actor: { id: string }, shareId: string): Promise<{ prPublishedAt: Date; url: string }> {
+    const botToken = this.config.get<string>('GITHUB_BOT_TOKEN');
+    if (!botToken) throw new ServiceUnavailableException("Posting as Audit Bench Ai isn't set up yet.");
+
+    const job = await this.prisma.scanJob.findUnique({ where: { shareId } });
+    if (!job || !job.isPublic || job.sourceType !== 'github_pr' || !job.prSnapshot) {
+      throw new NotFoundException('This pull request review was not found.');
+    }
+    if (job.status !== 'completed') throw new BadRequestException('Wait for the review to finish before posting it.');
+    if (job.prPublishedAt) throw new ConflictException('This review is already posted on the pull request.');
+    const recentPost = await this.prisma.scanJob.findFirst({
+      where: { sourceName: job.sourceName, sourceType: 'github_pr', prPublishedAt: { gte: new Date(Date.now() - DAY_MS) } },
+      select: { id: true },
+    });
+    if (recentPost) throw new ConflictException('Audit Bench Ai already posted a review on this pull request today.');
+
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: actor.id }, select: { githubUsername: true } });
+    if (!user.githubUsername) {
+      throw new ForbiddenException(
+        'Connect GitHub (or sign in with GitHub) first, so we can check that you wrote or maintain this pull request.',
+      );
+    }
+
+    const snap = job.prSnapshot as unknown as PrSnapshot;
+    const prRes = await fetch(`${GITHUB_API}/repos/${snap.owner}/${snap.repo}/pulls/${snap.number}`, {
+      headers: this.githubHeaders(),
+    });
+    if (!prRes.ok) throw new BadRequestException(`GitHub rejected the request (${prRes.status})`);
+    const pr = (await prRes.json()) as GithubPull & { user: { login: string } | null };
+    if (pr.state !== 'open') {
+      throw new BadRequestException(`This pull request is already ${pr.merged ? 'merged' : 'closed'}, so a review wouldn't help.`);
+    }
+    const isAuthor = pr.user?.login.toLowerCase() === user.githubUsername.toLowerCase();
+    if (!isAuthor && !(await this.github.canPushTo(actor.id, snap.owner, snap.repo))) {
+      throw new ForbiddenException(
+        `Only the pull request's author${pr.user ? ` (@${pr.user.login})` : ''} or a maintainer of ${snap.owner}/${snap.repo} can ask Audit Bench Ai to post there. You're signed in as @${user.githubUsername}. You can still copy the comment and post it yourself.`,
+      );
+    }
+
+    const origin = (this.config.get<string>('FRONTEND_ORIGIN') || '').split(',')[0]?.trim();
+    const feedback = await this.repositories.buildPrFeedback(job.id, origin ? `${origin}/scan/${shareId}` : undefined);
+    feedback.requestedBy = user.githubUsername;
+    try {
+      await this.github.postReviewWithToken(botToken, snap.owner, snap.repo, snap.number, snap.headSha, feedback);
+    } catch (err) {
+      const message = (err as Error).message || 'Posting the review failed.';
+      await this.prisma.scanJob.update({ where: { id: job.id }, data: { prPublishError: message } });
+      throw new BadRequestException(message);
+    }
+    const prPublishedAt = new Date();
+    await this.prisma.scanJob.update({ where: { id: job.id }, data: { prPublishedAt, prPublishError: null } });
+    this.logger.log(`Posted public review ${shareId} on ${job.sourceName} for @${user.githubUsername}`);
+    return { prPublishedAt, url: pr.html_url };
   }
 
   /** Per-visitor hourly and site-wide daily caps, shared by repo scans and PR reviews. Returns the IP hash to store. */
@@ -346,6 +412,9 @@ export class PublicScanService {
     let pullRequest: Record<string, unknown> | null = null;
     if (prSnapshot) {
       pullRequest = {
+        // Who a "Post on GitHub" would post as; null when this server can't.
+        postAs: this.config.get<string>('GITHUB_BOT_TOKEN') ? this.config.get<string>('GITHUB_BOT_LOGIN') || 'auditbenchai' : null,
+        postedAt: job.prPublishedAt,
         number: prSnapshot.number,
         title: prSnapshot.title,
         url: prSnapshot.url,

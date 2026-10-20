@@ -24,6 +24,14 @@ export class PublicScanController {
   get(@Param('shareId') shareId: string) {
     return this.publicScans.getShared(shareId);
   }
+
+  /** The PR's author or a maintainer, signed in, asks Audit Bench Ai to post the review on the PR. */
+  @Post('scans/:shareId/post')
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { limit: 10, ttl: 60 * 60 * 1000 } })
+  post(@CurrentUser() user: RequestUser, @Param('shareId') shareId: string) {
+    return this.publicScans.postToPullRequest(user, shareId);
+  }
 }
 
 /** Owners (and their team) turning a public link on or off for one of their scans. */

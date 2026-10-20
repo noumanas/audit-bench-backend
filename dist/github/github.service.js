@@ -300,6 +300,9 @@ let GithubService = class GithubService {
         await this.postPrReview(token, context.owner, context.repo, context.pullNumber, context.headSha, feedback);
         await this.postCommitStatus(token, context.owner, context.repo, context.headSha, feedback);
     }
+    async postReviewWithToken(token, owner, repo, pullNumber, headSha, feedback) {
+        await this.postPrReview(token, owner, repo, pullNumber, headSha, feedback);
+    }
     async postPrReview(token, owner, repo, pullNumber, headSha, feedback) {
         const comments = feedback.findings
             .map((f) => ({ f, at: (0, inline_comment_1.commentLines)(f, feedback.changedRanges?.[f.path]) }))
@@ -341,6 +344,18 @@ let GithubService = class GithubService {
             headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
             body: JSON.stringify({ state, description, context: 'audit/bench' }),
         });
+    }
+    async canPushTo(userId, owner, repo) {
+        const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+        if (!user.githubToken)
+            return false;
+        const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}`, {
+            headers: this.authHeaders(this.tokenCrypto.decrypt(user.githubToken)),
+        });
+        if (!res.ok)
+            return false;
+        const body = (await res.json());
+        return Boolean(body.permissions?.push || body.permissions?.maintain || body.permissions?.admin);
     }
     async getReviewComment(userId, owner, repo, commentId) {
         const token = await this.requireToken(userId);
@@ -453,6 +468,8 @@ function buildSummaryBody(feedback, opts = {}) {
         .map((s) => `${counts[s]} ${s}`)
         .join(', ');
     const lines = [`### Audit Bench Ai review — ${verdictLabel}`, ''];
+    if (feedback.requestedBy)
+        lines.push(`_Review requested by @${feedback.requestedBy}._`, '');
     if (opts.posted !== undefined)
         lines.push(`**Actionable comments posted: ${opts.posted}**`, '');
     if (feedback.readiness)
