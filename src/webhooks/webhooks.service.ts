@@ -13,6 +13,16 @@ import { GithubService } from '../github/github.service';
 import { GitlabService } from '../gitlab/gitlab.service';
 import { LlmService } from '../llm/llm.service';
 import { RepositoryService } from '../repository/repository.service';
+import { QuotaService } from '../quota/quota.service';
+import { FINDING_MARKER } from '../pr-feedback/inline-comment';
+import {
+  MAX_AGENT_REPLIES_PER_THREAD,
+  buildRecheckPrompt,
+  codeWindow,
+  formatAgentReply,
+  recheckSchema,
+  settlesThread,
+} from './thread-reply';
 
 const BOT_MENTION = '@auditbench';
 const MAX_CONTEXT_FILES = 5;
@@ -30,6 +40,7 @@ export class WebhooksService {
     private readonly gitlab: GitlabService,
     private readonly llm: LlmService,
     private readonly repository: RepositoryService,
+    private readonly quota: QuotaService,
   ) {}
 
   async listConfigs(userId: string) {
@@ -69,6 +80,9 @@ export class WebhooksService {
     if (event === 'pull_request') {
       return this.handleGithubPullRequestEvent(rawBody, body, signatureHeader);
     }
+    if (event === 'pull_request_review_comment') {
+      return this.handleGithubReviewCommentEvent(rawBody, body, signatureHeader);
+    }
     if (event !== 'issue_comment' || body?.action !== 'created' || !body?.issue?.pull_request) {
       return { ok: true, skipped: 'not a PR comment creation event' };
     }
@@ -104,6 +118,102 @@ export class WebhooksService {
       this.logger.error(`Failed to reply on ${repoIdentifier}#${pullNumber}`, err as Error);
     }
     return { ok: true };
+  }
+
+  /**
+   * A reply inside one of Audit Bench Ai's inline threads (or a new inline
+   * comment that mentions @auditbench): recheck the code at the PR's latest
+   * commit and answer in the same thread, resolving it once the fix is in.
+   * Comments post as the connected user's own account, so our own comments
+   * are recognised by hidden markers rather than by author.
+   */
+  private async handleGithubReviewCommentEvent(rawBody: Buffer, body: any, signatureHeader: string | undefined) {
+    if (body?.action !== 'created' || !body?.comment || !body?.pull_request) {
+      return { ok: true, skipped: 'not a new review comment' };
+    }
+    const repoIdentifier: string = body.repository.full_name;
+    const config = await this.prisma.webhookConfig.findUnique({
+      where: { provider_repoIdentifier: { provider: 'github', repoIdentifier } },
+    });
+    if (!config) return { ok: true, skipped: 'no webhook configured for this repo' };
+    if (!GithubService.verifyWebhookSignature(config.secret, rawBody, signatureHeader)) {
+      throw new ForbiddenException('Invalid webhook signature');
+    }
+
+    const comment = body.comment;
+    const text: string = comment.body || '';
+    if (text.includes('<!-- audit-bench')) return { ok: true, skipped: 'ignoring our own comment' };
+    const mentioned = text.toLowerCase().includes(BOT_MENTION);
+    const [owner, repo] = repoIdentifier.split('/');
+    const pullNumber: number = body.pull_request.number;
+    const headSha: string = body.pull_request.head.sha;
+    const rootId: number = comment.in_reply_to_id ?? comment.id;
+
+    try {
+      const root = rootId === comment.id ? comment : await this.github.getReviewComment(config.userId, owner, repo, rootId);
+      if (!String(root.body ?? '').includes(FINDING_MARKER) && !mentioned) {
+        return { ok: true, skipped: 'not an Audit Bench Ai thread' };
+      }
+      const thread = await this.github.listReviewThread(config.userId, owner, repo, pullNumber, rootId);
+      if (thread.filter((c) => c.body.includes('<!-- audit-bench:reply')).length >= MAX_AGENT_REPLIES_PER_THREAD) {
+        return { ok: true, skipped: 'reply limit reached for this thread' };
+      }
+
+      try {
+        await this.quota.assertCanRunAudit(config.userId);
+      } catch (err) {
+        await this.github.replyToReviewComment(
+          config.userId,
+          owner,
+          repo,
+          pullNumber,
+          rootId,
+          `<!-- audit-bench:reply -->\nAudit Bench Ai couldn't recheck this: ${(err as Error).message}`,
+        );
+        return { ok: true, skipped: 'quota' };
+      }
+
+      const outdated = root.line == null;
+      const end: number = root.line ?? root.original_line ?? 1;
+      const start: number = (outdated ? root.original_start_line : root.start_line) ?? end;
+      const content = await this.github
+        .getFileAtRef(config.userId, owner, repo, root.path, headSha)
+        .then((f) => f.content)
+        .catch((err: unknown) => {
+          if (err instanceof NotFoundException) return null;
+          throw err;
+        });
+
+      const prompt = buildRecheckPrompt({
+        path: root.path,
+        start,
+        end,
+        outdated,
+        headSha,
+        code: codeWindow(content, start, end, outdated),
+        thread: thread.map((c) => ({
+          author: c.user?.login ?? 'someone',
+          body: c.body,
+          fromAgent: c.body.includes('<!-- audit-bench'),
+        })),
+      });
+      const { result } = await this.llm.completeStructured(this.llm.resolveProvider(), prompt, recheckSchema);
+      const resolved = settlesThread(result.status)
+        ? await this.github.resolveReviewThread(config.userId, owner, repo, pullNumber, rootId).catch(() => false)
+        : false;
+      await this.github.replyToReviewComment(
+        config.userId,
+        owner,
+        repo,
+        pullNumber,
+        rootId,
+        formatAgentReply(result, headSha, resolved),
+      );
+      return { ok: true, status: result.status };
+    } catch (err) {
+      this.logger.error(`Failed to recheck thread ${rootId} on ${repoIdentifier}#${pullNumber}`, err as Error);
+      return { ok: true, skipped: 'error' };
+    }
   }
 
   /** This is what makes review "continuous" — no @-mention needed, fires on open/reopen/new commits. */

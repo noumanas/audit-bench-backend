@@ -35,15 +35,20 @@ describe('commentLines', () => {
 });
 
 describe('inlineCommentBody', () => {
-  it('reads like a reviewer: badge and title, what, why, fix, example and footer', () => {
+  it('reads like a reviewer: category and severity, headline, what, why, fix, example and reply hint', () => {
     const body = inlineCommentBody(finding);
-    expect(body.split('\n')[0]).toBe(
-      '![Medium](https://img.shields.io/badge/Medium-b08a00?style=flat-square) **Auth-link failures lack tests**',
-    );
+    expect(body.split('\n').slice(0, 4)).toEqual([
+      '<!-- audit-bench:finding -->',
+      '**🧪 Testing | 🟡 Medium**',
+      '',
+      '**Auth-link failures lack tests**',
+    ]);
     expect(body).toContain('**Why it happens:** The fixture only returns the happy path.');
     expect(body).toContain('**Suggested fix:** Add cases where /auth.md redirects');
     expect(body).toContain("```mjs\nif (req.url === '/auth.md') {");
-    expect(body.trim().split('\n').pop()).toBe('<sub>Testing · 82% confidence · Audit Bench Ai</sub>');
+    expect(body.trim().split('\n').pop()).toBe(
+      '<sub>82% confidence · 💬 Reply here and Audit Bench Ai will recheck the code</sub>',
+    );
   });
 
   it('fences a patch that itself contains backticks', () => {

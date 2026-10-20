@@ -399,7 +399,7 @@ export class GithubService implements OnModuleInit, PrPublisher {
       headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
       body: JSON.stringify({
         commit_id: headSha,
-        body: buildSummaryBody(feedback),
+        body: buildSummaryBody(feedback, { posted: comments.length, headSha }),
         event: 'COMMENT',
         comments,
       }),
@@ -411,7 +411,7 @@ export class GithubService implements OnModuleInit, PrPublisher {
       await fetch(`${GITHUB_API}/repos/${owner}/${repo}/issues/${pullNumber}/comments`, {
         method: 'POST',
         headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ body: buildSummaryBody(feedback) }),
+        body: JSON.stringify({ body: buildSummaryBody(feedback, { posted: 0, headSha }) }),
       });
     }
   }
@@ -427,6 +427,92 @@ export class GithubService implements OnModuleInit, PrPublisher {
       // existing user already configured against "audit/bench".
       body: JSON.stringify({ state, description, context: 'audit/bench' }),
     });
+  }
+
+  /** One inline review comment. */
+  async getReviewComment(userId: string, owner: string, repo: string, commentId: number): Promise<GithubReviewComment> {
+    const token = await this.requireToken(userId);
+    const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/comments/${commentId}`, {
+      headers: this.authHeaders(token),
+    });
+    if (!res.ok) throw gitHostRequestFailed('GitHub', res.status);
+    return (await res.json()) as GithubReviewComment;
+  }
+
+  /** Every comment in one inline thread — the root and its replies — oldest first. */
+  async listReviewThread(
+    userId: string,
+    owner: string,
+    repo: string,
+    pullNumber: number,
+    rootId: number,
+  ): Promise<GithubReviewComment[]> {
+    const token = await this.requireToken(userId);
+    const thread: GithubReviewComment[] = [];
+    for (let page = 1; page <= 5; page++) {
+      const res = await fetch(
+        `${GITHUB_API}/repos/${owner}/${repo}/pulls/${pullNumber}/comments?per_page=100&page=${page}`,
+        { headers: this.authHeaders(token) },
+      );
+      if (!res.ok) throw gitHostRequestFailed('GitHub', res.status);
+      const batch = (await res.json()) as GithubReviewComment[];
+      thread.push(...batch.filter((c) => c.id === rootId || c.in_reply_to_id === rootId));
+      if (batch.length < 100) break;
+    }
+    return thread.sort((a, b) => a.created_at.localeCompare(b.created_at));
+  }
+
+  /** Answers inside an inline thread, under its root comment. */
+  async replyToReviewComment(
+    userId: string,
+    owner: string,
+    repo: string,
+    pullNumber: number,
+    rootId: number,
+    body: string,
+  ): Promise<void> {
+    const token = await this.requireToken(userId);
+    const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${pullNumber}/comments/${rootId}/replies`, {
+      method: 'POST',
+      headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body }),
+    });
+    if (!res.ok) throw gitHostRequestFailed('GitHub', res.status);
+  }
+
+  /**
+   * Marks the thread rooted at `rootId` resolved. Only GitHub's GraphQL API
+   * can do this. Best effort: it needs write access to the repository, so on
+   * a repo the user doesn't own the thread simply stays open.
+   */
+  async resolveReviewThread(userId: string, owner: string, repo: string, pullNumber: number, rootId: number): Promise<boolean> {
+    const token = await this.requireToken(userId);
+    const graphql = async (query: string, variables: Record<string, unknown>) => {
+      const res = await fetch(`${GITHUB_API}/graphql`, {
+        method: 'POST',
+        headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, variables }),
+      });
+      return res.ok ? ((await res.json()) as { data?: any; errors?: unknown[] }) : { errors: [res.status] };
+    };
+    const found = await graphql(
+      `query($owner: String!, $repo: String!, $number: Int!) {
+        repository(owner: $owner, name: $repo) { pullRequest(number: $number) {
+          reviewThreads(first: 100) { nodes { id isResolved comments(first: 1) { nodes { databaseId } } } }
+        } }
+      }`,
+      { owner, repo, number: pullNumber },
+    );
+    const threads: Array<{ id: string; isResolved: boolean; comments: { nodes: Array<{ databaseId: number }> } }> =
+      found.data?.repository?.pullRequest?.reviewThreads?.nodes ?? [];
+    const thread = threads.find((t) => t.comments.nodes[0]?.databaseId === rootId);
+    if (!thread) return false;
+    if (thread.isResolved) return true;
+    const done = await graphql(
+      `mutation($id: ID!) { resolveReviewThread(input: { threadId: $id }) { thread { isResolved } } }`,
+      { id: thread.id },
+    );
+    return Boolean(done.data?.resolveReviewThread?.thread?.isResolved);
   }
 
   /** Used by the webhook receiver to reply to an @-mention on a PR thread. */
@@ -477,7 +563,12 @@ export function mapGithubContributorStats(raw: unknown[]): ContributorStat[] {
     .sort((a, b) => b.commits - a.commits);
 }
 
-export function buildSummaryBody(feedback: PrFeedback): string {
+/**
+ * The review's top-level comment, CodeRabbit-style: how many inline comments
+ * were posted, merge readiness, a collapsible prompt an AI coding agent can
+ * paste to fix everything, collapsible review details, and how to talk back.
+ */
+export function buildSummaryBody(feedback: PrFeedback, opts: { posted?: number; headSha?: string } = {}): string {
   const verdictLabel = { pass: '✅ Pass', needs_work: '⚠️ Needs work', do_not_ship: '⛔ Do not ship' }[feedback.verdict];
   const counts = feedback.findings.reduce<Record<string, number>>((acc, f) => {
     acc[f.severity] = (acc[f.severity] || 0) + 1;
@@ -489,9 +580,43 @@ export function buildSummaryBody(feedback: PrFeedback): string {
     .join(', ');
 
   const lines = [`### Audit Bench Ai review — ${verdictLabel}`, ''];
+  if (opts.posted !== undefined) lines.push(`**Actionable comments posted: ${opts.posted}**`, '');
   if (feedback.readiness) lines.push(...readinessLines(feedback.readiness), '');
-  lines.push(feedback.summary, '', countLine ? `**Findings:** ${countLine}` : '_No findings — all clear._');
-  if (feedback.scanUrl) lines.push('', `[View full report](${feedback.scanUrl})`);
+  lines.push(countLine ? `**Findings:** ${countLine}` : '_No findings — all clear._');
+
+  if (feedback.findings.length) {
+    lines.push(
+      '',
+      '---',
+      '',
+      '<details>',
+      '<summary>🤖 Prompt to fix review comments</summary>',
+      '',
+      '````text',
+      'Verify each finding against the current code and only fix it if it still applies.',
+      '',
+      ...feedback.findings.slice(0, 50).flatMap((f) => [
+        `In \`@${f.path}\`${f.line ? ` around ${f.endLine && f.endLine > f.line ? `lines ${f.line} - ${f.endLine}` : `line ${f.line}`}` : ''}: ${f.title}. ${f.description}${f.suggestedFix ? ` Suggested fix: ${f.suggestedFix}` : ''}`,
+        '',
+      ]),
+      '````',
+      '',
+      '</details>',
+    );
+  }
+
+  const info = [
+    opts.headSha ? `- **Commit:** \`${opts.headSha.slice(0, 7)}\`` : null,
+    `- **Verdict:** ${verdictLabel}`,
+    `- **Scope:** ${feedback.summary}`,
+  ].filter(Boolean);
+  lines.push('', '<details>', '<summary>ℹ️ Review info</summary>', '', ...(info as string[]), '', '</details>');
+
+  lines.push(
+    '',
+    '💬 Reply to any inline comment and Audit Bench Ai will recheck that code and answer in the thread. Mention `@auditbench` in the conversation to ask about the whole PR.',
+  );
+  if (feedback.scanUrl) lines.push('', `[View the full report and fix with AI](${feedback.scanUrl})`);
   lines.push('', REVIEW_FOOTER);
   return lines.join('\n');
 }
@@ -526,4 +651,19 @@ function commitStatusFor(feedback: PrFeedback): { state: 'success' | 'failure'; 
     return { state: 'success', description: 'Audit Bench Ai found issues worth reviewing' };
   }
   return { state: 'success', description: 'Audit Bench Ai found no issues' };
+}
+
+/** The parts of an inline review comment the reply agent reads. */
+export interface GithubReviewComment {
+  id: number;
+  in_reply_to_id?: number;
+  body: string;
+  path: string;
+  /** Null once the commented lines changed in a later push ("outdated"). */
+  line: number | null;
+  start_line: number | null;
+  original_line: number | null;
+  original_start_line: number | null;
+  created_at: string;
+  user: { login: string } | null;
 }

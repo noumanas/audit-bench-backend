@@ -2,12 +2,30 @@ import { LineRange } from '../common/diff-ranges';
 import { ANALYZABLE_EXTENSIONS } from '../common/language';
 import { PrFeedbackFinding } from './pr-feedback.types';
 
-const SEVERITY_BADGE: Record<string, { label: string; hex: string }> = {
-  critical: { label: 'Critical', hex: 'c92a3d' },
-  high: { label: 'High', hex: 'e8590c' },
-  medium: { label: 'Medium', hex: 'b08a00' },
-  low: { label: 'Low', hex: '2b5be3' },
+const SEVERITY: Record<string, string> = {
+  critical: '🔴 Critical',
+  high: '🟠 High',
+  medium: '🟡 Medium',
+  low: '🔵 Low',
 };
+
+const CATEGORY: Record<string, string> = {
+  Security: '🛡️ Security',
+  Logic: '🧠 Logic',
+  Performance: '⚡ Performance',
+  Architecture: '🏗️ Architecture',
+  Maintainability: '🧹 Maintainability',
+  Testing: '🧪 Testing',
+};
+
+/**
+ * Hidden markers. FINDING marks a thread Audit Bench Ai started, so a reply
+ * in it is meant for the agent; REPLY marks the agent's own answers, so it
+ * never answers itself — both are needed because comments post as the
+ * user's own GitHub account, not a separate bot login.
+ */
+export const FINDING_MARKER = '<!-- audit-bench:finding -->';
+export const REPLY_MARKER = '<!-- audit-bench:reply -->';
 
 /** Longest range one comment covers; past this a finding points at its first line only. */
 const MAX_RANGE_LINES = 40;
@@ -30,17 +48,16 @@ export function commentLines(f: PrFeedbackFinding, ranges?: LineRange[]): { star
 }
 
 /**
- * One finding as a review comment: severity badge and title, what's wrong,
- * why, how to fix it (with the example patch as a highlighted code block),
- * and a footer naming the category, confidence and Audit Bench Ai.
+ * One finding as a review comment, CodeRabbit-style: a category and
+ * severity line, the issue as a bold headline, what's wrong, why, how to fix
+ * it (with the example patch as a highlighted code block), and a footer
+ * inviting a reply — replies are answered in the thread (see WebhooksService).
  */
 export function inlineCommentBody(f: PrFeedbackFinding): string {
-  const badge = SEVERITY_BADGE[f.severity] ?? { label: f.severity, hex: '6b7280' };
-  const lines = [
-    `![${badge.label}](https://img.shields.io/badge/${encodeURIComponent(badge.label)}-${badge.hex}?style=flat-square) **${f.title}**`,
-    '',
-    f.description,
-  ];
+  const header = [f.category ? (CATEGORY[f.category] ?? f.category) : null, SEVERITY[f.severity] ?? f.severity]
+    .filter(Boolean)
+    .join(' | ');
+  const lines = [FINDING_MARKER, `**${header}**`, '', `**${f.title}**`, '', f.description];
   if (f.rootCause) lines.push('', `**Why it happens:** ${f.rootCause}`);
   if (f.suggestedFix) lines.push('', `**Suggested fix:** ${f.suggestedFix}`);
   if (f.examplePatch?.trim()) {
@@ -52,9 +69,8 @@ export function inlineCommentBody(f: PrFeedbackFinding): string {
     lines.push('', `${fence}${ANALYZABLE_EXTENSIONS.has(ext) ? ext : ''}`, f.examplePatch.trimEnd(), fence);
   }
   const meta = [
-    f.category,
     typeof f.confidence === 'number' ? `${Math.round(f.confidence * 100)}% confidence` : null,
-    'Audit Bench Ai',
+    '💬 Reply here and Audit Bench Ai will recheck the code',
   ].filter(Boolean);
   lines.push('', `<sub>${meta.join(' · ')}</sub>`);
   return lines.join('\n');

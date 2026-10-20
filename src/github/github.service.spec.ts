@@ -115,6 +115,6 @@ describe('GithubService.publish', () => {
     expect(review.comments[0]).toMatchObject({ path: 'src/a.ts', start_line: 233, start_side: 'RIGHT', line: 235, side: 'RIGHT' });
     expect(review.comments[1]).toMatchObject({ line: 240, side: 'RIGHT' });
     expect(review.comments[1].start_line).toBeUndefined();
-    expect(review.comments[0].body).toMatch(/^!\[Medium\]\(.*\) \*\*Range\*\*/);
+    expect(review.comments[0].body).toContain('**🟡 Medium**\n\n**Range**');
   });
 });
