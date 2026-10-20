@@ -381,6 +381,12 @@ model ScanJob {
   // and open a PR/MR when the user commits a fix from the web editor.
   // Shape: RepoRef (see src/common/repo-ref.types.ts).
   repoRef                   Json?
+  // Set for a GitHub PR review (free public or in-app) — what GitHub
+  // reported about the PR when it was reviewed: state, merge conflicts and
+  // CI checks. Shape: PrSnapshot (see src/common/merge-readiness.ts).
+  // Kept apart from prContext on purpose: prContext makes the scan post
+  // back to the PR, which a free public review must never do.
+  prSnapshot                Json?
   status                    ScanStatus     @default(queued)
   provider                  String
   framework                 String? // best-guess detected framework

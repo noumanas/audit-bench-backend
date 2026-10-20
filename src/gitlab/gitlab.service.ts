@@ -6,7 +6,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { GitlabMrDetails, GitlabMrFile, GitlabMrSummary, GitlabProjectSummary } from './gitlab.types';
 import { parseChangedRanges } from '../common/diff-ranges';
 import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
-import { PrContext, PrFeedback, PrPublisher } from '../pr-feedback/pr-feedback.types';
+import { PrContext, PrFeedback, PrPublisher, REVIEW_FOOTER } from '../pr-feedback/pr-feedback.types';
 import { gitlabInstanceUrl } from '../common/gitlab-url';
 import { TokenCryptoService } from '../common/token-crypto.service';
 import { ContributorStat } from '../analysis/types';
@@ -469,6 +469,7 @@ function buildSummaryBody(feedback: PrFeedback): string {
     countLine ? `**Findings:** ${countLine}` : '_No findings — all clear._',
   ];
   if (feedback.scanUrl) lines.push('', `[View full report](${feedback.scanUrl})`);
+  lines.push('', REVIEW_FOOTER);
   return lines.join('\n');
 }
 

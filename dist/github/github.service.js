@@ -11,13 +11,16 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.GithubService = void 0;
 exports.mapGithubContributorStats = mapGithubContributorStats;
+exports.buildSummaryBody = buildSummaryBody;
 const common_1 = require("@nestjs/common");
 const git_host_errors_1 = require("../common/git-host-errors");
 const crypto = require("crypto");
 const prisma_service_1 = require("../prisma/prisma.service");
 const diff_ranges_1 = require("../common/diff-ranges");
 const pr_feedback_service_1 = require("../pr-feedback/pr-feedback.service");
+const pr_feedback_types_1 = require("../pr-feedback/pr-feedback.types");
 const token_crypto_service_1 = require("../common/token-crypto.service");
+const github_pr_snapshot_1 = require("../common/github-pr-snapshot");
 const GITHUB_API = 'https://api.github.com';
 let GithubService = class GithubService {
     prisma;
@@ -164,7 +167,7 @@ let GithubService = class GithubService {
         }
         return null;
     }
-    async fetchPrFiles(userId, owner, repo, pullNumber) {
+    async fetchPrFiles(userId, owner, repo, pullNumber, opts = {}) {
         const token = await this.requireToken(userId);
         const prRes = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${pullNumber}`, {
             headers: this.authHeaders(token),
@@ -174,7 +177,9 @@ let GithubService = class GithubService {
         }
         if (!prRes.ok)
             throw new common_1.BadRequestException(`GitHub rejected the request (${prRes.status})`);
-        const pr = await prRes.json();
+        let pr = (await prRes.json());
+        if (opts.withSnapshot)
+            pr = await (0, github_pr_snapshot_1.refetchIfMergeabilityPending)(pr, this.authHeaders(token), owner, repo, pullNumber);
         const headSha = pr.head.sha;
         const filesRes = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${pullNumber}/files?per_page=100`, {
             headers: this.authHeaders(token),
@@ -196,7 +201,10 @@ let GithubService = class GithubService {
                 status: f.status,
             });
         }
-        return { files, headSha, url: pr.html_url, headRef: pr.head.ref, baseRef: pr.base.ref };
+        const snapshot = opts.withSnapshot
+            ? (0, github_pr_snapshot_1.toPrSnapshot)(pr, owner, repo, pullNumber, await (0, github_pr_snapshot_1.fetchCiChecks)(this.authHeaders(token), owner, repo, headSha), files.length, rawFiles.length)
+            : undefined;
+        return { files, headSha, url: pr.html_url, headRef: pr.head.ref, baseRef: pr.base.ref, snapshot };
     }
     async getRepoMeta(userId, owner, repo) {
         const token = await this.requireToken(userId);
@@ -382,16 +390,29 @@ function buildSummaryBody(feedback) {
         .filter((s) => counts[s])
         .map((s) => `${counts[s]} ${s}`)
         .join(', ');
-    const lines = [
-        `### Audit Bench Ai review — ${verdictLabel}`,
-        '',
-        feedback.summary,
-        '',
-        countLine ? `**Findings:** ${countLine}` : '_No findings — all clear._',
-    ];
+    const lines = [`### Audit Bench Ai review — ${verdictLabel}`, ''];
+    if (feedback.readiness)
+        lines.push(...readinessLines(feedback.readiness), '');
+    lines.push(feedback.summary, '', countLine ? `**Findings:** ${countLine}` : '_No findings — all clear._');
     if (feedback.scanUrl)
         lines.push('', `[View full report](${feedback.scanUrl})`);
+    lines.push('', pr_feedback_types_1.REVIEW_FOOTER);
     return lines.join('\n');
+}
+const READINESS_LABEL = {
+    ready: '✅ Ready to merge',
+    ready_with_notes: '🟡 Ready to merge, with notes',
+    not_ready: '⛔ Not ready to merge',
+    merged: '🟣 Already merged',
+    closed: '⚪ Closed without merging',
+};
+function readinessLines(readiness) {
+    const lines = [`**Merge readiness: ${READINESS_LABEL[readiness.status]}**`];
+    if (readiness.blockers.length)
+        lines.push('', '_Fix before merging:_', ...readiness.blockers.map((b) => `- ${b}`));
+    if (readiness.notes.length)
+        lines.push('', '_Worth a look:_', ...readiness.notes.map((n) => `- ${n}`));
+    return lines;
 }
 function commitStatusFor(feedback) {
     if (feedback.verdict === 'do_not_ship') {

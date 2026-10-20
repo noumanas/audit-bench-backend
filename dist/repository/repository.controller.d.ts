@@ -10,13 +10,15 @@ export declare class RepositoryController {
         createdAt: Date;
         organizationId: string | null;
         userId: string;
+        status: import(".prisma/client").$Enums.ScanStatus;
+        updatedAt: Date;
         aiInvoked: boolean;
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
         pullRequestUrl: string | null;
         prContext: import("@prisma/client/runtime/library").JsonValue | null;
         repoRef: import("@prisma/client/runtime/library").JsonValue | null;
-        status: import(".prisma/client").$Enums.ScanStatus;
+        prSnapshot: import("@prisma/client/runtime/library").JsonValue | null;
         provider: string;
         framework: string | null;
         fileCount: number;
@@ -41,7 +43,6 @@ export declare class RepositoryController {
         isPublic: boolean;
         localOnly: boolean;
         requesterIpHash: string | null;
-        updatedAt: Date;
         completedAt: Date | null;
     }>;
     findRecent(user: RequestUser, limit?: string): Promise<{
@@ -50,13 +51,15 @@ export declare class RepositoryController {
         createdAt: Date;
         organizationId: string | null;
         userId: string;
+        status: import(".prisma/client").$Enums.ScanStatus;
+        updatedAt: Date;
         aiInvoked: boolean;
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
         pullRequestUrl: string | null;
         prContext: import("@prisma/client/runtime/library").JsonValue | null;
         repoRef: import("@prisma/client/runtime/library").JsonValue | null;
-        status: import(".prisma/client").$Enums.ScanStatus;
+        prSnapshot: import("@prisma/client/runtime/library").JsonValue | null;
         provider: string;
         framework: string | null;
         fileCount: number;
@@ -81,12 +84,12 @@ export declare class RepositoryController {
         isPublic: boolean;
         localOnly: boolean;
         requesterIpHash: string | null;
-        updatedAt: Date;
         completedAt: Date | null;
     }[]>;
     findOne(user: RequestUser, id: string): Promise<{
         riskAggregation: import("./risk-aggregation").RiskAggregation | null;
         tddAssessment: import("./tdd-assessment").TddAssessment | null;
+        mergeReadiness: import("../common/merge-readiness").MergeReadiness | null;
         files: {
             id: string;
             createdAt: Date;
@@ -105,13 +108,15 @@ export declare class RepositoryController {
         createdAt: Date;
         organizationId: string | null;
         userId: string;
+        status: import(".prisma/client").$Enums.ScanStatus;
+        updatedAt: Date;
         aiInvoked: boolean;
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
         pullRequestUrl: string | null;
         prContext: import("@prisma/client/runtime/library").JsonValue | null;
         repoRef: import("@prisma/client/runtime/library").JsonValue | null;
-        status: import(".prisma/client").$Enums.ScanStatus;
+        prSnapshot: import("@prisma/client/runtime/library").JsonValue | null;
         provider: string;
         framework: string | null;
         fileCount: number;
@@ -136,7 +141,6 @@ export declare class RepositoryController {
         isPublic: boolean;
         localOnly: boolean;
         requesterIpHash: string | null;
-        updatedAt: Date;
         completedAt: Date | null;
     }>;
     setFindingStatus(user: RequestUser, scanFileId: string, index: number, dto: UpdateFindingStatusDto): Promise<{

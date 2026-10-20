@@ -7,14 +7,11 @@ export declare class UsersController {
     private readonly quotaService;
     constructor(usersService: UsersService, quotaService: QuotaService);
     getProfile(user: RequestUser): Promise<{
-        id: string;
-        createdAt: Date;
-        name: string | null;
         plan: {
             id: string;
+            name: string;
             createdAt: Date;
             slug: string;
-            name: string;
             priceMonthlyCents: number;
             dailyAuditLimit: number | null;
             monthlyAuditLimit: number | null;
@@ -25,23 +22,26 @@ export declare class UsersController {
             monthlyRepoScanLimit: number | null;
             dueDiligence: boolean;
         };
-        email: string;
-        role: import(".prisma/client").$Enums.Role;
-        githubUsername: string | null;
-        badgeToken: string | null;
-        orgRole: import(".prisma/client").$Enums.OrgRole | null;
         organization: {
             id: string;
-            slug: string;
             name: string;
+            slug: string;
         } | null;
+        id: string;
+        email: string;
+        badgeToken: string | null;
+        name: string | null;
+        role: import(".prisma/client").$Enums.Role;
+        githubUsername: string | null;
+        createdAt: Date;
+        orgRole: import(".prisma/client").$Enums.OrgRole | null;
     }>;
     getUsage(user: RequestUser): Promise<{
         plan: {
             id: string;
+            name: string;
             createdAt: Date;
             slug: string;
-            name: string;
             priceMonthlyCents: number;
             dailyAuditLimit: number | null;
             monthlyAuditLimit: number | null;
@@ -68,14 +68,11 @@ export declare class UsersController {
     changePlan(user: RequestUser, dto: ChangePlanDto): Promise<{
         applied: true;
         user: {
-            id: string;
-            createdAt: Date;
-            name: string | null;
             plan: {
                 id: string;
+                name: string;
                 createdAt: Date;
                 slug: string;
-                name: string;
                 priceMonthlyCents: number;
                 dailyAuditLimit: number | null;
                 monthlyAuditLimit: number | null;
@@ -86,16 +83,19 @@ export declare class UsersController {
                 monthlyRepoScanLimit: number | null;
                 dueDiligence: boolean;
             };
-            email: string;
-            role: import(".prisma/client").$Enums.Role;
-            githubUsername: string | null;
-            badgeToken: string | null;
-            orgRole: import(".prisma/client").$Enums.OrgRole | null;
             organization: {
                 id: string;
-                slug: string;
                 name: string;
+                slug: string;
             } | null;
+            id: string;
+            email: string;
+            badgeToken: string | null;
+            name: string | null;
+            role: import(".prisma/client").$Enums.Role;
+            githubUsername: string | null;
+            createdAt: Date;
+            orgRole: import(".prisma/client").$Enums.OrgRole | null;
         };
         request?: undefined;
     } | {
@@ -107,9 +107,9 @@ export declare class UsersController {
             } | null;
             requestedPlan: {
                 id: string;
+                name: string;
                 createdAt: Date;
                 slug: string;
-                name: string;
                 priceMonthlyCents: number;
                 dailyAuditLimit: number | null;
                 monthlyAuditLimit: number | null;
@@ -122,15 +122,15 @@ export declare class UsersController {
             };
             reviewedBy: {
                 id: string;
-                name: string | null;
                 email: string;
+                name: string | null;
             } | null;
         } & {
-            status: import(".prisma/client").$Enums.PlanRequestStatus;
             id: string;
             createdAt: Date;
-            userId: string;
             organizationId: string | null;
+            userId: string;
+            status: import(".prisma/client").$Enums.PlanRequestStatus;
             note: string | null;
             reviewedAt: Date | null;
             requestedPlanId: string;
@@ -145,9 +145,9 @@ export declare class UsersController {
         } | null;
         requestedPlan: {
             id: string;
+            name: string;
             createdAt: Date;
             slug: string;
-            name: string;
             priceMonthlyCents: number;
             dailyAuditLimit: number | null;
             monthlyAuditLimit: number | null;
@@ -160,15 +160,15 @@ export declare class UsersController {
         };
         reviewedBy: {
             id: string;
-            name: string | null;
             email: string;
+            name: string | null;
         } | null;
     } & {
-        status: import(".prisma/client").$Enums.PlanRequestStatus;
         id: string;
         createdAt: Date;
-        userId: string;
         organizationId: string | null;
+        userId: string;
+        status: import(".prisma/client").$Enums.PlanRequestStatus;
         note: string | null;
         reviewedAt: Date | null;
         requestedPlanId: string;

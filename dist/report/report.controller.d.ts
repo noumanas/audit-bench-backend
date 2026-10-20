@@ -17,9 +17,9 @@ export declare class ReportController {
         outputTokens: number;
         findings: import("@prisma/client/runtime/library").JsonValue;
         stage1: import("@prisma/client/runtime/library").JsonValue | null;
+        filename: string;
         language: string | null;
         findingStatuses: import("@prisma/client/runtime/library").JsonValue | null;
-        filename: string;
         codeSize: number;
         kind: string;
     } | {
@@ -41,13 +41,15 @@ export declare class ReportController {
         createdAt: Date;
         organizationId: string | null;
         userId: string;
+        status: import(".prisma/client").$Enums.ScanStatus;
+        updatedAt: Date;
         aiInvoked: boolean;
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
         pullRequestUrl: string | null;
         prContext: import("@prisma/client/runtime/library").JsonValue | null;
         repoRef: import("@prisma/client/runtime/library").JsonValue | null;
-        status: import(".prisma/client").$Enums.ScanStatus;
+        prSnapshot: import("@prisma/client/runtime/library").JsonValue | null;
         provider: string;
         framework: string | null;
         fileCount: number;
@@ -72,7 +74,6 @@ export declare class ReportController {
         isPublic: boolean;
         localOnly: boolean;
         requesterIpHash: string | null;
-        updatedAt: Date;
         completedAt: Date | null;
         kind: string;
     }>;

@@ -25,13 +25,15 @@ export declare class GitlabController {
         createdAt: Date;
         organizationId: string | null;
         userId: string;
+        status: import(".prisma/client").$Enums.ScanStatus;
+        updatedAt: Date;
         aiInvoked: boolean;
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
         pullRequestUrl: string | null;
         prContext: import("@prisma/client/runtime/library").JsonValue | null;
         repoRef: import("@prisma/client/runtime/library").JsonValue | null;
-        status: import(".prisma/client").$Enums.ScanStatus;
+        prSnapshot: import("@prisma/client/runtime/library").JsonValue | null;
         provider: string;
         framework: string | null;
         fileCount: number;
@@ -56,7 +58,6 @@ export declare class GitlabController {
         isPublic: boolean;
         localOnly: boolean;
         requesterIpHash: string | null;
-        updatedAt: Date;
         completedAt: Date | null;
     }>;
     reviewMr(user: RequestUser, dto: ReviewMrDto): Promise<{
@@ -65,13 +66,15 @@ export declare class GitlabController {
         createdAt: Date;
         organizationId: string | null;
         userId: string;
+        status: import(".prisma/client").$Enums.ScanStatus;
+        updatedAt: Date;
         aiInvoked: boolean;
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
         pullRequestUrl: string | null;
         prContext: import("@prisma/client/runtime/library").JsonValue | null;
         repoRef: import("@prisma/client/runtime/library").JsonValue | null;
-        status: import(".prisma/client").$Enums.ScanStatus;
+        prSnapshot: import("@prisma/client/runtime/library").JsonValue | null;
         provider: string;
         framework: string | null;
         fileCount: number;
@@ -96,7 +99,6 @@ export declare class GitlabController {
         isPublic: boolean;
         localOnly: boolean;
         requesterIpHash: string | null;
-        updatedAt: Date;
         completedAt: Date | null;
     }>;
 }

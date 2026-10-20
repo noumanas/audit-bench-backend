@@ -19,6 +19,8 @@ const repository_service_1 = require("../repository/repository.service");
 const connect_github_dto_1 = require("./dto/connect-github.dto");
 const scan_repo_dto_1 = require("./dto/scan-repo.dto");
 const review_pr_dto_1 = require("./dto/review-pr.dto");
+const review_pr_url_dto_1 = require("./dto/review-pr-url.dto");
+const github_url_1 = require("../common/github-url");
 const jwt_auth_guard_1 = require("../auth/jwt-auth.guard");
 const current_user_decorator_1 = require("../auth/current-user.decorator");
 let GithubController = class GithubController {
@@ -56,14 +58,52 @@ let GithubController = class GithubController {
         return this.repositoryService.createScanJobFromBuffer(user, zipBuffer, `${dto.owner}/${dto.repo}`, dto.provider, 'github_repo', { kind: 'github', owner: dto.owner, repo: dto.repo, ref, defaultBranch }, contributorStats);
     }
     async reviewPr(user, dto) {
-        const { files, url, headSha, headRef, baseRef } = await this.githubService.fetchPrFiles(user.id, dto.owner, dto.repo, dto.pullNumber);
+        const { files, url, headSha, headRef, baseRef, snapshot } = await this.githubService.fetchPrFiles(user.id, dto.owner, dto.repo, dto.pullNumber, { withSnapshot: true });
         return this.repositoryService.createDiffReview(user, files, {
             sourceName: `${dto.owner}/${dto.repo}#${dto.pullNumber}`,
             sourceType: 'github_pr',
             pullRequestUrl: url,
             provider: dto.provider,
-            prContext: { kind: 'github', owner: dto.owner, repo: dto.repo, pullNumber: dto.pullNumber, headSha, headRef, baseRef },
+            prContext: {
+                kind: 'github',
+                owner: dto.owner,
+                repo: dto.repo,
+                pullNumber: dto.pullNumber,
+                headSha,
+                headRef,
+                baseRef,
+            },
+        }, { prSnapshot: snapshot });
+    }
+    async reviewPrByUrl(user, dto) {
+        const parsed = (0, github_url_1.parseGithubPrUrl)(dto.prUrl);
+        if (!parsed) {
+            throw new common_1.BadRequestException('Paste a GitHub pull request link, like https://github.com/owner/repo/pull/123');
+        }
+        const { owner, repo, number } = parsed;
+        const { files, url, headSha, headRef, baseRef, snapshot } = await this.githubService.fetchPrFiles(user.id, owner, repo, number, {
+            withSnapshot: true,
         });
+        if (dto.postToGithub && snapshot && snapshot.state !== 'open') {
+            throw new common_1.BadRequestException(`${owner}/${repo}#${number} is already ${snapshot.merged ? 'merged' : 'closed'}, so a review comment wouldn't help. Turn off "Post on GitHub" to review it in the app.`);
+        }
+        return this.repositoryService.createDiffReview(user, files, {
+            sourceName: `${owner}/${repo}#${number}`,
+            sourceType: 'github_pr',
+            pullRequestUrl: url,
+            provider: dto.provider,
+            prContext: dto.postToGithub
+                ? {
+                    kind: 'github',
+                    owner,
+                    repo,
+                    pullNumber: number,
+                    headSha,
+                    headRef,
+                    baseRef,
+                }
+                : undefined,
+        }, { prSnapshot: snapshot });
     }
 };
 exports.GithubController = GithubController;
@@ -130,6 +170,14 @@ __decorate([
     __metadata("design:paramtypes", [Object, review_pr_dto_1.ReviewPrDto]),
     __metadata("design:returntype", Promise)
 ], GithubController.prototype, "reviewPr", null);
+__decorate([
+    (0, common_1.Post)('pr-url'),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, review_pr_url_dto_1.ReviewPrUrlDto]),
+    __metadata("design:returntype", Promise)
+], GithubController.prototype, "reviewPrByUrl", null);
 exports.GithubController = GithubController = __decorate([
     (0, common_1.Controller)('github'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),

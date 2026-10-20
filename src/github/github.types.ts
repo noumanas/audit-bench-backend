@@ -1,3 +1,4 @@
+import { PrSnapshot } from '../common/merge-readiness';
 import { LineRange } from '../common/diff-ranges';
 
 export interface GithubRepoSummary {
@@ -35,4 +36,6 @@ export interface GithubPrDetails {
   url: string;
   headRef: string;
   baseRef: string;
+  /** Merge state and CI checks — only when fetchPrFiles is asked for it. */
+  snapshot?: PrSnapshot;
 }

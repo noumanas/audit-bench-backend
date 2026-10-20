@@ -26,6 +26,7 @@ import { LlmProviderName, ZERO_USAGE, addUsage } from '../common/types';
 import { worstVerdict } from '../common/verdict';
 import { Prisma, ScanSourceType } from '@prisma/client';
 import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
+import { PrSnapshot, assessMergeReadiness, readinessForScan } from '../common/merge-readiness';
 import { PrContext, PrFeedback } from '../pr-feedback/pr-feedback.types';
 import { FindingStatus, FindingStatuses, FINDING_STATUSES } from '../common/finding.schema';
 import { RepoRef } from '../common/repo-ref.types';
@@ -55,6 +56,8 @@ export interface ScanOptions {
   isPublic?: boolean;
   shareId?: string;
   requesterIpHash?: string;
+  /** GitHub PR reviews — merge state and CI checks, see common/merge-readiness.ts. */
+  prSnapshot?: PrSnapshot;
 }
 
 interface JobDataBase {
@@ -63,6 +66,7 @@ interface JobDataBase {
   isPublic?: boolean;
   shareId?: string;
   requesterIpHash?: string;
+  prSnapshot?: Prisma.InputJsonValue;
   sourceType: ScanSourceType;
   pullRequestUrl?: string;
   prContext?: Prisma.InputJsonValue;
@@ -183,11 +187,14 @@ export class RepositoryService {
       /** Set so processScan can publish the review/summary/status back once the scan completes. */
       prContext?: PrContext;
     },
+    opts: ScanOptions = {},
   ) {
-    await this.quota.assertCanScanNewRepository(
-      actor.id,
-      deriveRepoKey({ sourceName: meta.sourceName, prContext: meta.prContext }),
-    );
+    if (!opts.skipQuota) {
+      await this.quota.assertCanScanNewRepository(
+        actor.id,
+        deriveRepoKey({ sourceName: meta.sourceName, prContext: meta.prContext }),
+      );
+    }
 
     const providerName = this.llm.resolveProvider(meta.provider);
     const maxFileSize = this.config.get<number>('MAX_FILE_SIZE_BYTES') || 200_000;
@@ -210,9 +217,21 @@ export class RepositoryService {
       prContext: meta.prContext as unknown as Prisma.InputJsonValue,
       fileCount: analyzable.length,
       secrets: secrets as unknown as Prisma.InputJsonValue,
+      localOnly: opts.localOnly,
+      isPublic: opts.isPublic,
+      shareId: opts.shareId,
+      requesterIpHash: opts.requesterIpHash,
+      // Counted here, after the language and size filter, so "not reviewed" is accurate.
+      prSnapshot: opts.prSnapshot
+        ? ({
+            ...opts.prSnapshot,
+            filesReviewed: analyzable.length,
+            filesSkipped: Math.max(opts.prSnapshot.changedFiles - analyzable.length, 0),
+          } as unknown as Prisma.InputJsonValue)
+        : undefined,
     });
 
-    void this.processScan(job.id, analyzable, providerName, repoContext);
+    void this.processScan(job.id, analyzable, providerName, repoContext, Boolean(opts.localOnly));
     return job;
   }
 
@@ -400,6 +419,15 @@ export class RepositoryService {
           ),
           scanUrl: this.buildScanUrl(jobId),
         };
+        if (job.prSnapshot) {
+          const findings = { critical: 0, high: 0, medium: 0, low: 0 };
+          for (const f of feedback.findings) if (f.severity in findings) findings[f.severity as keyof typeof findings]++;
+          feedback.readiness = assessMergeReadiness(job.prSnapshot as unknown as PrSnapshot, {
+            verdict: overallVerdict,
+            findings,
+            secrets: secretsCount,
+          });
+        }
         await this.prFeedback.publish(job.userId, job.prContext as unknown as PrContext, feedback);
       }
     } catch (err) {
@@ -431,7 +459,7 @@ export class RepositoryService {
     // The TDD assessment is the due diligence product — Enterprise only.
     const tddAssessment =
       riskAggregation && (await this.quota.canUseDueDiligence(actor.id, actor.role)) ? assessTdd(job, riskAggregation) : null;
-    return { ...job, riskAggregation, tddAssessment };
+    return { ...job, riskAggregation, tddAssessment, mergeReadiness: readinessForScan(job) };
   }
 
   async setFindingStatus(actor: WorkspaceActor, scanFileId: string, findingIndex: number, status: FindingStatus) {

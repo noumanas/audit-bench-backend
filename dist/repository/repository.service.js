@@ -37,6 +37,7 @@ const risk_aggregation_1 = require("./risk-aggregation");
 const types_1 = require("../common/types");
 const verdict_1 = require("../common/verdict");
 const pr_feedback_service_1 = require("../pr-feedback/pr-feedback.service");
+const merge_readiness_1 = require("../common/merge-readiness");
 const finding_schema_1 = require("../common/finding.schema");
 const repo_key_1 = require("../common/repo-key");
 const workspace_scope_1 = require("../common/workspace-scope");
@@ -115,8 +116,10 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
         void this.processScan(job.id, filesToAnalyze, providerName, repoContext, Boolean(opts.localOnly));
         return job;
     }
-    async createDiffReview(actor, files, meta) {
-        await this.quota.assertCanScanNewRepository(actor.id, (0, repo_key_1.deriveRepoKey)({ sourceName: meta.sourceName, prContext: meta.prContext }));
+    async createDiffReview(actor, files, meta, opts = {}) {
+        if (!opts.skipQuota) {
+            await this.quota.assertCanScanNewRepository(actor.id, (0, repo_key_1.deriveRepoKey)({ sourceName: meta.sourceName, prContext: meta.prContext }));
+        }
         const providerName = this.llm.resolveProvider(meta.provider);
         const maxFileSize = this.config.get('MAX_FILE_SIZE_BYTES') || 200_000;
         const maxScanFiles = this.config.get('MAX_SCAN_FILES') || 40;
@@ -135,8 +138,19 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
             prContext: meta.prContext,
             fileCount: analyzable.length,
             secrets: secrets,
+            localOnly: opts.localOnly,
+            isPublic: opts.isPublic,
+            shareId: opts.shareId,
+            requesterIpHash: opts.requesterIpHash,
+            prSnapshot: opts.prSnapshot
+                ? {
+                    ...opts.prSnapshot,
+                    filesReviewed: analyzable.length,
+                    filesSkipped: Math.max(opts.prSnapshot.changedFiles - analyzable.length, 0),
+                }
+                : undefined,
         });
-        void this.processScan(job.id, analyzable, providerName, repoContext);
+        void this.processScan(job.id, analyzable, providerName, repoContext, Boolean(opts.localOnly));
         return job;
     }
     async gateAndCreateJob(actor, files, providerName, jobDataBase) {
@@ -278,6 +292,17 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
                     }))),
                     scanUrl: this.buildScanUrl(jobId),
                 };
+                if (job.prSnapshot) {
+                    const findings = { critical: 0, high: 0, medium: 0, low: 0 };
+                    for (const f of feedback.findings)
+                        if (f.severity in findings)
+                            findings[f.severity]++;
+                    feedback.readiness = (0, merge_readiness_1.assessMergeReadiness)(job.prSnapshot, {
+                        verdict: overallVerdict,
+                        findings,
+                        secrets: secretsCount,
+                    });
+                }
                 await this.prFeedback.publish(job.userId, job.prContext, feedback);
             }
         }
@@ -302,7 +327,7 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
             throw new common_1.NotFoundException(`Scan ${id} not found`);
         const riskAggregation = job.status === 'completed' ? (0, risk_aggregation_1.aggregateRisk)(job) : null;
         const tddAssessment = riskAggregation && (await this.quota.canUseDueDiligence(actor.id, actor.role)) ? (0, tdd_assessment_1.assessTdd)(job, riskAggregation) : null;
-        return { ...job, riskAggregation, tddAssessment };
+        return { ...job, riskAggregation, tddAssessment, mergeReadiness: (0, merge_readiness_1.readinessForScan)(job) };
     }
     async setFindingStatus(actor, scanFileId, findingIndex, status) {
         if (!finding_schema_1.FINDING_STATUSES.includes(status)) {

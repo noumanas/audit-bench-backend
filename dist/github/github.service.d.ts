@@ -27,7 +27,9 @@ export declare class GithubService implements OnModuleInit, PrPublisher {
     downloadRepoZip(userId: string, owner: string, repo: string, ref?: string): Promise<Buffer>;
     fetchContributorStats(userId: string, owner: string, repo: string): Promise<ContributorStat[]>;
     private requestContributorStats;
-    fetchPrFiles(userId: string, owner: string, repo: string, pullNumber: number): Promise<GithubPrDetails>;
+    fetchPrFiles(userId: string, owner: string, repo: string, pullNumber: number, opts?: {
+        withSnapshot?: boolean;
+    }): Promise<GithubPrDetails>;
     getRepoMeta(userId: string, owner: string, repo: string): Promise<{
         defaultBranch: string;
     }>;
@@ -52,3 +54,4 @@ export declare class GithubService implements OnModuleInit, PrPublisher {
     static verifyWebhookSignature(secret: string, rawBody: Buffer, signatureHeader: string | undefined): boolean;
 }
 export declare function mapGithubContributorStats(raw: unknown[]): ContributorStat[];
+export declare function buildSummaryBody(feedback: PrFeedback): string;

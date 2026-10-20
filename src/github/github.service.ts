@@ -5,9 +5,11 @@ import { PrismaService } from '../prisma/prisma.service';
 import { GithubPrDetails, GithubPrFile, GithubPrSummary, GithubRepoSummary } from './github.types';
 import { parseChangedRanges } from '../common/diff-ranges';
 import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
-import { PrContext, PrFeedback, PrPublisher } from '../pr-feedback/pr-feedback.types';
+import { PrContext, PrFeedback, PrPublisher, REVIEW_FOOTER } from '../pr-feedback/pr-feedback.types';
 import { TokenCryptoService } from '../common/token-crypto.service';
 import { ContributorStat } from '../analysis/types';
+import { MergeReadiness } from '../common/merge-readiness';
+import { GithubPull, fetchCiChecks, refetchIfMergeabilityPending, toPrSnapshot } from '../common/github-pr-snapshot';
 
 const GITHUB_API = 'https://api.github.com';
 
@@ -204,7 +206,13 @@ export class GithubService implements OnModuleInit, PrPublisher {
    * files. Removed files and files GitHub didn't include a patch for
    * (binary, or too large) are skipped — nothing to review there.
    */
-  async fetchPrFiles(userId: string, owner: string, repo: string, pullNumber: number): Promise<GithubPrDetails> {
+  async fetchPrFiles(
+    userId: string,
+    owner: string,
+    repo: string,
+    pullNumber: number,
+    opts: { withSnapshot?: boolean } = {},
+  ): Promise<GithubPrDetails> {
     const token = await this.requireToken(userId);
 
     const prRes = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${pullNumber}`, {
@@ -214,7 +222,8 @@ export class GithubService implements OnModuleInit, PrPublisher {
       throw new NotFoundException(`PR #${pullNumber} not found in ${owner}/${repo}, or not accessible with this token`);
     }
     if (!prRes.ok) throw new BadRequestException(`GitHub rejected the request (${prRes.status})`);
-    const pr = await prRes.json();
+    let pr = (await prRes.json()) as GithubPull;
+    if (opts.withSnapshot) pr = await refetchIfMergeabilityPending(pr, this.authHeaders(token), owner, repo, pullNumber);
     const headSha: string = pr.head.sha;
 
     const filesRes = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${pullNumber}/files?per_page=100`, {
@@ -236,7 +245,18 @@ export class GithubService implements OnModuleInit, PrPublisher {
       });
     }
 
-    return { files, headSha, url: pr.html_url, headRef: pr.head.ref, baseRef: pr.base.ref };
+    const snapshot = opts.withSnapshot
+      ? toPrSnapshot(
+          pr,
+          owner,
+          repo,
+          pullNumber,
+          await fetchCiChecks(this.authHeaders(token), owner, repo, headSha),
+          files.length,
+          rawFiles.length,
+        )
+      : undefined;
+    return { files, headSha, url: pr.html_url, headRef: pr.head.ref, baseRef: pr.base.ref, snapshot };
   }
 
   /** Repo metadata needed to resolve "the ref that was scanned" when none was explicitly given. */
@@ -457,7 +477,7 @@ function severityLabel(severity: string): string {
   return icons[severity] || severity;
 }
 
-function buildSummaryBody(feedback: PrFeedback): string {
+export function buildSummaryBody(feedback: PrFeedback): string {
   const verdictLabel = { pass: '✅ Pass', needs_work: '⚠️ Needs work', do_not_ship: '⛔ Do not ship' }[feedback.verdict];
   const counts = feedback.findings.reduce<Record<string, number>>((acc, f) => {
     acc[f.severity] = (acc[f.severity] || 0) + 1;
@@ -468,15 +488,28 @@ function buildSummaryBody(feedback: PrFeedback): string {
     .map((s) => `${counts[s]} ${s}`)
     .join(', ');
 
-  const lines = [
-    `### Audit Bench Ai review — ${verdictLabel}`,
-    '',
-    feedback.summary,
-    '',
-    countLine ? `**Findings:** ${countLine}` : '_No findings — all clear._',
-  ];
+  const lines = [`### Audit Bench Ai review — ${verdictLabel}`, ''];
+  if (feedback.readiness) lines.push(...readinessLines(feedback.readiness), '');
+  lines.push(feedback.summary, '', countLine ? `**Findings:** ${countLine}` : '_No findings — all clear._');
   if (feedback.scanUrl) lines.push('', `[View full report](${feedback.scanUrl})`);
+  lines.push('', REVIEW_FOOTER);
   return lines.join('\n');
+}
+
+const READINESS_LABEL: Record<MergeReadiness['status'], string> = {
+  ready: '✅ Ready to merge',
+  ready_with_notes: '🟡 Ready to merge, with notes',
+  not_ready: '⛔ Not ready to merge',
+  merged: '🟣 Already merged',
+  closed: '⚪ Closed without merging',
+};
+
+/** Merge readiness from GitHub's state, CI and the findings — see common/merge-readiness.ts. */
+function readinessLines(readiness: MergeReadiness): string[] {
+  const lines = [`**Merge readiness: ${READINESS_LABEL[readiness.status]}**`];
+  if (readiness.blockers.length) lines.push('', '_Fix before merging:_', ...readiness.blockers.map((b) => `- ${b}`));
+  if (readiness.notes.length) lines.push('', '_Worth a look:_', ...readiness.notes.map((n) => `- ${n}`));
+  return lines;
 }
 
 /**

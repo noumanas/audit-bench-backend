@@ -1,4 +1,5 @@
 import { Verdict } from '@prisma/client';
+import { MergeReadiness } from '../common/merge-readiness';
 
 export type PrContext =
   | {
@@ -35,8 +36,14 @@ export interface PrFeedback {
   summary: string;
   findings: PrFeedbackFinding[];
   scanUrl?: string;
+  /** GitHub PR reviews with a snapshot — conflicts, CI and blockers, rendered at the top of the summary. */
+  readiness?: MergeReadiness;
 }
 
 export interface PrPublisher {
   publish(userId: string, context: Extract<PrContext, { kind: string }>, feedback: PrFeedback): Promise<void>;
 }
+
+/** Signs every review summary, so readers of the PR know where it came from. */
+export const REVIEW_FOOTER =
+  '<sub>Reviewed by [Audit Bench Ai](https://auditbenchai.com/?utm_source=pr_review&utm_medium=comment) · AI code review for security, logic and performance · [Review any public PR free](https://auditbenchai.com/scan?utm_source=pr_review&utm_medium=comment)</sub>';

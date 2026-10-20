@@ -9,12 +9,18 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RepositoryService } from '../repository/repository.service';
 import { aggregateRisk } from '../repository/risk-aggregation';
 import { mapGithubContributorStats } from '../github/github.service';
 import { WorkspaceActor, canViewResource } from '../common/workspace-scope';
-import { parseGithubRepoUrl } from './github-url';
+import { parseGithubPrUrl, parseGithubRepoUrl } from '../common/github-url';
+import { parseChangedRanges } from '../common/diff-ranges';
+import { ANALYZABLE_EXTENSIONS } from '../common/language';
+import { ScannedFile } from '../analysis/types';
+import { PrSnapshot, readinessForScan } from '../common/merge-readiness';
+import { GithubPull, fetchCiChecks, refetchIfMergeabilityPending, toPrSnapshot } from '../common/github-pr-snapshot';
 
 const GITHUB_API = 'https://api.github.com';
 const SYSTEM_EMAIL = 'public-scans@system.auditbenchai.local';
@@ -22,6 +28,9 @@ const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 /** GitHub reports repo size in KB. Bigger repos take too long for a free scan. */
 const MAX_REPO_KB = 250 * 1024;
+/** Changed files read for a free PR review — one page of GitHub's files list. */
+const MAX_PR_FILES = 40;
+const MAX_PR_FILE_BYTES = 200_000;
 
 /**
  * Free, anonymous scans of public GitHub repositories from the marketing
@@ -74,9 +83,13 @@ export class PublicScanService {
   }
 
   async startScan(repoUrl: string, ip: string): Promise<{ shareId: string; reused: boolean }> {
+    const pr = parseGithubPrUrl(repoUrl);
+    if (pr) return this.startPrReview(pr.owner, pr.repo, pr.number, ip);
     const parsed = parseGithubRepoUrl(repoUrl);
     if (!parsed) {
-      throw new BadRequestException('Enter a public GitHub repository, like https://github.com/owner/repo');
+      throw new BadRequestException(
+        'Enter a public GitHub repository or pull request, like https://github.com/owner/repo/pull/123',
+      );
     }
     let { owner, repo } = parsed;
 
@@ -117,25 +130,7 @@ export class PublicScanService {
     });
     if (recent?.shareId) return { shareId: recent.shareId, reused: true };
 
-    const ipHash = this.hashIp(ip);
-    const perVisitor = this.config.get<number>('PUBLIC_SCAN_PER_HOUR') || 3;
-    const perDay = this.config.get<number>('PUBLIC_SCAN_DAILY_LIMIT') || 100;
-    const [mine, total] = await Promise.all([
-      this.prisma.scanJob.count({ where: { requesterIpHash: ipHash, createdAt: { gte: new Date(Date.now() - HOUR_MS) } } }),
-      this.prisma.scanJob.count({ where: { requesterIpHash: { not: null }, createdAt: { gte: new Date(Date.now() - DAY_MS) } } }),
-    ]);
-    if (mine >= perVisitor) {
-      throw new HttpException(
-        `You've run ${perVisitor} free scans in the last hour. Sign up free for more scans and AI review.`,
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
-    }
-    if (total >= perDay) {
-      throw new HttpException(
-        "We've hit today's limit for free public scans. Sign up free to scan now, or try again tomorrow.",
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
-    }
+    const ipHash = await this.assertWithinLimits(ip);
 
     const zipRes = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/zipball/${encodeURIComponent(ref)}`, {
       headers: this.githubHeaders(),
@@ -157,6 +152,121 @@ export class PublicScanService {
       { skipQuota: true, localOnly: true, isPublic: true, shareId, requesterIpHash: ipHash },
     );
     this.logger.log(`Public scan started for ${sourceName}@${ref} (${shareId})`);
+    return { shareId, reused: false };
+  }
+
+  /** Per-visitor hourly and site-wide daily caps, shared by repo scans and PR reviews. Returns the IP hash to store. */
+  private async assertWithinLimits(ip: string): Promise<string> {
+    const ipHash = this.hashIp(ip);
+    const perVisitor = this.config.get<number>('PUBLIC_SCAN_PER_HOUR') || 3;
+    const perDay = this.config.get<number>('PUBLIC_SCAN_DAILY_LIMIT') || 100;
+    const [mine, total] = await Promise.all([
+      this.prisma.scanJob.count({ where: { requesterIpHash: ipHash, createdAt: { gte: new Date(Date.now() - HOUR_MS) } } }),
+      this.prisma.scanJob.count({ where: { requesterIpHash: { not: null }, createdAt: { gte: new Date(Date.now() - DAY_MS) } } }),
+    ]);
+    if (mine >= perVisitor) {
+      throw new HttpException(
+        `You've run ${perVisitor} free scans in the last hour. Sign up free for more scans and AI review.`,
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+    if (total >= perDay) {
+      throw new HttpException(
+        "We've hit today's limit for free public scans. Sign up free to scan now, or try again tomorrow.",
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+    return ipHash;
+  }
+
+  /**
+   * Free review of a public pull request: local checks on the changed lines
+   * only (never an AI call), plus GitHub's own view of whether it can merge —
+   * conflicts, draft state and CI checks. Read-only: nothing is ever posted
+   * back to the PR (no prContext), so a visitor can't make us comment on
+   * someone else's repository. The share page offers the review as a comment
+   * the visitor can post themselves.
+   */
+  async startPrReview(owner: string, repo: string, number: number, ip: string): Promise<{ shareId: string; reused: boolean }> {
+    const prRes = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${number}`, { headers: this.githubHeaders() });
+    if (prRes.status === 404) {
+      throw new NotFoundException(
+        `We couldn't find pull request #${number} in ${owner}/${repo}. It may be private. Sign up free to review private PRs.`,
+      );
+    }
+    if (prRes.status === 403 || prRes.status === 429) {
+      throw new HttpException('GitHub is rate-limiting us right now. Please try again in a few minutes.', HttpStatus.SERVICE_UNAVAILABLE);
+    }
+    if (!prRes.ok) throw new BadRequestException(`GitHub rejected the request (${prRes.status})`);
+    let pr = (await prRes.json()) as GithubPull;
+    if (pr.base.repo.private) {
+      throw new ForbiddenException('That repository is private. Sign up free to review private pull requests.');
+    }
+    const sourceName = `${pr.base.repo.full_name}#${number}`;
+    [owner, repo] = pr.base.repo.full_name.split('/');
+
+    // Same PR at the same head commit reviewed in the last day: share that result.
+    const recent = await this.prisma.scanJob.findFirst({
+      where: {
+        sourceName,
+        sourceType: 'github_pr',
+        localOnly: true,
+        isPublic: true,
+        status: { not: 'failed' },
+        createdAt: { gte: new Date(Date.now() - DAY_MS) },
+        prSnapshot: { path: ['headSha'], equals: pr.head.sha },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { shareId: true },
+    });
+    if (recent?.shareId) return { shareId: recent.shareId, reused: true };
+
+    const ipHash = await this.assertWithinLimits(ip);
+
+    pr = await refetchIfMergeabilityPending(pr, this.githubHeaders(), owner, repo, number);
+
+    const filesRes = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${number}/files?per_page=100`, {
+      headers: this.githubHeaders(),
+    });
+    if (!filesRes.ok) throw new BadRequestException(`GitHub rejected the request (${filesRes.status})`);
+    const changed = (await filesRes.json()) as Array<{ filename: string; status: string; patch?: string }>;
+    const reviewable = changed
+      .filter((f) => f.status !== 'removed' && f.patch && ANALYZABLE_EXTENSIONS.has(f.filename.split('.').pop()?.toLowerCase() ?? ''))
+      .slice(0, MAX_PR_FILES);
+
+    // raw.githubusercontent.com doesn't count against the API rate limit; the
+    // head repo is the fork for a PR from one.
+    const headRepo = pr.head.repo?.full_name ?? pr.base.repo.full_name;
+    const files: ScannedFile[] = [];
+    await Promise.all(
+      reviewable.map(async (f) => {
+        const res = await fetch(`https://raw.githubusercontent.com/${headRepo}/${pr.head.sha}/${f.filename.split('/').map(encodeURIComponent).join('/')}`);
+        if (!res.ok) return;
+        const content = await res.text();
+        if (content.length > MAX_PR_FILE_BYTES) return;
+        files.push({ path: f.filename, content, changedRanges: parseChangedRanges(f.patch!) });
+      }),
+    );
+    files.sort((a, b) => a.path.localeCompare(b.path));
+
+    const checks = await fetchCiChecks(this.githubHeaders(), owner, repo, pr.head.sha);
+    const snapshot = toPrSnapshot(pr, owner, repo, number, checks, files.length, changed.length);
+
+    const shareId = crypto.randomBytes(9).toString('base64url');
+    await this.repositories.createDiffReview(
+      await this.systemActor(),
+      files,
+      { sourceName, sourceType: 'github_pr', pullRequestUrl: pr.html_url },
+      {
+        skipQuota: true,
+        localOnly: true,
+        isPublic: true,
+        shareId,
+        requesterIpHash: ipHash,
+        prSnapshot: snapshot,
+      },
+    );
+    this.logger.log(`Public PR review started for ${sourceName}@${pr.head.sha.slice(0, 7)} (${shareId})`);
     return { shareId, reused: false };
   }
 
@@ -212,8 +322,11 @@ export class PublicScanService {
       return out.charAt(0).toUpperCase() + out.slice(1);
     };
 
+    const prSnapshot = job.sourceType === 'github_pr' ? (job.prSnapshot as unknown as PrSnapshot | null) : null;
+
     let riskAggregation: ReturnType<typeof aggregateRisk> | null = null;
-    if (job.status === 'completed') {
+    // Repo-wide risk areas (dependencies, team, architecture) don't apply to a handful of changed files.
+    if (job.status === 'completed' && !prSnapshot) {
       const r = aggregateRisk(job);
       riskAggregation = {
         ...r,
@@ -230,11 +343,42 @@ export class PublicScanService {
     for (const s of secrets ?? []) secretTypes[s.rule ?? 'Secret'] = (secretTypes[s.rule ?? 'Secret'] ?? 0) + 1;
     const repoRef = (job.repoRef ?? null) as { kind?: string; owner?: string; repo?: string; ref?: string } | null;
 
+    let pullRequest: Record<string, unknown> | null = null;
+    if (prSnapshot) {
+      pullRequest = {
+        number: prSnapshot.number,
+        title: prSnapshot.title,
+        url: prSnapshot.url,
+        state: prSnapshot.state,
+        merged: prSnapshot.merged,
+        draft: prSnapshot.draft,
+        mergeable: prSnapshot.mergeable,
+        mergeableState: prSnapshot.mergeableState,
+        baseRef: prSnapshot.baseRef,
+        headRef: prSnapshot.headRef,
+        headSha: prSnapshot.headSha,
+        additions: prSnapshot.additions,
+        deletions: prSnapshot.deletions,
+        changedFiles: prSnapshot.changedFiles,
+        commits: prSnapshot.commits,
+        checks: prSnapshot.checks,
+        filesReviewed: prSnapshot.filesReviewed,
+        filesSkipped: prSnapshot.filesSkipped,
+        fetchedAt: prSnapshot.fetchedAt,
+        readiness: readinessForScan(job),
+      };
+    }
+
     return {
       shareId: job.shareId,
+      pullRequest,
       sourceName: job.sourceName,
       sourceType: job.sourceType,
-      repoUrl: repoRef?.kind === 'github' && repoRef.owner ? `https://github.com/${repoRef.owner}/${repoRef.repo}` : null,
+      repoUrl: prSnapshot
+        ? `https://github.com/${prSnapshot.owner}/${prSnapshot.repo}`
+        : repoRef?.kind === 'github' && repoRef.owner
+          ? `https://github.com/${repoRef.owner}/${repoRef.repo}`
+          : null,
       ref: repoRef?.ref ?? null,
       status: job.status,
       error: job.status === 'failed' ? 'The scan could not be completed.' : null,
@@ -262,3 +406,4 @@ export class PublicScanService {
     };
   }
 }
+

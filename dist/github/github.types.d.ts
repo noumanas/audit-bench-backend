@@ -1,3 +1,4 @@
+import { PrSnapshot } from '../common/merge-readiness';
 import { LineRange } from '../common/diff-ranges';
 export interface GithubRepoSummary {
     id: number;
@@ -31,4 +32,5 @@ export interface GithubPrDetails {
     url: string;
     headRef: string;
     baseRef: string;
+    snapshot?: PrSnapshot;
 }

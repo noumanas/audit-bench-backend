@@ -7,6 +7,7 @@ import { AuditCacheService } from '../audit/cache.service';
 import { ScannedFile, ContributorStat } from '../analysis/types';
 import { Prisma, ScanSourceType } from '@prisma/client';
 import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
+import { PrSnapshot } from '../common/merge-readiness';
 import { PrContext } from '../pr-feedback/pr-feedback.types';
 import { FindingStatus } from '../common/finding.schema';
 import { RepoRef } from '../common/repo-ref.types';
@@ -17,6 +18,7 @@ export interface ScanOptions {
     isPublic?: boolean;
     shareId?: string;
     requesterIpHash?: string;
+    prSnapshot?: PrSnapshot;
 }
 export declare class RepositoryService {
     private readonly prisma;
@@ -34,13 +36,15 @@ export declare class RepositoryService {
         createdAt: Date;
         organizationId: string | null;
         userId: string;
+        status: import(".prisma/client").$Enums.ScanStatus;
+        updatedAt: Date;
         aiInvoked: boolean;
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
         pullRequestUrl: string | null;
         prContext: Prisma.JsonValue | null;
         repoRef: Prisma.JsonValue | null;
-        status: import(".prisma/client").$Enums.ScanStatus;
+        prSnapshot: Prisma.JsonValue | null;
         provider: string;
         framework: string | null;
         fileCount: number;
@@ -65,7 +69,6 @@ export declare class RepositoryService {
         isPublic: boolean;
         localOnly: boolean;
         requesterIpHash: string | null;
-        updatedAt: Date;
         completedAt: Date | null;
     }>;
     createScanJobFromBuffer(actor: WorkspaceActor, zipBuffer: Buffer, sourceName: string, provider?: string, sourceType?: ScanSourceType, repoRef?: RepoRef, contributorStats?: ContributorStat[], opts?: ScanOptions): Promise<{
@@ -74,13 +77,15 @@ export declare class RepositoryService {
         createdAt: Date;
         organizationId: string | null;
         userId: string;
+        status: import(".prisma/client").$Enums.ScanStatus;
+        updatedAt: Date;
         aiInvoked: boolean;
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
         pullRequestUrl: string | null;
         prContext: Prisma.JsonValue | null;
         repoRef: Prisma.JsonValue | null;
-        status: import(".prisma/client").$Enums.ScanStatus;
+        prSnapshot: Prisma.JsonValue | null;
         provider: string;
         framework: string | null;
         fileCount: number;
@@ -105,7 +110,6 @@ export declare class RepositoryService {
         isPublic: boolean;
         localOnly: boolean;
         requesterIpHash: string | null;
-        updatedAt: Date;
         completedAt: Date | null;
     }>;
     createDiffReview(actor: WorkspaceActor, files: ScannedFile[], meta: {
@@ -114,19 +118,21 @@ export declare class RepositoryService {
         pullRequestUrl: string;
         provider?: string;
         prContext?: PrContext;
-    }): Promise<{
+    }, opts?: ScanOptions): Promise<{
         error: string | null;
         id: string;
         createdAt: Date;
         organizationId: string | null;
         userId: string;
+        status: import(".prisma/client").$Enums.ScanStatus;
+        updatedAt: Date;
         aiInvoked: boolean;
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
         pullRequestUrl: string | null;
         prContext: Prisma.JsonValue | null;
         repoRef: Prisma.JsonValue | null;
-        status: import(".prisma/client").$Enums.ScanStatus;
+        prSnapshot: Prisma.JsonValue | null;
         provider: string;
         framework: string | null;
         fileCount: number;
@@ -151,7 +157,6 @@ export declare class RepositoryService {
         isPublic: boolean;
         localOnly: boolean;
         requesterIpHash: string | null;
-        updatedAt: Date;
         completedAt: Date | null;
     }>;
     private gateAndCreateJob;
@@ -163,6 +168,7 @@ export declare class RepositoryService {
     }, id: string): Promise<{
         riskAggregation: import("./risk-aggregation").RiskAggregation | null;
         tddAssessment: import("./tdd-assessment").TddAssessment | null;
+        mergeReadiness: import("../common/merge-readiness").MergeReadiness | null;
         files: {
             id: string;
             createdAt: Date;
@@ -181,13 +187,15 @@ export declare class RepositoryService {
         createdAt: Date;
         organizationId: string | null;
         userId: string;
+        status: import(".prisma/client").$Enums.ScanStatus;
+        updatedAt: Date;
         aiInvoked: boolean;
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
         pullRequestUrl: string | null;
         prContext: Prisma.JsonValue | null;
         repoRef: Prisma.JsonValue | null;
-        status: import(".prisma/client").$Enums.ScanStatus;
+        prSnapshot: Prisma.JsonValue | null;
         provider: string;
         framework: string | null;
         fileCount: number;
@@ -212,7 +220,6 @@ export declare class RepositoryService {
         isPublic: boolean;
         localOnly: boolean;
         requesterIpHash: string | null;
-        updatedAt: Date;
         completedAt: Date | null;
     }>;
     setFindingStatus(actor: WorkspaceActor, scanFileId: string, findingIndex: number, status: FindingStatus): Promise<{
@@ -234,13 +241,15 @@ export declare class RepositoryService {
         createdAt: Date;
         organizationId: string | null;
         userId: string;
+        status: import(".prisma/client").$Enums.ScanStatus;
+        updatedAt: Date;
         aiInvoked: boolean;
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
         pullRequestUrl: string | null;
         prContext: Prisma.JsonValue | null;
         repoRef: Prisma.JsonValue | null;
-        status: import(".prisma/client").$Enums.ScanStatus;
+        prSnapshot: Prisma.JsonValue | null;
         provider: string;
         framework: string | null;
         fileCount: number;
@@ -265,7 +274,6 @@ export declare class RepositoryService {
         isPublic: boolean;
         localOnly: boolean;
         requesterIpHash: string | null;
-        updatedAt: Date;
         completedAt: Date | null;
     }[]>;
 }

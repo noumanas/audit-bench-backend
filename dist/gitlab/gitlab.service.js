@@ -18,6 +18,7 @@ const config_1 = require("@nestjs/config");
 const prisma_service_1 = require("../prisma/prisma.service");
 const diff_ranges_1 = require("../common/diff-ranges");
 const pr_feedback_service_1 = require("../pr-feedback/pr-feedback.service");
+const pr_feedback_types_1 = require("../pr-feedback/pr-feedback.types");
 const gitlab_url_1 = require("../common/gitlab-url");
 const token_crypto_service_1 = require("../common/token-crypto.service");
 let GitlabService = class GitlabService {
@@ -377,6 +378,7 @@ function buildSummaryBody(feedback) {
     ];
     if (feedback.scanUrl)
         lines.push('', `[View full report](${feedback.scanUrl})`);
+    lines.push('', pr_feedback_types_1.REVIEW_FOOTER);
     return lines.join('\n');
 }
 function commitStatusFor(feedback) {
