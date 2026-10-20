@@ -8,11 +8,11 @@ export declare class ReportController {
         createdAt: Date;
         organizationId: string | null;
         userId: string;
+        summary: string;
         aiInvoked: boolean;
         fromCache: boolean;
         provider: string;
         verdict: import(".prisma/client").$Enums.Verdict;
-        summary: string;
         inputTokens: number;
         outputTokens: number;
         findings: import("@prisma/client/runtime/library").JsonValue;
@@ -26,12 +26,12 @@ export declare class ReportController {
         files: {
             id: string;
             createdAt: Date;
+            path: string;
             aiInvoked: boolean;
             fromCache: boolean;
             verdict: import(".prisma/client").$Enums.Verdict | null;
             findings: import("@prisma/client/runtime/library").JsonValue;
             stage1: import("@prisma/client/runtime/library").JsonValue | null;
-            path: string;
             scanJobId: string;
             language: string | null;
             findingStatuses: import("@prisma/client/runtime/library").JsonValue | null;
@@ -43,6 +43,7 @@ export declare class ReportController {
         userId: string;
         status: import(".prisma/client").$Enums.ScanStatus;
         updatedAt: Date;
+        summary: string | null;
         aiInvoked: boolean;
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
@@ -53,12 +54,12 @@ export declare class ReportController {
         changedRanges: import("@prisma/client/runtime/library").JsonValue | null;
         prPublishedAt: Date | null;
         prPublishError: string | null;
+        prInsights: import("@prisma/client/runtime/library").JsonValue | null;
         provider: string;
         framework: string | null;
         fileCount: number;
         filesScanned: number;
         verdict: import(".prisma/client").$Enums.Verdict | null;
-        summary: string | null;
         dependencyGraph: import("@prisma/client/runtime/library").JsonValue | null;
         circularImports: import("@prisma/client/runtime/library").JsonValue | null;
         deadCode: import("@prisma/client/runtime/library").JsonValue | null;

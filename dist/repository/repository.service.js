@@ -38,6 +38,7 @@ const types_1 = require("../common/types");
 const verdict_1 = require("../common/verdict");
 const pr_feedback_service_1 = require("../pr-feedback/pr-feedback.service");
 const merge_readiness_1 = require("../common/merge-readiness");
+const pr_insights_1 = require("../pr-feedback/pr-insights");
 const finding_schema_1 = require("../common/finding.schema");
 const repo_key_1 = require("../common/repo-key");
 const workspace_scope_1 = require("../common/workspace-scope");
@@ -254,6 +255,21 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
                     }
                 }
             }
+            let prInsights = null;
+            if (job.sourceType === 'github_pr' && job.prSnapshot && anyFreshAiInvoked && files.length) {
+                try {
+                    const { result, usage } = await this.llm.completeStructured(providerName, (0, pr_insights_1.buildInsightsPrompt)({
+                        snapshot: job.prSnapshot,
+                        files,
+                        findings: succeededByFile.flatMap(({ path, result: r }) => r.findings.map((f) => ({ path, severity: f.severity, title: f.title }))),
+                    }), pr_insights_1.prInsightsSchema);
+                    prInsights = result;
+                    totalUsage = (0, types_1.addUsage)(totalUsage, usage);
+                }
+                catch (err) {
+                    this.logger.warn(`PR insights failed for scan ${jobId}: ${err.message}`);
+                }
+            }
             let crossFileNote = '';
             if (REPO_WIDE_SOURCE_TYPES.has(job.sourceType)) {
                 const depVulnCount = Array.isArray(job.dependencyVulnerabilities) ? job.dependencyVulnerabilities.length : 0;
@@ -279,6 +295,7 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
                     inputTokens: totalUsage.inputTokens,
                     outputTokens: totalUsage.outputTokens,
                     architectureAssessment: architectureAssessment,
+                    ...(prInsights ? { prInsights: prInsights } : {}),
                     completedAt: new Date(),
                 },
             });
@@ -318,6 +335,7 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
     }
     async buildPrFeedback(jobId, scanUrl) {
         const job = await this.prisma.scanJob.findUniqueOrThrow({ where: { id: jobId }, include: { files: true } });
+        const snapshot = job.sourceType === 'github_pr' ? job.prSnapshot : null;
         const findings = job.files.flatMap((file) => (Array.isArray(file.findings) ? file.findings : []).map((f) => ({
             path: file.path,
             line: f.line,
@@ -338,6 +356,16 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
             changedRanges: (job.changedRanges ?? undefined),
             scanUrl,
             readiness: (0, merge_readiness_1.readinessForScan)(job) ?? undefined,
+            headSha: snapshot?.headSha,
+            insights: (job.prInsights ?? undefined),
+            checks: snapshot
+                ? (0, pr_insights_1.deterministicChecks)(snapshot, {
+                    findings,
+                    secrets: Array.isArray(job.secrets) ? job.secrets.length : 0,
+                    changedPaths: Object.keys((job.changedRanges ?? {})),
+                })
+                : undefined,
+            local: job.localOnly,
         };
     }
     buildScanUrl(jobId) {

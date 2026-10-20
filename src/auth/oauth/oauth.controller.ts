@@ -18,18 +18,18 @@ export class OAuthController {
   ) {}
 
   @Get("github")
-  githubAuthorize(@Res() res: Response) {
-    this.redirectToProvider("github", res);
+  githubAuthorize(@Req() req: Request, @Res() res: Response) {
+    this.redirectToProvider("github", req, res);
   }
 
   @Get("gitlab")
-  gitlabAuthorize(@Res() res: Response) {
-    this.redirectToProvider("gitlab", res);
+  gitlabAuthorize(@Req() req: Request, @Res() res: Response) {
+    this.redirectToProvider("gitlab", req, res);
   }
 
   @Get("google")
-  googleAuthorize(@Res() res: Response) {
-    this.redirectToProvider("google", res);
+  googleAuthorize(@Req() req: Request, @Res() res: Response) {
+    this.redirectToProvider("google", req, res);
   }
 
   @Get("github/callback")
@@ -69,7 +69,26 @@ export class OAuthController {
     return this.authService.buildSession(user);
   }
 
-  private redirectToProvider(provider: OAuthProvider, res: Response) {
+  private redirectToProvider(
+    provider: OAuthProvider,
+    req: Request,
+    res: Response,
+  ) {
+    // The state cookie only comes back if the provider returns the browser
+    // to the same host that set it. If sign-in started on another address
+    // for this API (say the Cloud Run URL, while BACKEND_ORIGIN — the
+    // registered callback — is api.auditbenchai.com), hop to the callback's
+    // host first; otherwise every login fails as "interrupted or expired".
+    const callbackHost = new URL(this.oauthService.redirectUri(provider)).host;
+    const requestHost = req.get("host");
+    if (requestHost && requestHost !== callbackHost) {
+      res.redirect(
+        new URL(`/auth/${provider}`, this.oauthService.redirectUri(provider))
+          .href,
+      );
+      return;
+    }
+
     // CSRF guard for the callback: a random value round-tripped through the
     // provider's redirect must match what we stashed in an httpOnly cookie
     // before sending the browser away.

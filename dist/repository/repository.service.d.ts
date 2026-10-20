@@ -38,6 +38,7 @@ export declare class RepositoryService {
         userId: string;
         status: import(".prisma/client").$Enums.ScanStatus;
         updatedAt: Date;
+        summary: string | null;
         aiInvoked: boolean;
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
@@ -48,12 +49,12 @@ export declare class RepositoryService {
         changedRanges: Prisma.JsonValue | null;
         prPublishedAt: Date | null;
         prPublishError: string | null;
+        prInsights: Prisma.JsonValue | null;
         provider: string;
         framework: string | null;
         fileCount: number;
         filesScanned: number;
         verdict: import(".prisma/client").$Enums.Verdict | null;
-        summary: string | null;
         dependencyGraph: Prisma.JsonValue | null;
         circularImports: Prisma.JsonValue | null;
         deadCode: Prisma.JsonValue | null;
@@ -82,6 +83,7 @@ export declare class RepositoryService {
         userId: string;
         status: import(".prisma/client").$Enums.ScanStatus;
         updatedAt: Date;
+        summary: string | null;
         aiInvoked: boolean;
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
@@ -92,12 +94,12 @@ export declare class RepositoryService {
         changedRanges: Prisma.JsonValue | null;
         prPublishedAt: Date | null;
         prPublishError: string | null;
+        prInsights: Prisma.JsonValue | null;
         provider: string;
         framework: string | null;
         fileCount: number;
         filesScanned: number;
         verdict: import(".prisma/client").$Enums.Verdict | null;
-        summary: string | null;
         dependencyGraph: Prisma.JsonValue | null;
         circularImports: Prisma.JsonValue | null;
         deadCode: Prisma.JsonValue | null;
@@ -132,6 +134,7 @@ export declare class RepositoryService {
         userId: string;
         status: import(".prisma/client").$Enums.ScanStatus;
         updatedAt: Date;
+        summary: string | null;
         aiInvoked: boolean;
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
@@ -142,12 +145,12 @@ export declare class RepositoryService {
         changedRanges: Prisma.JsonValue | null;
         prPublishedAt: Date | null;
         prPublishError: string | null;
+        prInsights: Prisma.JsonValue | null;
         provider: string;
         framework: string | null;
         fileCount: number;
         filesScanned: number;
         verdict: import(".prisma/client").$Enums.Verdict | null;
-        summary: string | null;
         dependencyGraph: Prisma.JsonValue | null;
         circularImports: Prisma.JsonValue | null;
         deadCode: Prisma.JsonValue | null;
@@ -190,12 +193,12 @@ export declare class RepositoryService {
         files: {
             id: string;
             createdAt: Date;
+            path: string;
             aiInvoked: boolean;
             fromCache: boolean;
             verdict: import(".prisma/client").$Enums.Verdict | null;
             findings: Prisma.JsonValue;
             stage1: Prisma.JsonValue | null;
-            path: string;
             scanJobId: string;
             language: string | null;
             findingStatuses: Prisma.JsonValue | null;
@@ -207,6 +210,7 @@ export declare class RepositoryService {
         userId: string;
         status: import(".prisma/client").$Enums.ScanStatus;
         updatedAt: Date;
+        summary: string | null;
         aiInvoked: boolean;
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
@@ -217,12 +221,12 @@ export declare class RepositoryService {
         changedRanges: Prisma.JsonValue | null;
         prPublishedAt: Date | null;
         prPublishError: string | null;
+        prInsights: Prisma.JsonValue | null;
         provider: string;
         framework: string | null;
         fileCount: number;
         filesScanned: number;
         verdict: import(".prisma/client").$Enums.Verdict | null;
-        summary: string | null;
         dependencyGraph: Prisma.JsonValue | null;
         circularImports: Prisma.JsonValue | null;
         deadCode: Prisma.JsonValue | null;
@@ -246,12 +250,12 @@ export declare class RepositoryService {
     setFindingStatus(actor: WorkspaceActor, scanFileId: string, findingIndex: number, status: FindingStatus): Promise<{
         id: string;
         createdAt: Date;
+        path: string;
         aiInvoked: boolean;
         fromCache: boolean;
         verdict: import(".prisma/client").$Enums.Verdict | null;
         findings: Prisma.JsonValue;
         stage1: Prisma.JsonValue | null;
-        path: string;
         scanJobId: string;
         language: string | null;
         findingStatuses: Prisma.JsonValue | null;
@@ -264,6 +268,7 @@ export declare class RepositoryService {
         userId: string;
         status: import(".prisma/client").$Enums.ScanStatus;
         updatedAt: Date;
+        summary: string | null;
         aiInvoked: boolean;
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
@@ -274,12 +279,12 @@ export declare class RepositoryService {
         changedRanges: Prisma.JsonValue | null;
         prPublishedAt: Date | null;
         prPublishError: string | null;
+        prInsights: Prisma.JsonValue | null;
         provider: string;
         framework: string | null;
         fileCount: number;
         filesScanned: number;
         verdict: import(".prisma/client").$Enums.Verdict | null;
-        summary: string | null;
         dependencyGraph: Prisma.JsonValue | null;
         circularImports: Prisma.JsonValue | null;
         deadCode: Prisma.JsonValue | null;

@@ -5,6 +5,7 @@ import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
 import { PrContext, PrFeedback, PrPublisher } from '../pr-feedback/pr-feedback.types';
 import { TokenCryptoService } from '../common/token-crypto.service';
 import { ContributorStat } from '../analysis/types';
+import { buildSummaryBody } from '../pr-feedback/summary-comment';
 export declare class GithubService implements OnModuleInit, PrPublisher {
     private readonly prisma;
     private readonly prFeedback;
@@ -60,10 +61,6 @@ export declare class GithubService implements OnModuleInit, PrPublisher {
     static verifyWebhookSignature(secret: string, rawBody: Buffer, signatureHeader: string | undefined): boolean;
 }
 export declare function mapGithubContributorStats(raw: unknown[]): ContributorStat[];
-export declare function buildSummaryBody(feedback: PrFeedback, opts?: {
-    posted?: number;
-    headSha?: string;
-}): string;
 export declare function explainPostFailure(status: number, message: string): string;
 export interface GithubReviewComment {
     id: number;
@@ -79,3 +76,4 @@ export interface GithubReviewComment {
         login: string;
     } | null;
 }
+export { buildSummaryBody };

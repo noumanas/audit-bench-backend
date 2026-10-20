@@ -9,9 +9,8 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.GithubService = void 0;
+exports.buildSummaryBody = exports.GithubService = void 0;
 exports.mapGithubContributorStats = mapGithubContributorStats;
-exports.buildSummaryBody = buildSummaryBody;
 exports.explainPostFailure = explainPostFailure;
 const common_1 = require("@nestjs/common");
 const git_host_errors_1 = require("../common/git-host-errors");
@@ -19,9 +18,10 @@ const crypto = require("crypto");
 const prisma_service_1 = require("../prisma/prisma.service");
 const diff_ranges_1 = require("../common/diff-ranges");
 const pr_feedback_service_1 = require("../pr-feedback/pr-feedback.service");
-const pr_feedback_types_1 = require("../pr-feedback/pr-feedback.types");
 const inline_comment_1 = require("../pr-feedback/inline-comment");
 const token_crypto_service_1 = require("../common/token-crypto.service");
+const summary_comment_1 = require("../pr-feedback/summary-comment");
+Object.defineProperty(exports, "buildSummaryBody", { enumerable: true, get: function () { return summary_comment_1.buildSummaryBody; } });
 const github_pr_snapshot_1 = require("../common/github-pr-snapshot");
 const GITHUB_API = 'https://api.github.com';
 let GithubService = class GithubService {
@@ -320,7 +320,7 @@ let GithubService = class GithubService {
             headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 commit_id: headSha,
-                body: buildSummaryBody(feedback, { posted: comments.length, headSha }),
+                body: (0, summary_comment_1.buildSummaryBody)(feedback, { posted: comments.length, headSha }),
                 event: 'COMMENT',
                 comments,
             }),
@@ -331,7 +331,7 @@ let GithubService = class GithubService {
         const fallback = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/issues/${pullNumber}/comments`, {
             method: 'POST',
             headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
-            body: JSON.stringify({ body: buildSummaryBody(feedback, { posted: 0, headSha }) }),
+            body: JSON.stringify({ body: (0, summary_comment_1.buildSummaryBody)(feedback, { posted: 0, headSha }) }),
         });
         if (fallback.ok)
             return;
@@ -457,49 +457,6 @@ function mapGithubContributorStats(raw) {
     })
         .sort((a, b) => b.commits - a.commits);
 }
-function buildSummaryBody(feedback, opts = {}) {
-    const verdictLabel = { pass: '✅ Pass', needs_work: '⚠️ Needs work', do_not_ship: '⛔ Do not ship' }[feedback.verdict];
-    const counts = feedback.findings.reduce((acc, f) => {
-        acc[f.severity] = (acc[f.severity] || 0) + 1;
-        return acc;
-    }, {});
-    const countLine = ['critical', 'high', 'medium', 'low']
-        .filter((s) => counts[s])
-        .map((s) => `${counts[s]} ${s}`)
-        .join(', ');
-    const lines = [`### Audit Bench Ai review — ${verdictLabel}`, ''];
-    if (feedback.requestedBy)
-        lines.push(`_Review requested by @${feedback.requestedBy}._`, '');
-    if (opts.posted !== undefined)
-        lines.push(`**Actionable comments posted: ${opts.posted}**`, '');
-    if (feedback.readiness)
-        lines.push(...readinessLines(feedback.readiness), '');
-    lines.push(countLine ? `**Findings:** ${countLine}` : '_No findings — all clear._');
-    if (feedback.findings.length) {
-        lines.push('', '---', '', '<details>', '<summary>🤖 Prompt to fix review comments</summary>', '', '````text', 'Verify each finding against the current code and only fix it if it still applies.', '', ...feedback.findings.slice(0, 50).flatMap((f) => [
-            `In \`@${f.path}\`${f.line ? ` around ${f.endLine && f.endLine > f.line ? `lines ${f.line} - ${f.endLine}` : `line ${f.line}`}` : ''}: ${f.title}. ${f.description}${f.suggestedFix ? ` Suggested fix: ${f.suggestedFix}` : ''}`,
-            '',
-        ]), '````', '', '</details>');
-    }
-    const info = [
-        opts.headSha ? `- **Commit:** \`${opts.headSha.slice(0, 7)}\`` : null,
-        `- **Verdict:** ${verdictLabel}`,
-        `- **Scope:** ${feedback.summary}`,
-    ].filter(Boolean);
-    lines.push('', '<details>', '<summary>ℹ️ Review info</summary>', '', ...info, '', '</details>');
-    lines.push('', '💬 Reply to any inline comment and Audit Bench Ai will recheck that code and answer in the thread. Mention `@auditbench` in the conversation to ask about the whole PR.');
-    if (feedback.scanUrl)
-        lines.push('', `[View the full report and fix with AI](${feedback.scanUrl})`);
-    lines.push('', pr_feedback_types_1.REVIEW_FOOTER);
-    return lines.join('\n');
-}
-const READINESS_LABEL = {
-    ready: '✅ Ready to merge',
-    ready_with_notes: '🟡 Ready to merge, with notes',
-    not_ready: '⛔ Not ready to merge',
-    merged: '🟣 Already merged',
-    closed: '⚪ Closed without merging',
-};
 async function githubErrorMessage(res) {
     try {
         const body = (await res.json());
@@ -522,14 +479,6 @@ function explainPostFailure(status, message) {
         return `${base} The token can't write to this repository. Check its scopes (repo or public_repo) and that it can access the repository.`;
     }
     return base;
-}
-function readinessLines(readiness) {
-    const lines = [`**Merge readiness: ${READINESS_LABEL[readiness.status]}**`];
-    if (readiness.blockers.length)
-        lines.push('', '_Fix before merging:_', ...readiness.blockers.map((b) => `- ${b}`));
-    if (readiness.notes.length)
-        lines.push('', '_Worth a look:_', ...readiness.notes.map((n) => `- ${n}`));
-    return lines;
 }
 function commitStatusFor(feedback) {
     if (feedback.verdict === 'do_not_ship') {
