@@ -274,7 +274,7 @@ export class AdminUsageService {
         where: { userId },
         orderBy: { createdAt: 'desc' },
         take: 8,
-        select: { id: true, sourceName: true, sourceType: true, status: true, verdict: true, provider: true, aiInvoked: true, inputTokens: true, outputTokens: true, createdAt: true },
+        select: { id: true, sourceName: true, sourceType: true, status: true, verdict: true, provider: true, aiInvoked: true, inputTokens: true, outputTokens: true, createdAt: true, prContext: true, prPublishedAt: true, prPublishError: true },
       }),
       this.prisma.planRequest.findMany({
         where: { userId },
@@ -335,6 +335,9 @@ export class AdminUsageService {
           usedAi: s.aiInvoked,
           tokens: s.inputTokens + s.outputTokens,
           createdAt: s.createdAt,
+          // PR/MR reviews that post back: did the comment reach the pull request?
+          posted: s.prContext ? (s.prPublishedAt ? 'posted' : s.prPublishError ? 'failed' : 'unknown') : null,
+          postError: s.prPublishError,
         })),
       ]
         .sort((x, y) => y.createdAt.getTime() - x.createdAt.getTime())

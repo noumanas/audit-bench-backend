@@ -8,7 +8,7 @@ import { LineRange } from '../common/diff-ranges';
 import { runStage1 } from './stage1/run-stage1';
 import { stage1ToFindings } from './stage1/to-findings';
 import { filterStage1ToRanges } from './stage1/filter-to-ranges';
-import { buildFocusedPrompt } from './stage2/focused-prompt';
+import { buildDiffPrompt, buildFocusedPrompt } from './stage2/focused-prompt';
 
 export interface PipelineInput {
   filename: string;
@@ -72,6 +72,11 @@ export class PipelineService {
     let result: CachedAuditResult;
     let usage: TokenUsage = ZERO_USAGE;
 
+    // A PR/MR review sends its changed hunks to the AI whatever Stage 1
+    // found: Stage 1 only flags JavaScript/TypeScript functions and Python
+    // errors, so gating on it left most PRs (Java, Go, Kotlin…) unreviewed.
+    const diffReview = !input.localOnly && Boolean(input.changedLineRanges?.length);
+
     if (!stage1.clean && input.localOnly) {
       return {
         result: {
@@ -86,7 +91,7 @@ export class PipelineService {
       };
     }
 
-    if (stage1.clean) {
+    if (stage1.clean && !diffReview) {
       result = {
         verdict: verdictForSeverities(baseFindings),
         summary:
@@ -100,14 +105,23 @@ export class PipelineService {
     } else {
       await opts.beforeAiCall?.();
 
-      const prompt = buildFocusedPrompt({
-        filename: input.filename,
-        language: input.language,
-        riskyFunctions: stage1.riskyFunctions,
-        allFunctions: stage1.functions,
-        repoContext: input.repoContext,
-        focusAreas: input.focusAreas,
-      });
+      const prompt = diffReview
+        ? buildDiffPrompt({
+            filename: input.filename,
+            language: input.language,
+            code: input.code,
+            changedRanges: input.changedLineRanges!,
+            repoContext: input.repoContext,
+            focusAreas: input.focusAreas,
+          })
+        : buildFocusedPrompt({
+            filename: input.filename,
+            language: input.language,
+            riskyFunctions: stage1.riskyFunctions,
+            allFunctions: stage1.functions,
+            repoContext: input.repoContext,
+            focusAreas: input.focusAreas,
+          });
 
       const first = await this.llm.completeStructured<AuditResult>(input.provider, prompt, auditResultSchema);
       let aiResult = first.result;

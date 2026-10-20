@@ -56,6 +56,12 @@ export class RepositoryController {
     return this.repositoryService.findOne(user, id);
   }
 
+  /** Posts a finished PR review to GitHub/GitLab again — after reconnecting a token that was refused, say. */
+  @Post(':id/publish')
+  republish(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.repositoryService.republishPrFeedback(user, id);
+  }
+
   @Patch('scan-files/:scanFileId/findings/:index')
   setFindingStatus(
     @CurrentUser() user: RequestUser,

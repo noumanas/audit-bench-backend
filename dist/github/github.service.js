@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.GithubService = void 0;
 exports.mapGithubContributorStats = mapGithubContributorStats;
 exports.buildSummaryBody = buildSummaryBody;
+exports.explainPostFailure = explainPostFailure;
 const common_1 = require("@nestjs/common");
 const git_host_errors_1 = require("../common/git-host-errors");
 const crypto = require("crypto");
@@ -316,18 +317,22 @@ let GithubService = class GithubService {
             headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 commit_id: headSha,
-                body: buildSummaryBody(feedback),
+                body: buildSummaryBody(feedback, { posted: comments.length, headSha }),
                 event: 'COMMENT',
                 comments,
             }),
         });
-        if (!res.ok) {
-            await fetch(`${GITHUB_API}/repos/${owner}/${repo}/issues/${pullNumber}/comments`, {
-                method: 'POST',
-                headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
-                body: JSON.stringify({ body: buildSummaryBody(feedback) }),
-            });
-        }
+        if (res.ok)
+            return;
+        const reviewError = await githubErrorMessage(res);
+        const fallback = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/issues/${pullNumber}/comments`, {
+            method: 'POST',
+            headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ body: buildSummaryBody(feedback, { posted: 0, headSha }) }),
+        });
+        if (fallback.ok)
+            return;
+        throw new Error(explainPostFailure(fallback.status, (await githubErrorMessage(fallback)) || reviewError));
     }
     async postCommitStatus(token, owner, repo, sha, feedback) {
         const { state, description } = commitStatusFor(feedback);
@@ -336,6 +341,63 @@ let GithubService = class GithubService {
             headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
             body: JSON.stringify({ state, description, context: 'audit/bench' }),
         });
+    }
+    async getReviewComment(userId, owner, repo, commentId) {
+        const token = await this.requireToken(userId);
+        const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/comments/${commentId}`, {
+            headers: this.authHeaders(token),
+        });
+        if (!res.ok)
+            throw (0, git_host_errors_1.gitHostRequestFailed)('GitHub', res.status);
+        return (await res.json());
+    }
+    async listReviewThread(userId, owner, repo, pullNumber, rootId) {
+        const token = await this.requireToken(userId);
+        const thread = [];
+        for (let page = 1; page <= 5; page++) {
+            const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${pullNumber}/comments?per_page=100&page=${page}`, { headers: this.authHeaders(token) });
+            if (!res.ok)
+                throw (0, git_host_errors_1.gitHostRequestFailed)('GitHub', res.status);
+            const batch = (await res.json());
+            thread.push(...batch.filter((c) => c.id === rootId || c.in_reply_to_id === rootId));
+            if (batch.length < 100)
+                break;
+        }
+        return thread.sort((a, b) => a.created_at.localeCompare(b.created_at));
+    }
+    async replyToReviewComment(userId, owner, repo, pullNumber, rootId, body) {
+        const token = await this.requireToken(userId);
+        const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${pullNumber}/comments/${rootId}/replies`, {
+            method: 'POST',
+            headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ body }),
+        });
+        if (!res.ok)
+            throw (0, git_host_errors_1.gitHostRequestFailed)('GitHub', res.status);
+    }
+    async resolveReviewThread(userId, owner, repo, pullNumber, rootId) {
+        const token = await this.requireToken(userId);
+        const graphql = async (query, variables) => {
+            const res = await fetch(`${GITHUB_API}/graphql`, {
+                method: 'POST',
+                headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query, variables }),
+            });
+            return res.ok ? (await res.json()) : { errors: [res.status] };
+        };
+        const found = await graphql(`query($owner: String!, $repo: String!, $number: Int!) {
+        repository(owner: $owner, name: $repo) { pullRequest(number: $number) {
+          reviewThreads(first: 100) { nodes { id isResolved comments(first: 1) { nodes { databaseId } } } }
+        } }
+      }`, { owner, repo, number: pullNumber });
+        const threads = found.data?.repository?.pullRequest?.reviewThreads?.nodes ?? [];
+        const thread = threads.find((t) => t.comments.nodes[0]?.databaseId === rootId);
+        if (!thread)
+            return false;
+        if (thread.isResolved)
+            return true;
+        const done = await graphql(`mutation($id: ID!) { resolveReviewThread(input: { threadId: $id }) { thread { isResolved } } }`, { id: thread.id });
+        return Boolean(done.data?.resolveReviewThread?.thread?.isResolved);
     }
     async postIssueComment(userId, owner, repo, issueNumber, body) {
         const token = await this.requireToken(userId);
@@ -380,7 +442,7 @@ function mapGithubContributorStats(raw) {
     })
         .sort((a, b) => b.commits - a.commits);
 }
-function buildSummaryBody(feedback) {
+function buildSummaryBody(feedback, opts = {}) {
     const verdictLabel = { pass: '✅ Pass', needs_work: '⚠️ Needs work', do_not_ship: '⛔ Do not ship' }[feedback.verdict];
     const counts = feedback.findings.reduce((acc, f) => {
         acc[f.severity] = (acc[f.severity] || 0) + 1;
@@ -391,11 +453,26 @@ function buildSummaryBody(feedback) {
         .map((s) => `${counts[s]} ${s}`)
         .join(', ');
     const lines = [`### Audit Bench Ai review — ${verdictLabel}`, ''];
+    if (opts.posted !== undefined)
+        lines.push(`**Actionable comments posted: ${opts.posted}**`, '');
     if (feedback.readiness)
         lines.push(...readinessLines(feedback.readiness), '');
-    lines.push(feedback.summary, '', countLine ? `**Findings:** ${countLine}` : '_No findings — all clear._');
+    lines.push(countLine ? `**Findings:** ${countLine}` : '_No findings — all clear._');
+    if (feedback.findings.length) {
+        lines.push('', '---', '', '<details>', '<summary>🤖 Prompt to fix review comments</summary>', '', '````text', 'Verify each finding against the current code and only fix it if it still applies.', '', ...feedback.findings.slice(0, 50).flatMap((f) => [
+            `In \`@${f.path}\`${f.line ? ` around ${f.endLine && f.endLine > f.line ? `lines ${f.line} - ${f.endLine}` : `line ${f.line}`}` : ''}: ${f.title}. ${f.description}${f.suggestedFix ? ` Suggested fix: ${f.suggestedFix}` : ''}`,
+            '',
+        ]), '````', '', '</details>');
+    }
+    const info = [
+        opts.headSha ? `- **Commit:** \`${opts.headSha.slice(0, 7)}\`` : null,
+        `- **Verdict:** ${verdictLabel}`,
+        `- **Scope:** ${feedback.summary}`,
+    ].filter(Boolean);
+    lines.push('', '<details>', '<summary>ℹ️ Review info</summary>', '', ...info, '', '</details>');
+    lines.push('', '💬 Reply to any inline comment and Audit Bench Ai will recheck that code and answer in the thread. Mention `@auditbench` in the conversation to ask about the whole PR.');
     if (feedback.scanUrl)
-        lines.push('', `[View full report](${feedback.scanUrl})`);
+        lines.push('', `[View the full report and fix with AI](${feedback.scanUrl})`);
     lines.push('', pr_feedback_types_1.REVIEW_FOOTER);
     return lines.join('\n');
 }
@@ -406,6 +483,29 @@ const READINESS_LABEL = {
     merged: '🟣 Already merged',
     closed: '⚪ Closed without merging',
 };
+async function githubErrorMessage(res) {
+    try {
+        const body = (await res.json());
+        return body.message ?? '';
+    }
+    catch {
+        return '';
+    }
+}
+function explainPostFailure(status, message) {
+    const base = `GitHub refused the comment (${status}${message ? `: ${message}` : ''}).`;
+    if (/personal access token/i.test(message)) {
+        return `${base} Fine-grained tokens can only comment on repositories they were granted access to. To comment on other people's public repositories, reconnect GitHub with a classic token that has the public_repo scope.`;
+    }
+    if (status === 401)
+        return `${base} The GitHub token has expired or been revoked; reconnect GitHub with a new token.`;
+    if (status === 403 && /locked|limited/i.test(message))
+        return `${base} The conversation is locked or limited to collaborators.`;
+    if (status === 403 || status === 404) {
+        return `${base} The token can't write to this repository. Check its scopes (repo or public_repo) and that it can access the repository.`;
+    }
+    return base;
+}
 function readinessLines(readiness) {
     const lines = [`**Merge readiness: ${READINESS_LABEL[readiness.status]}**`];
     if (readiness.blockers.length)

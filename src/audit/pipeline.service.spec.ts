@@ -70,6 +70,42 @@ describe('PipelineService — Stage 1 → AI escalation', () => {
     expect(usage).toEqual({ inputTokens: 0, outputTokens: 0 });
   });
 
+  it('reviews a pull request hunk with the AI even when Stage 1 is clean (e.g. a Java file)', async () => {
+    (runStage1Module.runStage1 as jest.Mock).mockResolvedValue(makeStage1({ clean: true }));
+    llm.completeStructured.mockResolvedValue({
+      result: { verdict: 'pass', summary: 'ok', findings: [] },
+      usage: { inputTokens: 80, outputTokens: 20 },
+    });
+    const code = Array.from({ length: 30 }, (_, i) => `line${i + 1}();`).join('\n');
+
+    const { result } = await pipeline.run({
+      filename: 'Service.java',
+      code,
+      provider: 'openai',
+      changedLineRanges: [{ start: 10, end: 12 }],
+    });
+
+    expect(result.aiInvoked).toBe(true);
+    const prompt: string = llm.completeStructured.mock.calls[0][1];
+    expect(prompt).toContain('reviewing a pull request');
+    expect(prompt).toContain('> 10 | line10();');
+    expect(prompt).toContain('   2 | line2();'.trimStart());
+    expect(prompt).not.toContain('line1();\n');
+  });
+
+  it('keeps a free public PR review local-only', async () => {
+    (runStage1Module.runStage1 as jest.Mock).mockResolvedValue(makeStage1({ clean: true }));
+    const { result } = await pipeline.run({
+      filename: 'Service.java',
+      code: 'x',
+      provider: 'openai',
+      changedLineRanges: [{ start: 1, end: 1 }],
+      localOnly: true,
+    });
+    expect(result.aiInvoked).toBe(false);
+    expect(llm.completeStructured).not.toHaveBeenCalled();
+  });
+
   it('escalates to a real AI call when Stage 1 flags something risky', async () => {
     (runStage1Module.runStage1 as jest.Mock).mockResolvedValue(makeStage1({ clean: false }));
     llm.completeStructured.mockResolvedValue({

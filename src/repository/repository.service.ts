@@ -26,9 +26,9 @@ import { LlmProviderName, ZERO_USAGE, addUsage } from '../common/types';
 import { worstVerdict } from '../common/verdict';
 import { Prisma, ScanSourceType } from '@prisma/client';
 import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
-import { PrSnapshot, assessMergeReadiness, readinessForScan } from '../common/merge-readiness';
+import { PrSnapshot, readinessForScan } from '../common/merge-readiness';
 import { PrContext, PrFeedback } from '../pr-feedback/pr-feedback.types';
-import { FindingStatus, FindingStatuses, FINDING_STATUSES } from '../common/finding.schema';
+import { Finding, FindingStatus, FindingStatuses, FINDING_STATUSES } from '../common/finding.schema';
 import { RepoRef } from '../common/repo-ref.types';
 import { deriveRepoKey } from '../common/repo-key';
 import { WorkspaceActor, workspaceWhere, canViewResource } from '../common/workspace-scope';
@@ -67,6 +67,7 @@ interface JobDataBase {
   shareId?: string;
   requesterIpHash?: string;
   prSnapshot?: Prisma.InputJsonValue;
+  changedRanges?: Prisma.InputJsonValue;
   sourceType: ScanSourceType;
   pullRequestUrl?: string;
   prContext?: Prisma.InputJsonValue;
@@ -215,6 +216,9 @@ export class RepositoryService {
       sourceType: meta.sourceType,
       pullRequestUrl: meta.pullRequestUrl,
       prContext: meta.prContext as unknown as Prisma.InputJsonValue,
+      changedRanges: Object.fromEntries(
+        analyzable.filter((f) => f.changedRanges).map((f) => [f.path, f.changedRanges!]),
+      ) as unknown as Prisma.InputJsonValue,
       fileCount: analyzable.length,
       secrets: secrets as unknown as Prisma.InputJsonValue,
       localOnly: opts.localOnly,
@@ -275,6 +279,7 @@ export class RepositoryService {
     for (const file of files) {
       const hash = this.cache.hashFor(file.content, providerName, [], file.changedRanges);
       if (await this.cache.exists(hash)) continue; // cached — no fresh call needed for this file
+      if (file.changedRanges?.length) return true; // PR/MR hunks always get an AI pass — see PipelineService.run
       const fullStage1 = await runStage1(file.content, file.path);
       const stage1 = file.changedRanges ? filterStage1ToRanges(fullStage1, file.changedRanges) : fullStage1;
       if (!stage1.clean) return true;
@@ -404,39 +409,7 @@ export class RepositoryService {
         },
       });
 
-      if (job.prContext) {
-        const feedback: PrFeedback = {
-          verdict: overallVerdict,
-          summary,
-          findings: succeededByFile.flatMap(({ path, result }) =>
-            result.findings.map((f) => ({
-              path,
-              line: f.line,
-              endLine: f.endLine ?? null,
-              severity: f.severity,
-              title: f.title,
-              description: f.description,
-              category: f.category,
-              rootCause: f.rootCause,
-              suggestedFix: f.suggestedFix,
-              examplePatch: f.examplePatch,
-              confidence: f.confidence,
-            })),
-          ),
-          changedRanges: Object.fromEntries(files.filter((f) => f.changedRanges).map((f) => [f.path, f.changedRanges!])),
-          scanUrl: this.buildScanUrl(jobId),
-        };
-        if (job.prSnapshot) {
-          const findings = { critical: 0, high: 0, medium: 0, low: 0 };
-          for (const f of feedback.findings) if (f.severity in findings) findings[f.severity as keyof typeof findings]++;
-          feedback.readiness = assessMergeReadiness(job.prSnapshot as unknown as PrSnapshot, {
-            verdict: overallVerdict,
-            findings,
-            secrets: secretsCount,
-          });
-        }
-        await this.prFeedback.publish(job.userId, job.prContext as unknown as PrContext, feedback);
-      }
+      if (job.prContext) await this.publishPrFeedback(jobId);
     } catch (err) {
       this.logger.error(`Scan ${jobId} failed`, err as Error);
       await this.prisma.scanJob.update({
@@ -444,6 +417,56 @@ export class RepositoryService {
         data: { status: 'failed', error: (err as Error).message, completedAt: new Date() },
       });
     }
+  }
+
+  async republishPrFeedback(actor: WorkspaceActor, id: string) {
+    const job = await this.prisma.scanJob.findUnique({ where: { id } });
+    if (!job || !canViewResource(actor, job)) throw new NotFoundException(`Scan ${id} not found`);
+    if (!job.prContext) throw new BadRequestException('This review was kept in the app, so there is nothing to post.');
+    if (job.status !== 'completed') throw new BadRequestException('Wait for the review to finish before posting it.');
+    return this.publishPrFeedback(id);
+  }
+
+  /**
+   * Posts a finished PR/MR review back to GitHub/GitLab from what's stored,
+   * and records whether that worked — so a refused comment (a fine-grained
+   * token on someone else's repo, say) shows up in the report instead of
+   * disappearing. Also behind the report's "Retry posting" button.
+   */
+  async publishPrFeedback(jobId: string): Promise<{ prPublishedAt: Date | null; prPublishError: string | null }> {
+    const job = await this.prisma.scanJob.findUniqueOrThrow({ where: { id: jobId }, include: { files: true } });
+    if (!job.prContext || job.status !== 'completed') {
+      return { prPublishedAt: job.prPublishedAt, prPublishError: job.prPublishError };
+    }
+    const findings = job.files.flatMap((file) =>
+      ((Array.isArray(file.findings) ? file.findings : []) as unknown as Finding[]).map((f) => ({
+        path: file.path,
+        line: f.line,
+        endLine: f.endLine ?? null,
+        severity: f.severity,
+        title: f.title,
+        description: f.description,
+        category: f.category,
+        rootCause: f.rootCause,
+        suggestedFix: f.suggestedFix,
+        examplePatch: f.examplePatch,
+        confidence: f.confidence,
+      })),
+    );
+    const feedback: PrFeedback = {
+      verdict: job.verdict ?? 'pass',
+      summary: job.summary ?? '',
+      findings,
+      changedRanges: (job.changedRanges ?? undefined) as PrFeedback['changedRanges'],
+      scanUrl: this.buildScanUrl(jobId),
+      readiness: readinessForScan(job) ?? undefined,
+    };
+    const outcome = await this.prFeedback.publish(job.userId, job.prContext as unknown as PrContext, feedback);
+    const data = outcome.ok
+      ? { prPublishedAt: new Date(), prPublishError: null }
+      : { prPublishedAt: null, prPublishError: outcome.error };
+    await this.prisma.scanJob.update({ where: { id: jobId }, data });
+    return data;
   }
 
   private buildScanUrl(jobId: string): string | undefined {

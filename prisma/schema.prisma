@@ -387,6 +387,12 @@ model ScanJob {
   // Kept apart from prContext on purpose: prContext makes the scan post
   // back to the PR, which a free public review must never do.
   prSnapshot                Json?
+  // PR/MR reviews: each file's changed line ranges ({ [path]: LineRange[] }),
+  // kept so the review can be posted again later (see publishPrFeedback),
+  // and whether posting to GitHub/GitLab worked — it used to fail silently.
+  changedRanges             Json?
+  prPublishedAt             DateTime?
+  prPublishError            String?
   status                    ScanStatus     @default(queued)
   provider                  String
   framework                 String? // best-guess detected framework

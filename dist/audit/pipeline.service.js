@@ -43,6 +43,7 @@ let PipelineService = PipelineService_1 = class PipelineService {
         const baseFindings = (0, to_findings_1.stage1ToFindings)(stage1);
         let result;
         let usage = types_1.ZERO_USAGE;
+        const diffReview = !input.localOnly && Boolean(input.changedLineRanges?.length);
         if (!stage1.clean && input.localOnly) {
             return {
                 result: {
@@ -56,7 +57,7 @@ let PipelineService = PipelineService_1 = class PipelineService {
                 usage,
             };
         }
-        if (stage1.clean) {
+        if (stage1.clean && !diffReview) {
             result = {
                 verdict: (0, verdict_1.verdictForSeverities)(baseFindings),
                 summary: baseFindings.length > 0
@@ -69,14 +70,23 @@ let PipelineService = PipelineService_1 = class PipelineService {
         }
         else {
             await opts.beforeAiCall?.();
-            const prompt = (0, focused_prompt_1.buildFocusedPrompt)({
-                filename: input.filename,
-                language: input.language,
-                riskyFunctions: stage1.riskyFunctions,
-                allFunctions: stage1.functions,
-                repoContext: input.repoContext,
-                focusAreas: input.focusAreas,
-            });
+            const prompt = diffReview
+                ? (0, focused_prompt_1.buildDiffPrompt)({
+                    filename: input.filename,
+                    language: input.language,
+                    code: input.code,
+                    changedRanges: input.changedLineRanges,
+                    repoContext: input.repoContext,
+                    focusAreas: input.focusAreas,
+                })
+                : (0, focused_prompt_1.buildFocusedPrompt)({
+                    filename: input.filename,
+                    language: input.language,
+                    riskyFunctions: stage1.riskyFunctions,
+                    allFunctions: stage1.functions,
+                    repoContext: input.repoContext,
+                    focusAreas: input.focusAreas,
+                });
             const first = await this.llm.completeStructured(input.provider, prompt, finding_schema_1.auditResultSchema);
             let aiResult = first.result;
             usage = (0, types_1.addUsage)(usage, first.usage);

@@ -50,6 +50,9 @@ export declare class ReportController {
         prContext: import("@prisma/client/runtime/library").JsonValue | null;
         repoRef: import("@prisma/client/runtime/library").JsonValue | null;
         prSnapshot: import("@prisma/client/runtime/library").JsonValue | null;
+        changedRanges: import("@prisma/client/runtime/library").JsonValue | null;
+        prPublishedAt: Date | null;
+        prPublishError: string | null;
         provider: string;
         framework: string | null;
         fileCount: number;

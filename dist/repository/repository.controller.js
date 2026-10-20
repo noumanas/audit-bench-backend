@@ -40,6 +40,9 @@ let RepositoryController = class RepositoryController {
     findOne(user, id) {
         return this.repositoryService.findOne(user, id);
     }
+    republish(user, id) {
+        return this.repositoryService.republishPrFeedback(user, id);
+    }
     setFindingStatus(user, scanFileId, index, dto) {
         return this.repositoryService.setFindingStatus(user, scanFileId, index, dto.status);
     }
@@ -74,6 +77,14 @@ __decorate([
     __metadata("design:paramtypes", [Object, String]),
     __metadata("design:returntype", void 0)
 ], RepositoryController.prototype, "findOne", null);
+__decorate([
+    (0, common_1.Post)(':id/publish'),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Param)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String]),
+    __metadata("design:returntype", void 0)
+], RepositoryController.prototype, "republish", null);
 __decorate([
     (0, common_1.Patch)('scan-files/:scanFileId/findings/:index'),
     __param(0, (0, current_user_decorator_1.CurrentUser)()),

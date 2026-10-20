@@ -136,6 +136,7 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
             sourceType: meta.sourceType,
             pullRequestUrl: meta.pullRequestUrl,
             prContext: meta.prContext,
+            changedRanges: Object.fromEntries(analyzable.filter((f) => f.changedRanges).map((f) => [f.path, f.changedRanges])),
             fileCount: analyzable.length,
             secrets: secrets,
             localOnly: opts.localOnly,
@@ -176,6 +177,8 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
             const hash = this.cache.hashFor(file.content, providerName, [], file.changedRanges);
             if (await this.cache.exists(hash))
                 continue;
+            if (file.changedRanges?.length)
+                return true;
             const fullStage1 = await (0, run_stage1_1.runStage1)(file.content, file.path);
             const stage1 = file.changedRanges ? (0, filter_to_ranges_1.filterStage1ToRanges)(fullStage1, file.changedRanges) : fullStage1;
             if (!stage1.clean)
@@ -279,39 +282,8 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
                     completedAt: new Date(),
                 },
             });
-            if (job.prContext) {
-                const feedback = {
-                    verdict: overallVerdict,
-                    summary,
-                    findings: succeededByFile.flatMap(({ path, result }) => result.findings.map((f) => ({
-                        path,
-                        line: f.line,
-                        endLine: f.endLine ?? null,
-                        severity: f.severity,
-                        title: f.title,
-                        description: f.description,
-                        category: f.category,
-                        rootCause: f.rootCause,
-                        suggestedFix: f.suggestedFix,
-                        examplePatch: f.examplePatch,
-                        confidence: f.confidence,
-                    }))),
-                    changedRanges: Object.fromEntries(files.filter((f) => f.changedRanges).map((f) => [f.path, f.changedRanges])),
-                    scanUrl: this.buildScanUrl(jobId),
-                };
-                if (job.prSnapshot) {
-                    const findings = { critical: 0, high: 0, medium: 0, low: 0 };
-                    for (const f of feedback.findings)
-                        if (f.severity in findings)
-                            findings[f.severity]++;
-                    feedback.readiness = (0, merge_readiness_1.assessMergeReadiness)(job.prSnapshot, {
-                        verdict: overallVerdict,
-                        findings,
-                        secrets: secretsCount,
-                    });
-                }
-                await this.prFeedback.publish(job.userId, job.prContext, feedback);
-            }
+            if (job.prContext)
+                await this.publishPrFeedback(jobId);
         }
         catch (err) {
             this.logger.error(`Scan ${jobId} failed`, err);
@@ -320,6 +292,49 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
                 data: { status: 'failed', error: err.message, completedAt: new Date() },
             });
         }
+    }
+    async republishPrFeedback(actor, id) {
+        const job = await this.prisma.scanJob.findUnique({ where: { id } });
+        if (!job || !(0, workspace_scope_1.canViewResource)(actor, job))
+            throw new common_1.NotFoundException(`Scan ${id} not found`);
+        if (!job.prContext)
+            throw new common_1.BadRequestException('This review was kept in the app, so there is nothing to post.');
+        if (job.status !== 'completed')
+            throw new common_1.BadRequestException('Wait for the review to finish before posting it.');
+        return this.publishPrFeedback(id);
+    }
+    async publishPrFeedback(jobId) {
+        const job = await this.prisma.scanJob.findUniqueOrThrow({ where: { id: jobId }, include: { files: true } });
+        if (!job.prContext || job.status !== 'completed') {
+            return { prPublishedAt: job.prPublishedAt, prPublishError: job.prPublishError };
+        }
+        const findings = job.files.flatMap((file) => (Array.isArray(file.findings) ? file.findings : []).map((f) => ({
+            path: file.path,
+            line: f.line,
+            endLine: f.endLine ?? null,
+            severity: f.severity,
+            title: f.title,
+            description: f.description,
+            category: f.category,
+            rootCause: f.rootCause,
+            suggestedFix: f.suggestedFix,
+            examplePatch: f.examplePatch,
+            confidence: f.confidence,
+        })));
+        const feedback = {
+            verdict: job.verdict ?? 'pass',
+            summary: job.summary ?? '',
+            findings,
+            changedRanges: (job.changedRanges ?? undefined),
+            scanUrl: this.buildScanUrl(jobId),
+            readiness: (0, merge_readiness_1.readinessForScan)(job) ?? undefined,
+        };
+        const outcome = await this.prFeedback.publish(job.userId, job.prContext, feedback);
+        const data = outcome.ok
+            ? { prPublishedAt: new Date(), prPublishError: null }
+            : { prPublishedAt: null, prPublishError: outcome.error };
+        await this.prisma.scanJob.update({ where: { id: jobId }, data });
+        return data;
     }
     buildScanUrl(jobId) {
         const origin = (this.config.get('FRONTEND_ORIGIN') || '').split(',')[0]?.trim();

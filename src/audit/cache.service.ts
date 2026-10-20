@@ -21,7 +21,9 @@ export class AuditCacheService {
    * ranges is a genuinely different result, so ranges are part of the key.
    */
   hashFor(content: string, provider: string, focusAreas: string[] = [], changedRanges?: LineRange[]): string {
-    const rangesPart = changedRanges ? changedRanges.map((r) => `${r.start}-${r.end}`).join(',') : '';
+    // "diff-v2": PR reviews now always get an AI pass (see PipelineService.run),
+    // so results cached before that — often local-only "clean" ones — don't apply.
+    const rangesPart = changedRanges ? `diff-v2:${changedRanges.map((r) => `${r.start}-${r.end}`).join(',')}` : '';
     const normalized = `${content} ${provider} ${[...focusAreas].sort().join(',')} ${rangesPart}`;
     return createHash('sha256').update(normalized).digest('hex');
   }

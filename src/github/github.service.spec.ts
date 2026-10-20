@@ -1,5 +1,5 @@
 import * as crypto from 'crypto';
-import { GithubService, mapGithubContributorStats } from './github.service';
+import { GithubService, explainPostFailure, mapGithubContributorStats } from './github.service';
 
 /**
  * This check is the entire trust boundary for the webhook receiver — every
@@ -116,5 +116,38 @@ describe('GithubService.publish', () => {
     expect(review.comments[1]).toMatchObject({ line: 240, side: 'RIGHT' });
     expect(review.comments[1].start_line).toBeUndefined();
     expect(review.comments[0].body).toContain('**🟡 Medium**\n\n**Range**');
+  });
+});
+
+describe('GithubService.publish when GitHub refuses', () => {
+  const realFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = realFetch;
+  });
+
+  it('throws an explained error instead of failing silently', async () => {
+    global.fetch = jest.fn(async () => ({
+      ok: false,
+      status: 403,
+      json: async () => ({ message: 'Resource not accessible by personal access token' }),
+    })) as never;
+    const service = new GithubService(
+      { user: { findUniqueOrThrow: jest.fn().mockResolvedValue({ githubToken: 'enc' }) } } as never,
+      { register: jest.fn() } as never,
+      { decrypt: () => 'token' } as never,
+    );
+    await expect(
+      service.publish(
+        'u1',
+        { kind: 'github', owner: 'Netflix', repo: 'dgs-framework', pullNumber: 2363, headSha: 's', headRef: 'f', baseRef: 'master' },
+        { verdict: 'pass', summary: 's', findings: [] },
+      ),
+    ).rejects.toThrow(/classic token that has the public_repo scope/);
+  });
+
+  it('explains other refusals', () => {
+    expect(explainPostFailure(401, 'Bad credentials')).toMatch(/expired or been revoked/);
+    expect(explainPostFailure(404, 'Not Found')).toMatch(/can't write to this repository/);
+    expect(explainPostFailure(422, 'Validation Failed')).toBe('GitHub refused the comment (422: Validation Failed).');
   });
 });

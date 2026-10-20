@@ -19,7 +19,7 @@ let AuditCacheService = class AuditCacheService {
         this.prisma = prisma;
     }
     hashFor(content, provider, focusAreas = [], changedRanges) {
-        const rangesPart = changedRanges ? changedRanges.map((r) => `${r.start}-${r.end}`).join(',') : '';
+        const rangesPart = changedRanges ? `diff-v2:${changedRanges.map((r) => `${r.start}-${r.end}`).join(',')}` : '';
         const normalized = `${content} ${provider} ${[...focusAreas].sort().join(',')} ${rangesPart}`;
         return (0, crypto_1.createHash)('sha256').update(normalized).digest('hex');
     }

@@ -405,15 +405,17 @@ export class GithubService implements OnModuleInit, PrPublisher {
       }),
     });
 
-    if (!res.ok) {
-      // A single out-of-diff line invalidates the whole batch — fall back to
-      // a plain summary-only comment so the PR still gets *something* useful.
-      await fetch(`${GITHUB_API}/repos/${owner}/${repo}/issues/${pullNumber}/comments`, {
-        method: 'POST',
-        headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ body: buildSummaryBody(feedback, { posted: 0, headSha }) }),
-      });
-    }
+    if (res.ok) return;
+    const reviewError = await githubErrorMessage(res);
+    // A single out-of-diff line invalidates the whole batch — fall back to
+    // a plain summary-only comment so the PR still gets *something* useful.
+    const fallback = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/issues/${pullNumber}/comments`, {
+      method: 'POST',
+      headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body: buildSummaryBody(feedback, { posted: 0, headSha }) }),
+    });
+    if (fallback.ok) return;
+    throw new Error(explainPostFailure(fallback.status, (await githubErrorMessage(fallback)) || reviewError));
   }
 
   private async postCommitStatus(token: string, owner: string, repo: string, sha: string, feedback: PrFeedback): Promise<void> {
@@ -628,6 +630,29 @@ const READINESS_LABEL: Record<MergeReadiness['status'], string> = {
   merged: '🟣 Already merged',
   closed: '⚪ Closed without merging',
 };
+
+async function githubErrorMessage(res: Response): Promise<string> {
+  try {
+    const body = (await res.json()) as { message?: string };
+    return body.message ?? '';
+  } catch {
+    return '';
+  }
+}
+
+/** Turns GitHub's refusal into what the user should do about it. */
+export function explainPostFailure(status: number, message: string): string {
+  const base = `GitHub refused the comment (${status}${message ? `: ${message}` : ''}).`;
+  if (/personal access token/i.test(message)) {
+    return `${base} Fine-grained tokens can only comment on repositories they were granted access to. To comment on other people's public repositories, reconnect GitHub with a classic token that has the public_repo scope.`;
+  }
+  if (status === 401) return `${base} The GitHub token has expired or been revoked; reconnect GitHub with a new token.`;
+  if (status === 403 && /locked|limited/i.test(message)) return `${base} The conversation is locked or limited to collaborators.`;
+  if (status === 403 || status === 404) {
+    return `${base} The token can't write to this repository. Check its scopes (repo or public_repo) and that it can access the repository.`;
+  }
+  return base;
+}
 
 /** Merge readiness from GitHub's state, CI and the findings — see common/merge-readiness.ts. */
 function readinessLines(readiness: MergeReadiness): string[] {

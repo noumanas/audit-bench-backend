@@ -50,8 +50,30 @@ export declare class GithubService implements OnModuleInit, PrPublisher {
     }>, feedback: PrFeedback): Promise<void>;
     private postPrReview;
     private postCommitStatus;
+    getReviewComment(userId: string, owner: string, repo: string, commentId: number): Promise<GithubReviewComment>;
+    listReviewThread(userId: string, owner: string, repo: string, pullNumber: number, rootId: number): Promise<GithubReviewComment[]>;
+    replyToReviewComment(userId: string, owner: string, repo: string, pullNumber: number, rootId: number, body: string): Promise<void>;
+    resolveReviewThread(userId: string, owner: string, repo: string, pullNumber: number, rootId: number): Promise<boolean>;
     postIssueComment(userId: string, owner: string, repo: string, issueNumber: number, body: string): Promise<void>;
     static verifyWebhookSignature(secret: string, rawBody: Buffer, signatureHeader: string | undefined): boolean;
 }
 export declare function mapGithubContributorStats(raw: unknown[]): ContributorStat[];
-export declare function buildSummaryBody(feedback: PrFeedback): string;
+export declare function buildSummaryBody(feedback: PrFeedback, opts?: {
+    posted?: number;
+    headSha?: string;
+}): string;
+export declare function explainPostFailure(status: number, message: string): string;
+export interface GithubReviewComment {
+    id: number;
+    in_reply_to_id?: number;
+    body: string;
+    path: string;
+    line: number | null;
+    start_line: number | null;
+    original_line: number | null;
+    original_start_line: number | null;
+    created_at: string;
+    user: {
+        login: string;
+    } | null;
+}

@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildFocusedPrompt = buildFocusedPrompt;
+exports.buildDiffPrompt = buildDiffPrompt;
 const RESPONSE_SHAPE = `{
   "verdict": "pass" | "needs_work" | "do_not_ship",
   "summary": "2-3 sentence overall assessment of the flagged functions, in plain language",
@@ -57,5 +58,55 @@ Only report real, specific issues in the functions shown — don't invent proble
 For "Testing" findings: you are not shown this file's test suite, so never assert that a test doesn't exist. Instead, flag specific untested-looking risk — a money/auth-critical branch, an edge case (empty input, concurrent calls, a boundary value) that this function's own logic suggests could break it — and phrase it as a recommendation to verify or add coverage, not a claim about what's missing.
 
 Write every finding in plain, simple language — this is read by developers at every experience level, not just security specialists. Avoid unexplained acronyms and jargon (SSRF, CSRF, XSS, prototype pollution, anti-pattern, race condition, etc.); describe what actually happens and why it's a problem in everyday words instead of just naming the category of bug. Stay technically precise — just say it plainly.`;
+}
+const DIFF_CONTEXT_LINES = 8;
+const MAX_DIFF_PROMPT_LINES = 600;
+function buildDiffPrompt(opts) {
+    const focus = opts.focusAreas && opts.focusAreas.length > 0
+        ? opts.focusAreas.join('; ')
+        : 'security, logic bugs and edge cases, performance, error handling, architecture, maintainability, test coverage';
+    const lines = opts.code.split('\n');
+    const width = String(lines.length).length;
+    const windows = [];
+    for (const r of [...opts.changedRanges].sort((a, b) => a.start - b.start)) {
+        const from = Math.max(1, r.start - DIFF_CONTEXT_LINES);
+        const to = Math.min(lines.length, r.end + DIFF_CONTEXT_LINES);
+        const last = windows[windows.length - 1];
+        if (last && from <= last.to + 1)
+            last.to = Math.max(last.to, to);
+        else
+            windows.push({ from, to });
+    }
+    const inChange = (n) => opts.changedRanges.some((r) => n >= r.start && n <= r.end);
+    let budget = MAX_DIFF_PROMPT_LINES;
+    const sections = [];
+    for (const w of windows) {
+        if (budget <= 0)
+            break;
+        const to = Math.min(w.to, w.from + budget - 1);
+        budget -= to - w.from + 1;
+        const body = lines
+            .slice(w.from - 1, to)
+            .map((l, i) => `${inChange(w.from + i) ? '>' : ' '} ${String(w.from + i).padStart(width)} | ${l}`)
+            .join('\n');
+        sections.push(`--- Lines ${w.from}-${to} ---\n\`\`\`\n${body}\n\`\`\``);
+    }
+    const truncated = budget <= 0 ? '\n(The rest of this file\'s changes were cut to keep the review small.)\n' : '';
+    return `You are a senior engineer reviewing a pull request before it merges. You are shown the changed regions of one file. Lines marked ">" are in the changed hunks (they include a few unchanged lines GitHub shows for context); unmarked lines are extra context. Each line shows its real line number in the new file — use those numbers as-is for "line" and "endLine".
+
+Focus areas: ${focus}.
+${opts.repoContext ? `\nRepository context:\n${opts.repoContext}\n` : ''}
+File: ${opts.filename}${opts.language ? ` (${opts.language})` : ''}
+
+${sections.join('\n\n')}
+${truncated}
+Return ONLY a JSON object, no markdown fences, no preamble, with this exact shape:
+${RESPONSE_SHAPE}
+
+Comment only on the changed (">") lines, and only on real, specific problems a careful reviewer would raise: bugs, missed edge cases, security issues, broken error handling, performance traps, or changes that clearly need a test. Don't comment on style or formatting, don't restate what the code does, and don't invent problems. If the change looks correct, return an empty findings array with verdict "pass". Point "line" (and "endLine" for a multi-line problem) at the exact changed lines.
+
+For "Testing" findings: you are not shown the test suite, so never assert that a test doesn't exist; recommend verifying or adding coverage for a specific risky case instead.
+
+Write in plain, simple language for developers at every level. Avoid unexplained acronyms and jargon; say what actually happens and why it matters. Stay technically precise.`;
 }
 //# sourceMappingURL=focused-prompt.js.map
