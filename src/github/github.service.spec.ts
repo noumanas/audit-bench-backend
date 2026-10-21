@@ -153,3 +153,41 @@ describe('GithubService.publish when GitHub refuses', () => {
     expect(explainPostFailure(422, 'Validation Failed')).toBe('GitHub refused the comment (422: Validation Failed).');
   });
 });
+
+describe('GithubService.publish verdict', () => {
+  const realFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = realFetch;
+  });
+  const run = async (installationId?: number) => {
+    const urls: string[] = [];
+    global.fetch = jest.fn(async (url: string) => {
+      urls.push(url);
+      return { ok: true, json: async () => ({}) };
+    }) as never;
+    const service = new GithubService(
+      { user: { findUniqueOrThrow: jest.fn().mockResolvedValue({ githubToken: 'enc' }) } } as never,
+      { register: jest.fn() } as never,
+      { decrypt: () => 'token' } as never,
+      { installationToken: jest.fn().mockResolvedValue('app-token') } as never,
+    );
+    await service.publish(
+      'u1',
+      { kind: 'github', owner: 'acme', repo: 'api', pullNumber: 1, headSha: 'sha', headRef: 'f', baseRef: 'main', installationId },
+      { verdict: 'pass', summary: 's', findings: [] },
+    );
+    return urls;
+  };
+
+  it('posts a check run for GitHub App reviews', async () => {
+    const urls = await run(42);
+    expect(urls.some((u) => u.endsWith('/check-runs'))).toBe(true);
+    expect(urls.some((u) => u.includes('/statuses/'))).toBe(false);
+  });
+
+  it('posts a commit status for personal-token reviews (they cannot create checks)', async () => {
+    const urls = await run(undefined);
+    expect(urls.some((u) => u.includes('/statuses/sha'))).toBe(true);
+    expect(urls.some((u) => u.endsWith('/check-runs'))).toBe(false);
+  });
+});

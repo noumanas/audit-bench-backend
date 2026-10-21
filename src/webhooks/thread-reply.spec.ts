@@ -272,3 +272,35 @@ describe("WebhooksService review-comment replies", () => {
     ).rejects.toThrow("Invalid webhook signature");
   });
 });
+
+describe('WebhooksService.harvestReactions', () => {
+  it('logs each finding as accepted, dismissed or ignored when the PR closes', async () => {
+    const finding = (id: number, reactions = {}) => ({ id, path: 'src/a.ts', body: FINDING, reactions });
+    const github = {
+      listPullReviewComments: jest.fn().mockResolvedValue([
+        finding(1, { '+1': 1 }),
+        finding(2, { '-1': 1 }),
+        finding(3),
+        finding(4),
+        { id: 5, path: 'x', body: 'a human comment' },
+      ]),
+      reviewThreadStates: jest.fn().mockResolvedValue(new Map([[3, { resolved: true, outdated: false }], [4, { resolved: false, outdated: false }]])),
+    };
+    const reviewRules = { recordFeedback: jest.fn().mockResolvedValue(undefined) };
+    const prisma = { user: { findUniqueOrThrow: jest.fn().mockResolvedValue({ id: 'u1', organizationId: null }) } };
+    const service = new WebhooksService(prisma as never, github as never, {} as never, {} as never, {} as never, {} as never, reviewRules as never, {} as never);
+
+    await service.harvestReactions({ installationId: 1 }, 'u1', 'acme', 'api', 7);
+
+    const outcomes = reviewRules.recordFeedback.mock.calls
+      .map(([, f]) => f)
+      .filter((f) => f.source === 'outcome')
+      .map((f) => [f.sourceRef, f.signal]);
+    expect(outcomes).toEqual([
+      ['outcome:1', 'accepted'],
+      ['outcome:2', 'dismissed'],
+      ['outcome:3', 'accepted'],
+      ['outcome:4', 'ignored'],
+    ]);
+  });
+});

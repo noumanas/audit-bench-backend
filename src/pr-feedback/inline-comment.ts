@@ -53,7 +53,10 @@ export function commentLines(f: PrFeedbackFinding, ranges?: LineRange[]): { star
  * it (with the example patch as a highlighted code block), and a footer
  * inviting a reply — replies are answered in the thread (see WebhooksService).
  */
-export function inlineCommentBody(f: PrFeedbackFinding, opts: { plain?: boolean } = {}): string {
+export function inlineCommentBody(
+  f: PrFeedbackFinding,
+  opts: { plain?: boolean; at?: { start: number; end: number } | null } = {},
+): string {
   const header = [f.category ? (CATEGORY[f.category] ?? f.category) : null, SEVERITY[f.severity] ?? f.severity]
     .filter(Boolean)
     .join(' | ');
@@ -61,7 +64,25 @@ export function inlineCommentBody(f: PrFeedbackFinding, opts: { plain?: boolean 
   const lines = [...(opts.plain ? [] : [FINDING_MARKER]), `**${header}**`, '', `**${f.title}**`, '', f.description];
   if (f.rootCause) lines.push('', `**Why it happens:** ${f.rootCause}`);
   if (f.suggestedFix) lines.push('', `**Suggested fix:** ${f.suggestedFix}`);
-  if (f.examplePatch?.trim()) {
+  // A GitHub suggestion replaces exactly the commented lines, so it's only
+  // offered when the comment covers precisely the lines the fix rewrites.
+  const suggestion =
+    !opts.plain &&
+    f.replacement != null &&
+    f.line != null &&
+    opts.at?.start === f.line &&
+    opts.at.end === (f.endLine && f.endLine > f.line ? f.endLine : f.line) &&
+    f.replacement.split('\n').length <= 60 &&
+    !f.replacement.includes('```');
+  if (suggestion) {
+    lines.push(
+      '',
+      '**Suggested change** (commit it with one click):',
+      '```suggestion',
+      f.replacement!.replace(/\n$/, ''),
+      '```',
+    );
+  } else if (f.examplePatch?.trim()) {
     // A longer fence than any run of backticks inside the patch keeps it from closing early.
     const longest = Math.max(2, ...(f.examplePatch.match(/`+/g) ?? []).map((m) => m.length));
     const fence = '`'.repeat(longest + 1);

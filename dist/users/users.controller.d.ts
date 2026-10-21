@@ -2,6 +2,9 @@ import { RequestUser } from '../auth/types';
 import { UsersService } from './users.service';
 import { QuotaService } from '../quota/quota.service';
 import { ChangePlanDto } from './dto/change-plan.dto';
+declare class DeleteAccountDto {
+    confirmEmail: string;
+}
 export declare class UsersController {
     private readonly usersService;
     private readonly quotaService;
@@ -186,4 +189,8 @@ export declare class UsersController {
     rotateApiKey(user: RequestUser): Promise<{
         apiKey: string;
     }>;
+    deleteAccount(user: RequestUser, dto: DeleteAccountDto): Promise<{
+        deleted: boolean;
+    }>;
 }
+export {};

@@ -11,6 +11,7 @@ export interface Finding {
     rootCause: string;
     suggestedFix: string;
     examplePatch: string | null;
+    replacement?: string | null;
     confidence: number;
 }
 export interface AuditResult {

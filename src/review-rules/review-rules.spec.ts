@@ -1,4 +1,12 @@
-import { ReviewRulesService, repoFromSourceName, rulesPromptText, LEARN_THRESHOLD } from './review-rules.service';
+import {
+  ReviewRulesService,
+  repoFromSourceName,
+  repoRulesFile,
+  rulesPromptText,
+  withRulesFile,
+  LEARN_THRESHOLD,
+  NO_RULES,
+} from './review-rules.service';
 
 describe('repoFromSourceName', () => {
   it.each([
@@ -82,5 +90,44 @@ describe('ReviewRulesService.learn', () => {
     await service.learn(owner, 'acme/api', 'fp', 't', 'Logic');
     expect(prisma.reviewRule.update).toHaveBeenCalledWith({ where: { id: 'r1' }, data: { evidence: 3 } });
     expect(prisma.reviewRule.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('auditbench.md', () => {
+  it('reads the rules file from the repo root, a dotfile, or .github, in that order', () => {
+    expect(repoRulesFile([{ path: 'src/a.ts', content: 'x' }])).toBeNull();
+    expect(repoRulesFile([{ path: '.github/auditbench.md', content: ' Use tabs. ' }])).toBe('Use tabs.');
+    expect(
+      repoRulesFile([
+        { path: '.github/auditbench.md', content: 'second' },
+        { path: 'AuditBench.md', content: 'first' },
+      ]),
+    ).toBe('first');
+  });
+
+  it('adds it to the prompt rules and changes the cache key', () => {
+    const merged = withRulesFile(NO_RULES, 'We use tabs.');
+    expect(rulesPromptText(merged)).toContain("From the repository's auditbench.md:\nWe use tabs.");
+    expect(merged.key).not.toBe('');
+    expect(withRulesFile(NO_RULES, 'Something else.').key).not.toBe(merged.key);
+    expect(withRulesFile(NO_RULES, null)).toBe(NO_RULES);
+  });
+});
+
+describe('ReviewRulesService.outcomes', () => {
+  it('totals accepted, dismissed and ignored findings overall and by category', async () => {
+    const prisma = {
+      findingFeedback: {
+        groupBy: jest.fn().mockResolvedValue([
+          { category: 'Security', signal: 'accepted', _count: { _all: 3 } },
+          { category: 'Security', signal: 'ignored', _count: { _all: 1 } },
+          { category: 'Testing', signal: 'dismissed', _count: { _all: 2 } },
+        ]),
+      },
+    };
+    const out = await new ReviewRulesService(prisma as never).outcomes({ id: 'u1', organizationId: null });
+    expect(out.total).toEqual({ accepted: 3, dismissed: 2, ignored: 1, total: 6 });
+    expect(out.byCategory.Security).toEqual({ accepted: 3, dismissed: 0, ignored: 1, total: 4 });
+    expect(prisma.findingFeedback.groupBy.mock.calls[0][0].where).toMatchObject({ source: 'outcome', userId: 'u1', organizationId: null });
   });
 });

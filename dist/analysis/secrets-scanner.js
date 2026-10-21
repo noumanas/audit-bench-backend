@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.scanSecrets = scanSecrets;
+exports.maskSecret = maskSecret;
 const RULES = [
     { name: 'AWS Access Key', pattern: /AKIA[0-9A-Z]{16}/ },
     { name: 'Private Key', pattern: /-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----/ },
@@ -21,12 +22,13 @@ function scanSecrets(files) {
             if (SKIP_PATTERNS.some((p) => p.test(line)))
                 return;
             for (const rule of RULES) {
-                if (rule.pattern.test(line)) {
+                const match = rule.pattern.exec(line);
+                if (match) {
                     findings.push({
                         path: file.path,
                         line: idx + 1,
                         rule: rule.name,
-                        snippet: line.trim().slice(0, 160),
+                        snippet: maskSecret(line.trim(), match[0]).slice(0, 160),
                     });
                     break;
                 }
@@ -34,5 +36,9 @@ function scanSecrets(files) {
         });
     }
     return findings.slice(0, 50);
+}
+function maskSecret(line, secret) {
+    const masked = secret.length > 8 ? `${secret.slice(0, 4)}…${secret.slice(-2)}` : '…';
+    return line.split(secret).join(masked);
 }
 //# sourceMappingURL=secrets-scanner.js.map

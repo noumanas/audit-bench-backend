@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import pLimit = require('p-limit');
 import { PrismaService } from '../prisma/prisma.service';
@@ -38,7 +38,9 @@ import {
   ReviewRules,
   ReviewRulesService,
   repoFromSourceName,
+  repoRulesFile,
   rulesPromptText,
+  withRulesFile,
 } from '../review-rules/review-rules.service';
 import { PrInsights, buildInsightsPrompt, deterministicChecks, prInsightsSchema } from '../pr-feedback/pr-insights';
 import { PrContext, PrFeedback } from '../pr-feedback/pr-feedback.types';
@@ -122,10 +124,14 @@ export class RepositoryService {
     sourceName: string,
     sourceType: ScanSourceType,
     files: T[],
+    rulesFile: string | null = null,
   ): Promise<{ rules: ReviewRules; files: T[] }> {
-    const rules = await this.reviewRules.rulesFor(
-      { id: actor.id, organizationId: actor.organizationId },
-      repoFromSourceName(sourceName, sourceType),
+    const rules = withRulesFile(
+      await this.reviewRules.rulesFor(
+        { id: actor.id, organizationId: actor.organizationId },
+        repoFromSourceName(sourceName, sourceType),
+      ),
+      rulesFile,
     );
     if (!rules.ignorePaths.length) return { rules, files };
     return { rules, files: files.filter((f) => !rules.ignorePaths.some((g) => matchesGlob(f.path, g))) };
@@ -161,7 +167,8 @@ export class RepositoryService {
     const maxScanFiles = this.config.get<number>('MAX_SCAN_FILES') || 40;
 
     // Free public scans run under the anonymous system account, which has no rules.
-    const { rules, files } = await this.applyRules(actor, sourceName, sourceType, extractZip(zipBuffer, maxFileSize));
+    const extracted = extractZip(zipBuffer, maxFileSize);
+    const { rules, files } = await this.applyRules(actor, sourceName, sourceType, extracted, repoRulesFile(extracted));
     const framework = detectFramework(files);
     const { graph, circular } = buildDependencyGraph(files);
     const deadCode = findDeadCode(files, graph);
@@ -238,7 +245,14 @@ export class RepositoryService {
     const maxFileSize = this.config.get<number>('MAX_FILE_SIZE_BYTES') || 200_000;
     const maxScanFiles = this.config.get<number>('MAX_SCAN_FILES') || 40;
 
-    const scoped = await this.applyRules(actor, meta.sourceName, meta.sourceType, files);
+    // The repo's auditbench.md: from the PR's own changes, else the repository snapshot.
+    const scoped = await this.applyRules(
+      actor,
+      meta.sourceName,
+      meta.sourceType,
+      files,
+      repoRulesFile(files) ?? repoRulesFile(opts.repoFiles ?? []),
+    );
     const rules = scoped.rules;
     const analyzable = scoped.files
       .filter((f) => {
@@ -558,6 +572,7 @@ export class RepositoryService {
         rootCause: f.rootCause,
         suggestedFix: f.suggestedFix,
         examplePatch: f.examplePatch,
+        replacement: f.replacement ?? null,
         confidence: f.confidence,
       })),
     );
@@ -652,6 +667,15 @@ export class RepositoryService {
       }
     }
     return updated;
+  }
+
+  /** Deletes a scan and its report (files and findings go with it). Only whoever ran it can. */
+  async remove(actor: WorkspaceActor, id: string) {
+    const job = await this.prisma.scanJob.findUnique({ where: { id } });
+    if (!job || !canViewResource(actor, job)) throw new NotFoundException(`Scan ${id} not found`);
+    if (job.userId !== actor.id) throw new ForbiddenException('Only the person who ran this scan can delete it.');
+    await this.prisma.scanJob.delete({ where: { id } });
+    return { deleted: true };
   }
 
   async findRecent(actor: WorkspaceActor, limit = 20) {

@@ -12,6 +12,7 @@ exports.findingSchema = zod_1.z.object({
     rootCause: zod_1.z.string().min(1),
     suggestedFix: zod_1.z.string().min(1),
     examplePatch: zod_1.z.string().nullable().optional().default(null),
+    replacement: zod_1.z.string().nullable().optional(),
     confidence: zod_1.z.number().min(0).max(1),
 });
 exports.auditResultSchema = zod_1.z.object({

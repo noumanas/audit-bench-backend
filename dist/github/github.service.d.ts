@@ -54,12 +54,17 @@ export declare class GithubService implements OnModuleInit, PrPublisher {
     publish(userId: string, context: Extract<PrContext, {
         kind: 'github';
     }>, feedback: PrFeedback): Promise<void>;
+    private postCheckRun;
     postReviewWithToken(token: string, owner: string, repo: string, pullNumber: number, headSha: string, feedback: PrFeedback): Promise<void>;
     private postPrReview;
     private postCommitStatus;
     canPushTo(userId: string, owner: string, repo: string): Promise<boolean>;
     getReviewComment(auth: GithubAuth, owner: string, repo: string, commentId: number): Promise<GithubReviewComment>;
     listPullReviewComments(auth: GithubAuth, owner: string, repo: string, pullNumber: number): Promise<GithubReviewComment[]>;
+    reviewThreadStates(auth: GithubAuth, owner: string, repo: string, pullNumber: number): Promise<Map<number, {
+        resolved: boolean;
+        outdated: boolean;
+    }>>;
     listReviewThread(auth: GithubAuth, owner: string, repo: string, pullNumber: number, rootId: number): Promise<GithubReviewComment[]>;
     replyToReviewComment(auth: GithubAuth, owner: string, repo: string, pullNumber: number, rootId: number, body: string): Promise<void>;
     resolveReviewThread(auth: GithubAuth, owner: string, repo: string, pullNumber: number, rootId: number): Promise<boolean>;

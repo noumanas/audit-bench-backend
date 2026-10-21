@@ -14,6 +14,7 @@ const RESPONSE_SHAPE = `{
       "rootCause": "the underlying mistake that produced this issue, in plain language",
       "suggestedFix": "concrete, actionable fix, described in plain language",
       "examplePatch": "a short code snippet showing the fix, or null",
+      "replacement": "only when the fix is confined to lines line..endLine: the exact new code that should replace exactly those lines, with the file's indentation and nothing else (no line numbers, no markers, no explanation); otherwise null",
       "confidence": <number between 0 and 1 — how sure you are this is a real, exploitable/impactful issue>
     }
   ]

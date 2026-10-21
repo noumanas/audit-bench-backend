@@ -8,12 +8,22 @@ export const RULE_KINDS = ['instruction', 'ignore_path', 'suppress'] as const;
 export type RuleKind = (typeof RULE_KINDS)[number];
 
 const NEGATIVE = ['down', 'not_an_issue', 'wont_fix'];
-const POSITIVE = ['up', 'resolved'];
+// 'dismissed' outcomes aren't counted: the 👎 behind them already is.
+const POSITIVE = ['up', 'resolved', 'accepted'];
 /** Dismissals of one kind of finding, in one repo, before it becomes a learned rule. */
 export const LEARN_THRESHOLD = 2;
 const MAX_PROMPT_RULES = 30;
 
-export type FeedbackSignal = 'up' | 'down' | 'not_an_issue' | 'resolved' | 'wont_fix';
+export type FeedbackSignal =
+  | 'up'
+  | 'down'
+  | 'not_an_issue'
+  | 'resolved'
+  | 'wont_fix'
+  // What happened to a finding by the time its PR closed (see WebhooksService.harvestReactions).
+  | 'accepted'
+  | 'dismissed'
+  | 'ignored';
 
 export interface Owner {
   id: string;
@@ -158,6 +168,38 @@ export class ReviewRulesService {
     return rules;
   }
 
+  /**
+   * What happened to findings on closed pull requests over the last `days`:
+   * accepted, dismissed or ignored, overall and by category. The measure of
+   * whether reviews are useful.
+   */
+  async outcomes(owner: Owner, days = 90) {
+    const rows = await this.prisma.findingFeedback.groupBy({
+      by: ['category', 'signal'],
+      where: {
+        source: 'outcome',
+        createdAt: { gte: new Date(Date.now() - days * 86_400_000) },
+        ...(owner.organizationId
+          ? { organizationId: owner.organizationId }
+          : { userId: owner.id, organizationId: null }),
+      },
+      _count: { _all: true },
+    });
+    const blank = () => ({ accepted: 0, dismissed: 0, ignored: 0, total: 0 });
+    const total = blank();
+    const byCategory: Record<string, ReturnType<typeof blank>> = {};
+    for (const r of rows) {
+      const key = r.signal as 'accepted' | 'dismissed' | 'ignored';
+      if (!(key in total)) continue;
+      const cat = (byCategory[r.category] ??= blank());
+      cat[key] += r._count._all;
+      cat.total += r._count._all;
+      total[key] += r._count._all;
+      total.total += r._count._all;
+    }
+    return { days, total, byCategory };
+  }
+
   /** Records one signal (idempotent per sourceRef) and updates the learned rule for that kind of finding. */
   async recordFeedback(
     owner: Owner,
@@ -248,4 +290,28 @@ export class ReviewRulesService {
       this.logger.log(`Learned to skip "${title}" in ${repo}`);
     }
   }
+}
+
+/** Where a team can commit its own review conventions, first match wins. */
+const RULES_FILE_PATHS = ['auditbench.md', '.auditbench.md', '.github/auditbench.md'];
+const MAX_RULES_FILE_CHARS = 4000;
+
+/** The repository's auditbench.md, if it has one, trimmed for the prompt. */
+export function repoRulesFile(files: Array<{ path: string; content: string }>): string | null {
+  for (const p of RULES_FILE_PATHS) {
+    const f = files.find((x) => x.path.toLowerCase() === p);
+    if (f?.content.trim()) return f.content.trim().slice(0, MAX_RULES_FILE_CHARS);
+  }
+  return null;
+}
+
+/** Adds a repository's auditbench.md to the rules, as conventions the AI follows. */
+export function withRulesFile(rules: ReviewRules, file: string | null): ReviewRules {
+  if (!file) return rules;
+  const merged = { ...rules, instructions: [...rules.instructions, `From the repository's auditbench.md:\n${file}`] };
+  merged.key = createHash('sha256')
+    .update(JSON.stringify({ ...merged, key: '' }))
+    .digest('hex')
+    .slice(0, 16);
+  return merged;
 }

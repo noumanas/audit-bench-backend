@@ -122,6 +122,24 @@ describe('PipelineService — Stage 1 → AI escalation', () => {
     expect(llm.completeStructured.mock.calls[0][1]).toContain('- We use tabs.');
   });
 
+  it('never stores source code: function bodies are stripped before the result is cached', async () => {
+    const fn = { name: 'charge', startLine: 1, endLine: 3, code: 'secret source', complexity: 2, callsInFile: [] };
+    (runStage1Module.runStage1 as jest.Mock).mockResolvedValue(
+      makeStage1({ clean: false, functions: [fn], riskyFunctions: [{ fn, score: 9, reasons: ['r'] }] }),
+    );
+    llm.completeStructured.mockResolvedValue({
+      result: { verdict: 'pass', summary: 's', findings: [] },
+      usage: { inputTokens: 1, outputTokens: 1 },
+    });
+
+    const { result } = await pipeline.run({ filename: 'a.ts', code: 'x', provider: 'openai' });
+
+    expect(llm.completeStructured.mock.calls[0][1]).toContain('secret source'); // the AI still sees it
+    const stored = cache.store.mock.calls[0][1];
+    expect(JSON.stringify(stored)).not.toContain('secret source');
+    expect(JSON.stringify(result)).not.toContain('secret source');
+  });
+
   it('keeps a free public PR review local-only', async () => {
     (runStage1Module.runStage1 as jest.Mock).mockResolvedValue(makeStage1({ clean: true }));
     const { result } = await pipeline.run({

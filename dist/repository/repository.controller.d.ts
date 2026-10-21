@@ -155,6 +155,9 @@ export declare class RepositoryController {
         requesterIpHash: string | null;
         completedAt: Date | null;
     }>;
+    remove(user: RequestUser, id: string): Promise<{
+        deleted: boolean;
+    }>;
     republish(user: RequestUser, id: string): Promise<{
         prPublishedAt: Date | null;
         prPublishError: string | null;

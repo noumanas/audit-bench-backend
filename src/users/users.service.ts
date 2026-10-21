@@ -1,5 +1,11 @@
 import { SubscriptionService } from '../revenue/subscription.service';
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { generateApiKey } from '../auth/api-key.util';
@@ -76,8 +82,14 @@ export class UsersService {
       }
 
       if (isSelfServicePlan(plan)) {
-        await this.prisma.organization.update({ where: { id: org.id }, data: { planId: plan.id, planExpiresAt: null } });
-        await this.subscriptions.startTerm({ organizationId: org.id }, plan, { source: 'self_service', actorId: userId });
+        await this.prisma.organization.update({
+          where: { id: org.id },
+          data: { planId: plan.id, planExpiresAt: null },
+        });
+        await this.subscriptions.startTerm({ organizationId: org.id }, plan, {
+          source: 'self_service',
+          actorId: userId,
+        });
         const updated = await this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: SAFE_USER_SELECT });
         return { applied: true as const, user: updated };
       }
@@ -163,5 +175,41 @@ export class UsersService {
     const apiKey = generateApiKey();
     await this.prisma.user.update({ where: { id: userId }, data: { apiKey } });
     return apiKey;
+  }
+
+  /**
+   * Deletes the account and everything tied to it: scans and their reports,
+   * audits, review rules, feedback, connected tokens and GitHub App links.
+   * Payment records are kept for accounting, without the user. Confirmed by
+   * typing the account's email.
+   */
+  async deleteAccount(userId: string, confirmEmail: string) {
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    if (confirmEmail.trim().toLowerCase() !== user.email.toLowerCase()) {
+      throw new BadRequestException('Type your account email exactly to confirm.');
+    }
+    if (user.role === 'super_admin') {
+      throw new ForbiddenException("A super admin account can't be deleted here, so the site always keeps an admin.");
+    }
+    if (user.organizationId && user.orgRole === 'owner') {
+      const others = await this.prisma.user.count({
+        where: { organizationId: user.organizationId, id: { not: userId } },
+      });
+      if (others > 0) {
+        throw new ForbiddenException('You own a team with other members. Remove them or hand over ownership first.');
+      }
+    }
+    await this.prisma.$transaction(async (db) => {
+      // References that would otherwise block the delete.
+      await db.organizationInvite.deleteMany({ where: { invitedById: userId } });
+      await db.planRequest.updateMany({ where: { reviewedById: userId }, data: { reviewedById: null } });
+      if (user.organizationId && user.orgRole === 'owner') {
+        await db.organizationInvite.deleteMany({ where: { organizationId: user.organizationId } });
+        await db.user.update({ where: { id: userId }, data: { organizationId: null, orgRole: null } });
+        await db.organization.delete({ where: { id: user.organizationId } });
+      }
+      await db.user.delete({ where: { id: userId } });
+    });
+    return { deleted: true };
   }
 }

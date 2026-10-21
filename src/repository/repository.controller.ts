@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseIntPipe,
@@ -54,6 +55,11 @@ export class RepositoryController {
   @Get(':id')
   findOne(@CurrentUser() user: RequestUser, @Param('id') id: string) {
     return this.repositoryService.findOne(user, id);
+  }
+
+  @Delete(':id')
+  remove(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.repositoryService.remove(user, id);
   }
 
   /** Posts a finished PR review to GitHub/GitLab again — after reconnecting a token that was refused, say. */

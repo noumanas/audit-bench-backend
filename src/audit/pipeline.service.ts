@@ -5,6 +5,7 @@ import { auditResultSchema } from '../common/finding.schema';
 import { AuditResult, LlmProviderName, TokenUsage, ZERO_USAGE, addUsage } from '../common/types';
 import { verdictForSeverities, worstVerdict } from '../common/verdict';
 import { LineRange } from '../common/diff-ranges';
+import { withoutSourceCode } from './stage1/types';
 import { runStage1 } from './stage1/run-stage1';
 import { stage1ToFindings } from './stage1/to-findings';
 import { filterStage1ToRanges } from './stage1/filter-to-ranges';
@@ -99,7 +100,7 @@ export class PipelineService {
           verdict: verdictForSeverities(baseFindings),
           summary: `Local checks found ${baseFindings.length} issue(s) and flagged ${stage1.riskyFunctions.length} function(s) that would get an AI review on a full scan.`,
           findings: baseFindings,
-          stage1,
+          stage1: withoutSourceCode(stage1),
           aiInvoked: false,
         },
         fromCache: false,
@@ -179,6 +180,8 @@ export class PipelineService {
       };
     }
 
+    // Never store source: reports and the cache keep line numbers and findings only.
+    result = { ...result, stage1: result.stage1 ? withoutSourceCode(result.stage1) : result.stage1 };
     await this.cache.store(hash, result);
     return { result, fromCache: false, usage };
   }

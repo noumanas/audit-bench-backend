@@ -49,3 +49,4 @@ export interface Stage1Result {
     riskyFunctions: FunctionRisk[];
     clean: boolean;
 }
+export declare function withoutSourceCode(stage1: Stage1Result): Stage1Result;

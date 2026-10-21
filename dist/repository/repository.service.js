@@ -74,8 +74,8 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
         this.prFeedback = prFeedback;
         this.reviewRules = reviewRules;
     }
-    async applyRules(actor, sourceName, sourceType, files) {
-        const rules = await this.reviewRules.rulesFor({ id: actor.id, organizationId: actor.organizationId }, (0, review_rules_service_1.repoFromSourceName)(sourceName, sourceType));
+    async applyRules(actor, sourceName, sourceType, files, rulesFile = null) {
+        const rules = (0, review_rules_service_1.withRulesFile)(await this.reviewRules.rulesFor({ id: actor.id, organizationId: actor.organizationId }, (0, review_rules_service_1.repoFromSourceName)(sourceName, sourceType)), rulesFile);
         if (!rules.ignorePaths.length)
             return { rules, files };
         return { rules, files: files.filter((f) => !rules.ignorePaths.some((g) => (0, finding_fingerprint_1.matchesGlob)(f.path, g))) };
@@ -90,7 +90,8 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
         const providerName = this.llm.resolveProvider(provider);
         const maxFileSize = this.config.get('MAX_FILE_SIZE_BYTES') || 200_000;
         const maxScanFiles = this.config.get('MAX_SCAN_FILES') || 40;
-        const { rules, files } = await this.applyRules(actor, sourceName, sourceType, (0, file_walker_1.extractZip)(zipBuffer, maxFileSize));
+        const extracted = (0, file_walker_1.extractZip)(zipBuffer, maxFileSize);
+        const { rules, files } = await this.applyRules(actor, sourceName, sourceType, extracted, (0, review_rules_service_1.repoRulesFile)(extracted));
         const framework = (0, framework_detector_1.detectFramework)(files);
         const { graph, circular } = (0, dependency_graph_1.buildDependencyGraph)(files);
         const deadCode = (0, dead_code_1.findDeadCode)(files, graph);
@@ -133,7 +134,7 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
         const providerName = this.llm.resolveProvider(meta.provider);
         const maxFileSize = this.config.get('MAX_FILE_SIZE_BYTES') || 200_000;
         const maxScanFiles = this.config.get('MAX_SCAN_FILES') || 40;
-        const scoped = await this.applyRules(actor, meta.sourceName, meta.sourceType, files);
+        const scoped = await this.applyRules(actor, meta.sourceName, meta.sourceType, files, (0, review_rules_service_1.repoRulesFile)(files) ?? (0, review_rules_service_1.repoRulesFile)(opts.repoFiles ?? []));
         const rules = scoped.rules;
         const analyzable = scoped.files
             .filter((f) => {
@@ -370,6 +371,7 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
             rootCause: f.rootCause,
             suggestedFix: f.suggestedFix,
             examplePatch: f.examplePatch,
+            replacement: f.replacement ?? null,
             confidence: f.confidence,
         })));
         return {
@@ -452,6 +454,15 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
             }
         }
         return updated;
+    }
+    async remove(actor, id) {
+        const job = await this.prisma.scanJob.findUnique({ where: { id } });
+        if (!job || !(0, workspace_scope_1.canViewResource)(actor, job))
+            throw new common_1.NotFoundException(`Scan ${id} not found`);
+        if (job.userId !== actor.id)
+            throw new common_1.ForbiddenException('Only the person who ran this scan can delete it.');
+        await this.prisma.scanJob.delete({ where: { id } });
+        return { deleted: true };
     }
     async findRecent(actor, limit = 20) {
         return this.prisma.scanJob.findMany({

@@ -264,6 +264,9 @@ export declare class RepositoryService {
         language: string | null;
         findingStatuses: Prisma.JsonValue | null;
     }>;
+    remove(actor: WorkspaceActor, id: string): Promise<{
+        deleted: boolean;
+    }>;
     findRecent(actor: WorkspaceActor, limit?: number): Promise<{
         error: string | null;
         id: string;

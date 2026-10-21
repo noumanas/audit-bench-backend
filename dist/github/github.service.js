@@ -24,6 +24,7 @@ const github_app_auth_service_1 = require("./github-app-auth.service");
 const file_walker_1 = require("../analysis/file-walker");
 const summary_comment_1 = require("../pr-feedback/summary-comment");
 Object.defineProperty(exports, "buildSummaryBody", { enumerable: true, get: function () { return summary_comment_1.buildSummaryBody; } });
+const check_run_1 = require("../pr-feedback/check-run");
 const github_pr_snapshot_1 = require("../common/github-pr-snapshot");
 const GITHUB_API = 'https://api.github.com';
 const REPO_CONTEXT_MAX_KB = 50 * 1024;
@@ -318,7 +319,19 @@ let GithubService = class GithubService {
     async publish(userId, context, feedback) {
         const token = await this.requireToken(context.installationId ? { installationId: context.installationId } : userId);
         await this.postPrReview(token, context.owner, context.repo, context.pullNumber, context.headSha, feedback);
-        await this.postCommitStatus(token, context.owner, context.repo, context.headSha, feedback);
+        if (context.installationId)
+            await this.postCheckRun(token, context.owner, context.repo, context.headSha, feedback);
+        else
+            await this.postCommitStatus(token, context.owner, context.repo, context.headSha, feedback);
+    }
+    async postCheckRun(token, owner, repo, sha, feedback) {
+        const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/check-runs`, {
+            method: 'POST',
+            headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+            body: JSON.stringify((0, check_run_1.buildCheckRun)(feedback, sha)),
+        });
+        if (!res.ok)
+            throw new Error(explainPostFailure(res.status, await githubErrorMessage(res)));
     }
     async postReviewWithToken(token, owner, repo, pullNumber, headSha, feedback) {
         await this.postPrReview(token, owner, repo, pullNumber, headSha, feedback);
@@ -333,7 +346,7 @@ let GithubService = class GithubService {
             ...(at.end > at.start ? { start_line: at.start, start_side: 'RIGHT' } : {}),
             line: at.end,
             side: 'RIGHT',
-            body: (0, inline_comment_1.inlineCommentBody)(f),
+            body: (0, inline_comment_1.inlineCommentBody)(f, { at }),
         }));
         const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${pullNumber}/reviews`, {
             method: 'POST',
@@ -399,6 +412,30 @@ let GithubService = class GithubService {
                 break;
         }
         return all;
+    }
+    async reviewThreadStates(auth, owner, repo, pullNumber) {
+        const token = await this.requireToken(auth);
+        const res = await fetch(`${GITHUB_API}/graphql`, {
+            method: 'POST',
+            headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                query: `query($owner: String!, $repo: String!, $number: Int!) {
+          repository(owner: $owner, name: $repo) { pullRequest(number: $number) {
+            reviewThreads(first: 100) { nodes { isResolved isOutdated comments(first: 1) { nodes { databaseId } } } }
+          } } }`,
+                variables: { owner, repo, number: pullNumber },
+            }),
+        });
+        const states = new Map();
+        if (!res.ok)
+            return states;
+        const body = (await res.json());
+        for (const t of body.data?.repository?.pullRequest?.reviewThreads?.nodes ?? []) {
+            const id = t.comments?.nodes?.[0]?.databaseId;
+            if (id)
+                states.set(id, { resolved: Boolean(t.isResolved), outdated: Boolean(t.isOutdated) });
+        }
+        return states;
     }
     async listReviewThread(auth, owner, repo, pullNumber, rootId) {
         const token = await this.requireToken(auth);

@@ -1,10 +1,17 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Post, UseGuards } from '@nestjs/common';
+import { IsString, MaxLength } from 'class-validator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { RequestUser } from '../auth/types';
 import { UsersService } from './users.service';
 import { QuotaService } from '../quota/quota.service';
 import { ChangePlanDto } from './dto/change-plan.dto';
+
+class DeleteAccountDto {
+  @IsString()
+  @MaxLength(320)
+  confirmEmail!: string;
+}
 
 @Controller('me')
 @UseGuards(JwtAuthGuard)
@@ -54,5 +61,11 @@ export class UsersController {
   @Post('api-key/rotate')
   async rotateApiKey(@CurrentUser() user: RequestUser) {
     return { apiKey: await this.usersService.rotateApiKey(user.id) };
+  }
+
+  /** Deletes the signed-in account and its data — see UsersService.deleteAccount. */
+  @Delete()
+  deleteAccount(@CurrentUser() user: RequestUser, @Body() dto: DeleteAccountDto) {
+    return this.usersService.deleteAccount(user.id, dto.confirmEmail);
   }
 }

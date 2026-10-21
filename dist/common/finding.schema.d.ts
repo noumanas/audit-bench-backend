@@ -21,6 +21,7 @@ export declare const findingSchema: z.ZodObject<{
     rootCause: z.ZodString;
     suggestedFix: z.ZodString;
     examplePatch: z.ZodDefault<z.ZodOptional<z.ZodNullable<z.ZodString>>>;
+    replacement: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     confidence: z.ZodNumber;
 }, z.core.$strip>;
 export declare const auditResultSchema: z.ZodObject<{
@@ -52,6 +53,7 @@ export declare const auditResultSchema: z.ZodObject<{
         rootCause: z.ZodString;
         suggestedFix: z.ZodString;
         examplePatch: z.ZodDefault<z.ZodOptional<z.ZodNullable<z.ZodString>>>;
+        replacement: z.ZodOptional<z.ZodNullable<z.ZodString>>;
         confidence: z.ZodNumber;
     }, z.core.$strip>>;
 }, z.core.$strip>;
