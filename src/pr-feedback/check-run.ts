@@ -61,7 +61,10 @@ export function buildCheckRun(feedback: PrFeedback, headSha: string) {
       end_line: f.endLine && f.endLine > (f.line as number) ? f.endLine : (f.line as number),
       annotation_level: LEVEL[f.severity] ?? 'notice',
       title: f.title.slice(0, 255),
-      message: [f.description, f.suggestedFix ? `Suggested fix: ${f.suggestedFix}` : ''].filter(Boolean).join('\n\n').slice(0, 64_000),
+      message: [f.description, f.suggestedFix ? `Suggested fix: ${f.suggestedFix}` : '']
+        .filter(Boolean)
+        .join('\n\n')
+        .slice(0, 64_000),
     }));
 
   return {
@@ -71,5 +74,32 @@ export function buildCheckRun(feedback: PrFeedback, headSha: string) {
     conclusion,
     ...(feedback.scanUrl ? { details_url: feedback.scanUrl } : {}),
     output: { title, summary, annotations },
+  };
+}
+
+/** Posted the moment a review starts: GitHub shows it with a spinner until it's completed. */
+export function inProgressCheckRun(headSha: string) {
+  return {
+    name: CHECK_NAME,
+    head_sha: headSha,
+    status: 'in_progress' as const,
+    started_at: new Date().toISOString(),
+    output: {
+      title: 'Reviewing…',
+      summary: 'Audit Bench Ai is reviewing the changes in this commit. This usually takes 1–2 minutes.',
+    },
+  };
+}
+
+/**
+ * Closes a check whose review couldn't finish (an error, or the plan's
+ * limit). Neutral, so it never blocks a merge or spins forever.
+ */
+export function stoppedCheckRun(reason: string) {
+  return {
+    status: 'completed' as const,
+    conclusion: 'neutral' as const,
+    completed_at: new Date().toISOString(),
+    output: { title: 'Review didn’t finish', summary: reason },
   };
 }

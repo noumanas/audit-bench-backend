@@ -63,17 +63,34 @@ describe('buildSummaryBody', () => {
     scanUrl: 'https://auditbenchai.com/app/repository/1',
     headSha: 'dc6b5aa111',
     findings: [
-      { path: 'src/menu.ts', line: 10, endLine: 12, severity: 'high', title: 'Menu leaks', description: 'd', suggestedFix: 'f' },
+      {
+        path: 'src/menu.ts',
+        line: 10,
+        endLine: 12,
+        severity: 'high',
+        title: 'Menu leaks',
+        description: 'd',
+        suggestedFix: 'f',
+      },
     ],
     readiness: { status: 'not_ready' as const, blockers: ['1 CI check failing: tests (3.11).'], notes: [] },
-    checks: deterministicChecks(snapshot, { findings: [{ severity: 'high' }], secrets: 0, changedPaths: ['src/menu.ts'] }),
+    checks: deterministicChecks(snapshot, {
+      findings: [{ severity: 'high' }],
+      secrets: 0,
+      changedPaths: ['src/menu.ts'],
+    }),
     insights: {
       walkthrough: 'Restores native spelling menus in editable chat fields.',
       files: [{ path: 'src/menu.ts', summary: 'Routes the context menu | keeps native items.' }],
       mergeRisk: { level: 'minimal' as const, explanation: 'No merge-blocking risk found.' },
       checks: [
         { name: 'Title check' as const, status: 'pass' as const, explanation: 'Clear title.' },
-        { name: 'Description check' as const, status: 'warning' as const, explanation: 'No test notes.', resolution: 'Say how it was tested.' },
+        {
+          name: 'Description check' as const,
+          status: 'warning' as const,
+          explanation: 'No test notes.',
+          resolution: 'Say how it was tested.',
+        },
       ],
     },
   };
@@ -109,7 +126,12 @@ describe('buildSummaryBody', () => {
 
   it('celebrates a clean review and lists blockers when there is no checks table', () => {
     const body = buildSummaryBody(
-      { verdict: 'pass', summary: 's', findings: [], readiness: { status: 'ready_with_notes', blockers: [], notes: ['CI still running.'] } },
+      {
+        verdict: 'pass',
+        summary: 's',
+        findings: [],
+        readiness: { status: 'ready_with_notes', blockers: [], notes: ['CI still running.'] },
+      },
       { posted: 0 },
     );
     expect(body).toContain('No actionable comments were generated in this review. 🎉');

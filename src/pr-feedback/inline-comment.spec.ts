@@ -59,7 +59,10 @@ describe('inlineCommentBody', () => {
 
 describe('parseFindingComment', () => {
   it('reads the category and title back out of our own comment', () => {
-    expect(parseFindingComment(inlineCommentBody(finding))).toEqual({ category: 'Testing', title: 'Auth-link failures lack tests' });
+    expect(parseFindingComment(inlineCommentBody(finding))).toEqual({
+      category: 'Testing',
+      title: 'Auth-link failures lack tests',
+    });
   });
 
   it('ignores comments that are not ours', () => {

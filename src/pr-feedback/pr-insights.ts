@@ -55,7 +55,10 @@ export function buildInsightsPrompt(opts: {
         if (budget <= 0) return '';
         const end = Math.min(r.end, r.start + budget - 1, lines.length);
         budget -= Math.max(end - r.start + 1, 0);
-        return lines.slice(r.start - 1, end).map((l, i) => `${r.start + i} | ${l}`).join('\n');
+        return lines
+          .slice(r.start - 1, end)
+          .map((l, i) => `${r.start + i} | ${l}`)
+          .join('\n');
       })
       .filter(Boolean);
     changes.push(`--- ${f.path} ---\n${hunks.length ? hunks.join('\n...\n') : '(changes not shown: size limit)'}`);
@@ -119,7 +122,11 @@ export function deterministicChecks(
             resolution: `Merge or rebase ${pr.baseRef} into ${pr.headRef} and resolve the conflicts.`,
           }
         : pr.mergeable === null
-          ? { name: 'Merge conflicts', status: 'warning', explanation: 'GitHub had not finished checking for conflicts.' }
+          ? {
+              name: 'Merge conflicts',
+              status: 'warning',
+              explanation: 'GitHub had not finished checking for conflicts.',
+            }
           : { name: 'Merge conflicts', status: 'pass', explanation: `Merges cleanly into ${pr.baseRef}.` },
     );
     if (pr.draft) {
@@ -146,7 +153,12 @@ export function deterministicChecks(
         ? { name: 'CI checks', status: 'warning', explanation: `${ci.pending.length} of ${total} still running.` }
         : total
           ? { name: 'CI checks', status: 'pass', explanation: `All ${total} passed.` }
-          : { name: 'CI checks', status: 'warning', explanation: 'No CI checks ran on this commit.', resolution: 'Add CI so every PR is built and tested.' },
+          : {
+              name: 'CI checks',
+              status: 'warning',
+              explanation: 'No CI checks ran on this commit.',
+              resolution: 'Add CI so every PR is built and tested.',
+            },
   );
 
   checks.push(
@@ -177,10 +189,15 @@ export function deterministicChecks(
             explanation: `${high} high-severity issue${high === 1 ? '' : 's'} worth fixing first.`,
             resolution: 'Address the high-severity inline comments, or reply explaining why not.',
           }
-        : { name: 'Blocking issues', status: 'pass', explanation: 'No critical or high-severity issues in the changed lines.' },
+        : {
+            name: 'Blocking issues',
+            status: 'pass',
+            explanation: 'No critical or high-severity issues in the changed lines.',
+          },
   );
 
-  const isTest = (p: string) => /(^|\/)(tests?|__tests__|spec)\/|\.(test|spec)\.[a-z]+$|_test\.(go|py)$|Test\.(java|kt)$/i.test(p);
+  const isTest = (p: string) =>
+    /(^|\/)(tests?|__tests__|spec)\/|\.(test|spec)\.[a-z]+$|_test\.(go|py)$|Test\.(java|kt)$/i.test(p);
   const isCode = (p: string) => /\.(ts|tsx|js|jsx|mjs|cjs|py|go|java|kt|rb|php|cs|rs|swift|scala|c|cc|cpp|h)$/i.test(p);
   const sourceChanged = review.changedPaths.some((p) => isCode(p) && !isTest(p));
   if (sourceChanged) {
