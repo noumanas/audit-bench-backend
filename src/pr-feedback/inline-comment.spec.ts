@@ -66,3 +66,24 @@ describe('parseFindingComment', () => {
     expect(parseFindingComment('**Looks good** to me')).toBeNull();
   });
 });
+
+describe('one-click suggestions', () => {
+  const fix = { ...finding, line: 233, endLine: 235, replacement: 'const a = 1;\nconst b = 2;\nconst c = 3;' };
+
+  it('adds a GitHub suggestion when the comment covers exactly the lines it replaces', () => {
+    const body = inlineCommentBody(fix, { at: { start: 233, end: 235 } });
+    expect(body).toContain('```suggestion\nconst a = 1;\nconst b = 2;\nconst c = 3;\n```');
+    expect(body).not.toContain('```mjs'); // the example patch isn't repeated
+  });
+
+  it('falls back to the example when the comment was clipped to fewer lines', () => {
+    const body = inlineCommentBody(fix, { at: { start: 233, end: 234 } });
+    expect(body).not.toContain('```suggestion');
+    expect(body).toContain('```mjs');
+  });
+
+  it('never adds a suggestion to plain-Markdown hosts or without a replacement', () => {
+    expect(inlineCommentBody(fix, { plain: true, at: { start: 233, end: 235 } })).not.toContain('```suggestion');
+    expect(inlineCommentBody(finding, { at: { start: 233, end: 235 } })).not.toContain('```suggestion');
+  });
+});

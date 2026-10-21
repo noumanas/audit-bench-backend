@@ -22,12 +22,14 @@ export function scanSecrets(files: ScannedFile[]): SecretFinding[] {
     lines.forEach((line, idx) => {
       if (SKIP_PATTERNS.some((p) => p.test(line))) return;
       for (const rule of RULES) {
-        if (rule.pattern.test(line)) {
+        const match = rule.pattern.exec(line);
+        if (match) {
           findings.push({
             path: file.path,
             line: idx + 1,
             rule: rule.name,
-            snippet: line.trim().slice(0, 160),
+            // Never store the secret itself: just enough to recognise which one it is.
+            snippet: maskSecret(line.trim(), match[0]).slice(0, 160),
           });
           break;
         }
@@ -36,4 +38,10 @@ export function scanSecrets(files: ScannedFile[]): SecretFinding[] {
   }
 
   return findings.slice(0, 50);
+}
+
+/** The line with the secret replaced by its first 4 and last 2 characters, e.g. "AKIA…7Q". */
+export function maskSecret(line: string, secret: string): string {
+  const masked = secret.length > 8 ? `${secret.slice(0, 4)}…${secret.slice(-2)}` : '…';
+  return line.split(secret).join(masked);
 }

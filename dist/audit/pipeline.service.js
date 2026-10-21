@@ -17,6 +17,7 @@ const cache_service_1 = require("./cache.service");
 const finding_schema_1 = require("../common/finding.schema");
 const types_1 = require("../common/types");
 const verdict_1 = require("../common/verdict");
+const types_2 = require("./stage1/types");
 const run_stage1_1 = require("./stage1/run-stage1");
 const to_findings_1 = require("./stage1/to-findings");
 const filter_to_ranges_1 = require("./stage1/filter-to-ranges");
@@ -51,7 +52,7 @@ let PipelineService = PipelineService_1 = class PipelineService {
                     verdict: (0, verdict_1.verdictForSeverities)(baseFindings),
                     summary: `Local checks found ${baseFindings.length} issue(s) and flagged ${stage1.riskyFunctions.length} function(s) that would get an AI review on a full scan.`,
                     findings: baseFindings,
-                    stage1,
+                    stage1: (0, types_2.withoutSourceCode)(stage1),
                     aiInvoked: false,
                 },
                 fromCache: false,
@@ -121,6 +122,7 @@ let PipelineService = PipelineService_1 = class PipelineService {
                 aiInvoked: true,
             };
         }
+        result = { ...result, stage1: result.stage1 ? (0, types_2.withoutSourceCode)(result.stage1) : result.stage1 };
         await this.cache.store(hash, result);
         return { result, fromCache: false, usage };
     }

@@ -14,11 +14,20 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.UsersController = void 0;
 const common_1 = require("@nestjs/common");
+const class_validator_1 = require("class-validator");
 const jwt_auth_guard_1 = require("../auth/jwt-auth.guard");
 const current_user_decorator_1 = require("../auth/current-user.decorator");
 const users_service_1 = require("./users.service");
 const quota_service_1 = require("../quota/quota.service");
 const change_plan_dto_1 = require("./dto/change-plan.dto");
+class DeleteAccountDto {
+    confirmEmail;
+}
+__decorate([
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(320),
+    __metadata("design:type", String)
+], DeleteAccountDto.prototype, "confirmEmail", void 0);
 let UsersController = class UsersController {
     usersService;
     quotaService;
@@ -49,6 +58,9 @@ let UsersController = class UsersController {
     }
     async rotateApiKey(user) {
         return { apiKey: await this.usersService.rotateApiKey(user.id) };
+    }
+    deleteAccount(user, dto) {
+        return this.usersService.deleteAccount(user.id, dto.confirmEmail);
     }
 };
 exports.UsersController = UsersController;
@@ -109,6 +121,14 @@ __decorate([
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "rotateApiKey", null);
+__decorate([
+    (0, common_1.Delete)(),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, DeleteAccountDto]),
+    __metadata("design:returntype", void 0)
+], UsersController.prototype, "deleteAccount", null);
 exports.UsersController = UsersController = __decorate([
     (0, common_1.Controller)('me'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),

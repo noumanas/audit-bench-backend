@@ -147,4 +147,7 @@ export declare class UsersService {
     rotateBadgeToken(userId: string): Promise<string>;
     getApiKey(userId: string): Promise<string>;
     rotateApiKey(userId: string): Promise<string>;
+    deleteAccount(userId: string, confirmEmail: string): Promise<{
+        deleted: boolean;
+    }>;
 }

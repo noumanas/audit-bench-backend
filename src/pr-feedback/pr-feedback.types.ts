@@ -48,6 +48,8 @@ export interface PrFeedbackFinding {
   rootCause?: string;
   suggestedFix?: string;
   examplePatch?: string | null;
+  /** Exact new code for lines line..endLine — posted as a one-click GitHub suggestion. */
+  replacement?: string | null;
   confidence?: number;
 }
 

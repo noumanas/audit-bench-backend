@@ -266,9 +266,19 @@ export class WebhooksService {
    * team's feedback. GitHub sends no event for reactions, so this is when
    * they're collected; re-running it doesn't double count.
    */
+  /**
+   * When a PR closes, logs what happened to each of our inline findings:
+   * accepted (thread resolved, the code it was on changed, or 👍),
+   * dismissed (👎) or ignored. Reactions also feed learning directly.
+   * GitHub sends no event for reactions, so this is when they're collected;
+   * re-running it doesn't double count.
+   */
   async harvestReactions(auth: GithubAuth, ownerUserId: string, owner: string, repo: string, pullNumber: number) {
     try {
-      const comments = await this.github.listPullReviewComments(auth, owner, repo, pullNumber);
+      const [comments, threads] = await Promise.all([
+        this.github.listPullReviewComments(auth, owner, repo, pullNumber),
+        this.github.reviewThreadStates(auth, owner, repo, pullNumber).catch(() => new Map()),
+      ]);
       const team = await this.ownerOf(ownerUserId);
       for (const c of comments) {
         const finding = parseFindingComment(c.body ?? '');
@@ -278,17 +288,34 @@ export class WebhooksService {
           path: c.path,
           category: finding.category,
           title: finding.title,
-          source: 'reaction',
         };
-        if ((c.reactions?.['-1'] ?? 0) > 0) {
-          await this.reviewRules.recordFeedback(team, { ...base, signal: 'down', sourceRef: `reaction:${c.id}:down` });
-        }
-        if ((c.reactions?.['+1'] ?? 0) > 0) {
-          await this.reviewRules.recordFeedback(team, { ...base, signal: 'up', sourceRef: `reaction:${c.id}:up` });
-        }
+        const down = (c.reactions?.['-1'] ?? 0) > 0;
+        const up = (c.reactions?.['+1'] ?? 0) > 0;
+        if (down)
+          await this.reviewRules.recordFeedback(team, {
+            ...base,
+            signal: 'down',
+            source: 'reaction',
+            sourceRef: `reaction:${c.id}:down`,
+          });
+        if (up)
+          await this.reviewRules.recordFeedback(team, {
+            ...base,
+            signal: 'up',
+            source: 'reaction',
+            sourceRef: `reaction:${c.id}:up`,
+          });
+        const thread = threads.get(c.id);
+        const outcome = down ? 'dismissed' : up || thread?.resolved || thread?.outdated ? 'accepted' : 'ignored';
+        await this.reviewRules.recordFeedback(team, {
+          ...base,
+          signal: outcome,
+          source: 'outcome',
+          sourceRef: `outcome:${c.id}`,
+        });
       }
     } catch (err) {
-      this.logger.warn(`Couldn't collect reactions on ${owner}/${repo}#${pullNumber}: ${(err as Error).message}`);
+      this.logger.warn(`Couldn't collect feedback on ${owner}/${repo}#${pullNumber}: ${(err as Error).message}`);
     }
   }
 

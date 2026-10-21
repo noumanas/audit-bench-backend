@@ -51,3 +51,17 @@ export interface Stage1Result {
   /** True when nothing in Stage 1 warranted an LLM call. */
   clean: boolean;
 }
+
+/**
+ * Stage 1's result without function source: what gets stored with a report
+ * and in the review cache. The code is only needed while the review runs
+ * (to build the AI prompt); keeping it would mean storing customers' source.
+ */
+export function withoutSourceCode(stage1: Stage1Result): Stage1Result {
+  const strip = (fn: FunctionUnit): FunctionUnit => ({ ...fn, code: '' });
+  return {
+    ...stage1,
+    functions: stage1.functions.map(strip),
+    riskyFunctions: stage1.riskyFunctions.map((r) => ({ ...r, fn: strip(r.fn) })),
+  };
+}

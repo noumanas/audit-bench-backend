@@ -14,6 +14,7 @@ export type { GithubAuth };
 import { ContributorStat, ScannedFile } from '../analysis/types';
 import { extractZip } from '../analysis/file-walker';
 import { buildSummaryBody } from '../pr-feedback/summary-comment';
+import { buildCheckRun } from '../pr-feedback/check-run';
 import { GithubPull, fetchCiChecks, refetchIfMergeabilityPending, toPrSnapshot } from '../common/github-pr-snapshot';
 
 const GITHUB_API = 'https://api.github.com';
@@ -422,7 +423,22 @@ export class GithubService implements OnModuleInit, PrPublisher {
     // Reviews started by the GitHub App post as its bot; the rest as the user.
     const token = await this.requireToken(context.installationId ? { installationId: context.installationId } : userId);
     await this.postPrReview(token, context.owner, context.repo, context.pullNumber, context.headSha, feedback);
-    await this.postCommitStatus(token, context.owner, context.repo, context.headSha, feedback);
+    // Only a GitHub App can create check runs; a personal token gets the older commit status.
+    if (context.installationId) await this.postCheckRun(token, context.owner, context.repo, context.headSha, feedback);
+    else await this.postCommitStatus(token, context.owner, context.repo, context.headSha, feedback);
+  }
+
+  /**
+   * The verdict as a GitHub Check: a pass/fail teams can make a required
+   * status check, with each finding as an annotation in "Files changed".
+   */
+  private async postCheckRun(token: string, owner: string, repo: string, sha: string, feedback: PrFeedback) {
+    const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/check-runs`, {
+      method: 'POST',
+      headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify(buildCheckRun(feedback, sha)),
+    });
+    if (!res.ok) throw new Error(explainPostFailure(res.status, await githubErrorMessage(res)));
   }
 
   /**
@@ -459,7 +475,7 @@ export class GithubService implements OnModuleInit, PrPublisher {
         ...(at.end > at.start ? { start_line: at.start, start_side: 'RIGHT' } : {}),
         line: at.end,
         side: 'RIGHT',
-        body: inlineCommentBody(f),
+        body: inlineCommentBody(f, { at }),
       }));
 
     const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${pullNumber}/reviews`, {
@@ -552,6 +568,35 @@ export class GithubService implements OnModuleInit, PrPublisher {
       if (batch.length < 100) break;
     }
     return all;
+  }
+
+  /** Each inline thread on a PR, keyed by its first comment's id: resolved, and outdated (the code it was on changed). */
+  async reviewThreadStates(
+    auth: GithubAuth,
+    owner: string,
+    repo: string,
+    pullNumber: number,
+  ): Promise<Map<number, { resolved: boolean; outdated: boolean }>> {
+    const token = await this.requireToken(auth);
+    const res = await fetch(`${GITHUB_API}/graphql`, {
+      method: 'POST',
+      headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: `query($owner: String!, $repo: String!, $number: Int!) {
+          repository(owner: $owner, name: $repo) { pullRequest(number: $number) {
+            reviewThreads(first: 100) { nodes { isResolved isOutdated comments(first: 1) { nodes { databaseId } } } }
+          } } }`,
+        variables: { owner, repo, number: pullNumber },
+      }),
+    });
+    const states = new Map<number, { resolved: boolean; outdated: boolean }>();
+    if (!res.ok) return states;
+    const body = (await res.json()) as { data?: any };
+    for (const t of body.data?.repository?.pullRequest?.reviewThreads?.nodes ?? []) {
+      const id = t.comments?.nodes?.[0]?.databaseId;
+      if (id) states.set(id, { resolved: Boolean(t.isResolved), outdated: Boolean(t.isOutdated) });
+    }
+    return states;
   }
 
   /** Every comment in one inline thread — the root and its replies — oldest first. */

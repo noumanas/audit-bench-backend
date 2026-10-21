@@ -15,6 +15,12 @@ export class ReviewRulesController {
     return this.rules.list(user);
   }
 
+  /** Accepted / dismissed / ignored findings on closed PRs, last 90 days. */
+  @Get('outcomes')
+  outcomes(@CurrentUser() user: RequestUser) {
+    return this.rules.outcomes(user);
+  }
+
   @Post()
   create(@CurrentUser() user: RequestUser, @Body() dto: CreateReviewRuleDto) {
     return this.rules.create(user, dto);

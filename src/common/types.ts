@@ -21,6 +21,8 @@ export interface Finding {
   rootCause: string;
   suggestedFix: string;
   examplePatch: string | null;
+  /** PR reviews: exact new code for lines line..endLine, offered as a one-click GitHub suggestion. */
+  replacement?: string | null;
   confidence: number; // 0-1
 }
 

@@ -14,6 +14,7 @@ import { requireJwtSecret } from '../auth/jwt-secret';
 import { GithubAppAuthService } from '../github/github-app-auth.service';
 import { GithubService } from '../github/github.service';
 import { WebhooksService } from '../webhooks/webhooks.service';
+import { CHECK_NAME } from '../pr-feedback/check-run';
 
 const GITHUB_API = 'https://api.github.com';
 const STATE_TTL_MS = 30 * 60_000;
@@ -218,15 +219,15 @@ export class GithubAppService {
       setup_url: `${this.backend()}/github-app/setup`,
       setup_on_update: true,
       public: true,
+      // Least privilege: read code; write PR reviews and comments (this also
+      // covers comments in the PR conversation); write the verdict as a check.
       default_permissions: {
         metadata: 'read',
         contents: 'read',
         pull_requests: 'write',
-        issues: 'write',
-        statuses: 'write',
-        checks: 'read',
+        checks: 'write',
       },
-      default_events: ['pull_request', 'pull_request_review_comment', 'issue_comment'],
+      default_events: ['pull_request', 'pull_request_review_comment', 'issue_comment', 'check_run'],
     };
     const owner = org?.trim();
     if (owner && !/^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/.test(owner)) {
@@ -325,6 +326,12 @@ export class GithubAppService {
     const auth = { installationId };
     const [owner, repo] = String(body?.repository?.full_name ?? '/').split('/');
 
+    // "Re-run" on the Audit Bench Ai check in GitHub: review that PR again.
+    if (event === 'check_run' && body.action === 'rerequested' && body.check_run?.name === CHECK_NAME) {
+      const prs: Array<{ number: number }> = body.check_run.pull_requests ?? [];
+      for (const pr of prs) void this.webhooks.autoReviewPullRequest(auth, inst.user, owner, repo, pr.number);
+      return { ok: true, status: prs.length ? 'reviewing again' : 'no pull request on this check' };
+    }
     if (event === 'pull_request' && body.action === 'closed') {
       void this.webhooks.harvestReactions(auth, inst.user.id, owner, repo, body.pull_request.number);
       return { ok: true, status: 'collecting feedback' };

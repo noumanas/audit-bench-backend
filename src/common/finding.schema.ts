@@ -12,6 +12,9 @@ export const findingSchema = z.object({
   rootCause: z.string().min(1),
   suggestedFix: z.string().min(1),
   examplePatch: z.string().nullable().optional().default(null),
+  // Pull request reviews: the exact new code for lines line..endLine, for a
+  // one-click GitHub suggestion. Null unless the fix is confined to those lines.
+  replacement: z.string().nullable().optional(),
   confidence: z.number().min(0).max(1),
 });
 

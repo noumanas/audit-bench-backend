@@ -65,8 +65,14 @@ let UsersService = class UsersService {
                 throw new common_1.ConflictException(`Your organization is already on the ${plan.name} plan`);
             }
             if (isSelfServicePlan(plan)) {
-                await this.prisma.organization.update({ where: { id: org.id }, data: { planId: plan.id, planExpiresAt: null } });
-                await this.subscriptions.startTerm({ organizationId: org.id }, plan, { source: 'self_service', actorId: userId });
+                await this.prisma.organization.update({
+                    where: { id: org.id },
+                    data: { planId: plan.id, planExpiresAt: null },
+                });
+                await this.subscriptions.startTerm({ organizationId: org.id }, plan, {
+                    source: 'self_service',
+                    actorId: userId,
+                });
                 const updated = await this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: SAFE_USER_SELECT });
                 return { applied: true, user: updated };
             }
@@ -135,6 +141,34 @@ let UsersService = class UsersService {
         const apiKey = (0, api_key_util_1.generateApiKey)();
         await this.prisma.user.update({ where: { id: userId }, data: { apiKey } });
         return apiKey;
+    }
+    async deleteAccount(userId, confirmEmail) {
+        const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+        if (confirmEmail.trim().toLowerCase() !== user.email.toLowerCase()) {
+            throw new common_1.BadRequestException('Type your account email exactly to confirm.');
+        }
+        if (user.role === 'super_admin') {
+            throw new common_1.ForbiddenException("A super admin account can't be deleted here, so the site always keeps an admin.");
+        }
+        if (user.organizationId && user.orgRole === 'owner') {
+            const others = await this.prisma.user.count({
+                where: { organizationId: user.organizationId, id: { not: userId } },
+            });
+            if (others > 0) {
+                throw new common_1.ForbiddenException('You own a team with other members. Remove them or hand over ownership first.');
+            }
+        }
+        await this.prisma.$transaction(async (db) => {
+            await db.organizationInvite.deleteMany({ where: { invitedById: userId } });
+            await db.planRequest.updateMany({ where: { reviewedById: userId }, data: { reviewedById: null } });
+            if (user.organizationId && user.orgRole === 'owner') {
+                await db.organizationInvite.deleteMany({ where: { organizationId: user.organizationId } });
+                await db.user.update({ where: { id: userId }, data: { organizationId: null, orgRole: null } });
+                await db.organization.delete({ where: { id: user.organizationId } });
+            }
+            await db.user.delete({ where: { id: userId } });
+        });
+        return { deleted: true };
     }
 };
 exports.UsersService = UsersService;
