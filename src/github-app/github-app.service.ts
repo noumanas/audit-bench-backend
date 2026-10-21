@@ -329,7 +329,9 @@ export class GithubAppService {
     // "Re-run" on the Audit Bench Ai check in GitHub: review that PR again.
     if (event === 'check_run' && body.action === 'rerequested' && body.check_run?.name === CHECK_NAME) {
       const prs: Array<{ number: number }> = body.check_run.pull_requests ?? [];
-      for (const pr of prs) void this.webhooks.autoReviewPullRequest(auth, inst.user, owner, repo, pr.number);
+      for (const pr of prs) {
+        void this.webhooks.autoReviewPullRequest(auth, inst.user, owner, repo, pr.number, body.check_run.head_sha);
+      }
       return { ok: true, status: prs.length ? 'reviewing again' : 'no pull request on this check' };
     }
     if (event === 'pull_request' && body.action === 'closed') {
@@ -347,7 +349,7 @@ export class GithubAppService {
         return { ok: true, skipped: 'this commit was already reviewed' };
       }
       // Answer GitHub fast; the review runs in the background.
-      void this.webhooks.autoReviewPullRequest(auth, inst.user, owner, repo, pullNumber);
+      void this.webhooks.autoReviewPullRequest(auth, inst.user, owner, repo, pullNumber, body.pull_request.head?.sha);
       return { ok: true, status: 'reviewing' };
     }
 

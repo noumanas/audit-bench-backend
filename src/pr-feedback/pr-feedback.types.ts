@@ -16,6 +16,8 @@ export type PrContext =
       baseRef: string;
       /** Set when the GitHub App started this review: it posts as the app's bot. */
       installationId?: number;
+      /** The "Reviewing…" check posted when the review started; completed with the verdict. */
+      checkRunId?: number;
     }
   | {
       kind: 'gitlab';
@@ -76,6 +78,8 @@ export interface PrFeedback {
 
 export interface PrPublisher {
   publish(userId: string, context: Extract<PrContext, { kind: string }>, feedback: PrFeedback): Promise<void>;
+  /** Clears any "reviewing…" status when a review couldn't finish. */
+  fail?(userId: string, context: Extract<PrContext, { kind: string }>, reason: string): Promise<void>;
 }
 
 /** Signs every review summary, so readers of the PR know where it came from. */

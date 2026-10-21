@@ -143,7 +143,7 @@ describe('GithubAppService webhook', () => {
   it('reviews a new pull request as the app, on the linked account', async () => {
     const { service, webhooks } = setup(linked);
     expect(await deliver(service, 'pull_request', prBody())).toEqual({ ok: true, status: 'reviewing' });
-    expect(webhooks.autoReviewPullRequest).toHaveBeenCalledWith({ installationId: 42 }, linked.user, 'acme', 'api', 7);
+    expect(webhooks.autoReviewPullRequest).toHaveBeenCalledWith({ installationId: 42 }, linked.user, 'acme', 'api', 7, 'abc');
   });
 
   it('skips drafts, repeats, unlinked installs and auto-review switched off', async () => {

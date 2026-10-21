@@ -35,4 +35,15 @@ export class PrFeedbackService {
       return { ok: false, error: (err as Error).message || 'Posting the review failed.' };
     }
   }
+
+  /** A review couldn't finish: clear its "reviewing…" status on the PR. Never throws. */
+  async fail(userId: string, context: PrContext, reason: string): Promise<void> {
+    const publisher = this.publishers.get(context.kind);
+    if (!publisher?.fail) return;
+    try {
+      await publisher.fail(userId, context as any, reason);
+    } catch (err) {
+      this.logger.warn(`Couldn't clear the review status for ${context.kind}: ${(err as Error).message}`);
+    }
+  }
 }

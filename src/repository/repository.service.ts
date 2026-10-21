@@ -521,10 +521,18 @@ export class RepositoryService {
       if (job.prContext) await this.publishPrFeedback(jobId);
     } catch (err) {
       this.logger.error(`Scan ${jobId} failed`, err as Error);
-      await this.prisma.scanJob.update({
+      const failed = await this.prisma.scanJob.update({
         where: { id: jobId },
         data: { status: 'failed', error: (err as Error).message, completedAt: new Date() },
       });
+      // A PR review that started a "reviewing…" status must not leave it spinning.
+      if (failed.prContext) {
+        await this.prFeedback.fail(
+          failed.userId,
+          failed.prContext as unknown as PrContext,
+          'Audit Bench Ai couldn’t finish reviewing this commit. Push another commit, or click Re-run, to try again.',
+        );
+      }
     }
   }
 

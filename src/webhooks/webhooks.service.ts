@@ -356,6 +356,7 @@ export class WebhooksService {
       owner,
       repo,
       pullNumber,
+      headSha,
     );
     return { ok: true };
   }
@@ -370,7 +371,10 @@ export class WebhooksService {
     owner: string,
     repo: string,
     pullNumber: number,
+    /** The commit being reviewed, from the webhook: lets the "reviewing…" status show at once. */
+    eventHeadSha?: string,
   ) {
+    const checkRunId = eventHeadSha ? await this.github.startReviewStatus(auth, owner, repo, eventHeadSha) : undefined;
     try {
       const { files, url, headSha, headRef, baseRef, snapshot, repoFiles } = await this.github.fetchPrFiles(
         auth,
@@ -395,11 +399,18 @@ export class WebhooksService {
             headRef,
             baseRef,
             ...(typeof auth === 'string' ? {} : { installationId: auth.installationId }),
+            // Only reuse the check if it's for this exact commit (a push could land in between).
+            ...(checkRunId && headSha === eventHeadSha ? { checkRunId } : {}),
           },
         },
         { prSnapshot: snapshot, repoFiles },
       );
     } catch (err) {
+      if (eventHeadSha) {
+        await this.github
+          .stopReviewStatus(auth, owner, repo, eventHeadSha, this.quotaSkipMessage(err as Error), checkRunId)
+          .catch(() => undefined);
+      }
       await this.handleAutoReviewError(err, () =>
         this.github.postIssueComment(auth, owner, repo, pullNumber, this.quotaSkipMessage(err as Error)),
       );

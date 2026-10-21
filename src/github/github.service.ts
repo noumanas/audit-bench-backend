@@ -14,7 +14,7 @@ export type { GithubAuth };
 import { ContributorStat, ScannedFile } from '../analysis/types';
 import { extractZip } from '../analysis/file-walker';
 import { buildSummaryBody } from '../pr-feedback/summary-comment';
-import { buildCheckRun } from '../pr-feedback/check-run';
+import { buildCheckRun, inProgressCheckRun, stoppedCheckRun } from '../pr-feedback/check-run';
 import { GithubPull, fetchCiChecks, refetchIfMergeabilityPending, toPrSnapshot } from '../common/github-pr-snapshot';
 
 const GITHUB_API = 'https://api.github.com';
@@ -424,21 +424,104 @@ export class GithubService implements OnModuleInit, PrPublisher {
     const token = await this.requireToken(context.installationId ? { installationId: context.installationId } : userId);
     await this.postPrReview(token, context.owner, context.repo, context.pullNumber, context.headSha, feedback);
     // Only a GitHub App can create check runs; a personal token gets the older commit status.
-    if (context.installationId) await this.postCheckRun(token, context.owner, context.repo, context.headSha, feedback);
-    else await this.postCommitStatus(token, context.owner, context.repo, context.headSha, feedback);
+    if (context.installationId) {
+      await this.postCheckRun(token, context.owner, context.repo, context.headSha, feedback, context.checkRunId);
+    } else await this.postCommitStatus(token, context.owner, context.repo, context.headSha, feedback);
   }
 
   /**
    * The verdict as a GitHub Check: a pass/fail teams can make a required
    * status check, with each finding as an annotation in "Files changed".
+   * Completes the "Reviewing…" check if one was started, otherwise creates one.
    */
-  private async postCheckRun(token: string, owner: string, repo: string, sha: string, feedback: PrFeedback) {
-    const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/check-runs`, {
-      method: 'POST',
-      headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
-      body: JSON.stringify(buildCheckRun(feedback, sha)),
-    });
+  private async postCheckRun(
+    token: string,
+    owner: string,
+    repo: string,
+    sha: string,
+    feedback: PrFeedback,
+    checkRunId?: number,
+  ) {
+    const body = { ...buildCheckRun(feedback, sha), completed_at: new Date().toISOString() };
+    const res = checkRunId
+      ? await fetch(`${GITHUB_API}/repos/${owner}/${repo}/check-runs/${checkRunId}`, {
+          method: 'PATCH',
+          headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+      : await fetch(`${GITHUB_API}/repos/${owner}/${repo}/check-runs`, {
+          method: 'POST',
+          headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
     if (!res.ok) throw new Error(explainPostFailure(res.status, await githubErrorMessage(res)));
+  }
+
+  /**
+   * Shows the review has started: an in-progress check (GitHub App) or a
+   * pending commit status (personal token). Returns the check's id to
+   * complete later. Best effort: a review never fails because of this.
+   */
+  async startReviewStatus(auth: GithubAuth, owner: string, repo: string, sha: string): Promise<number | undefined> {
+    try {
+      const token = await this.requireToken(auth);
+      if (typeof auth !== 'string') {
+        const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/check-runs`, {
+          method: 'POST',
+          headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+          body: JSON.stringify(inProgressCheckRun(sha)),
+        });
+        return res.ok ? ((await res.json()) as { id: number }).id : undefined;
+      }
+      await fetch(`${GITHUB_API}/repos/${owner}/${repo}/statuses/${sha}`, {
+        method: 'POST',
+        headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          state: 'pending',
+          description: 'Audit Bench Ai is reviewing this commit…',
+          context: 'audit/bench',
+        }),
+      });
+    } catch (err) {
+      // Status is a courtesy; the review itself carries on.
+    }
+    return undefined;
+  }
+
+  /** PrPublisher.fail: a review couldn't finish, so close its "reviewing…" status (never blocks a merge). */
+  async fail(userId: string, context: Extract<PrContext, { kind: 'github' }>, reason: string): Promise<void> {
+    await this.stopReviewStatus(
+      context.installationId ? { installationId: context.installationId } : userId,
+      context.owner,
+      context.repo,
+      context.headSha,
+      reason,
+      context.checkRunId,
+    );
+  }
+
+  async stopReviewStatus(
+    auth: GithubAuth,
+    owner: string,
+    repo: string,
+    sha: string,
+    reason: string,
+    checkRunId?: number,
+  ): Promise<void> {
+    const token = await this.requireToken(auth);
+    if (checkRunId) {
+      await fetch(`${GITHUB_API}/repos/${owner}/${repo}/check-runs/${checkRunId}`, {
+        method: 'PATCH',
+        headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+        body: JSON.stringify(stoppedCheckRun(reason)),
+      });
+    } else if (typeof auth === 'string') {
+      await fetch(`${GITHUB_API}/repos/${owner}/${repo}/statuses/${sha}`, {
+        method: 'POST',
+        headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ state: 'error', description: reason.slice(0, 140), context: 'audit/bench' }),
+      });
+    }
   }
 
   /**

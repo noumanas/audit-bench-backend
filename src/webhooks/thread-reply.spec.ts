@@ -304,3 +304,38 @@ describe('WebhooksService.harvestReactions', () => {
     ]);
   });
 });
+
+describe('WebhooksService.autoReviewPullRequest status', () => {
+  const setup = (fetchOk = true) => {
+    const github = {
+      startReviewStatus: jest.fn().mockResolvedValue(777),
+      stopReviewStatus: jest.fn().mockResolvedValue(undefined),
+      postIssueComment: jest.fn().mockResolvedValue(undefined),
+      fetchPrFiles: fetchOk
+        ? jest.fn().mockResolvedValue({ files: [], url: 'u', headSha: 'sha1', headRef: 'f', baseRef: 'main', snapshot: undefined })
+        : jest.fn().mockRejectedValue(new Error('GitHub is down')),
+    };
+    const repository = { createDiffReview: jest.fn().mockResolvedValue({ id: 'job' }) };
+    const service = new WebhooksService({} as never, github as never, {} as never, {} as never, repository as never, {} as never, {} as never, {} as never);
+    return { service, github, repository };
+  };
+
+  it('shows "Reviewing…" at once and hands the check to the review to complete', async () => {
+    const { service, github, repository } = setup();
+    await service.autoReviewPullRequest({ installationId: 1 }, { id: 'u1', organizationId: null }, 'acme', 'api', 7, 'sha1');
+    expect(github.startReviewStatus).toHaveBeenCalledWith({ installationId: 1 }, 'acme', 'api', 'sha1');
+    expect(repository.createDiffReview.mock.calls[0][2].prContext).toMatchObject({ installationId: 1, checkRunId: 777, headSha: 'sha1' });
+  });
+
+  it("doesn't reuse the check if a newer commit landed before the review started", async () => {
+    const { service, repository } = setup();
+    await service.autoReviewPullRequest({ installationId: 1 }, { id: 'u1', organizationId: null }, 'acme', 'api', 7, 'older-sha');
+    expect(repository.createDiffReview.mock.calls[0][2].prContext.checkRunId).toBeUndefined();
+  });
+
+  it('closes the status when the review fails, so it never spins forever', async () => {
+    const { service, github } = setup(false);
+    await service.autoReviewPullRequest({ installationId: 1 }, { id: 'u1', organizationId: null }, 'acme', 'api', 7, 'sha1');
+    expect(github.stopReviewStatus).toHaveBeenCalledWith({ installationId: 1 }, 'acme', 'api', 'sha1', expect.stringContaining('GitHub is down'), 777);
+  });
+});

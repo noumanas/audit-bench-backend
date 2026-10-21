@@ -191,3 +191,35 @@ describe('GithubService.publish verdict', () => {
     expect(urls.some((u) => u.endsWith('/check-runs'))).toBe(false);
   });
 });
+
+describe('GithubService check run lifecycle', () => {
+  const realFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = realFetch;
+  });
+
+  it('completes the "Reviewing…" check in place when the review finishes', async () => {
+    const calls: Array<{ url: string; method?: string; body: any }> = [];
+    global.fetch = jest.fn(async (url: string, init?: { method?: string; body?: string }) => {
+      calls.push({ url, method: init?.method, body: init?.body ? JSON.parse(init.body) : null });
+      return { ok: true, json: async () => ({ id: 777 }) };
+    }) as never;
+    const service = new GithubService(
+      { user: { findUniqueOrThrow: jest.fn() } } as never,
+      { register: jest.fn() } as never,
+      { decrypt: () => 't' } as never,
+      { installationToken: jest.fn().mockResolvedValue('app-token') } as never,
+    );
+    expect(await service.startReviewStatus({ installationId: 1 }, 'acme', 'api', 'sha')).toBe(777);
+    expect(calls[0].body).toMatchObject({ status: 'in_progress', head_sha: 'sha', output: { title: 'Reviewing…' } });
+
+    await service.publish(
+      'u1',
+      { kind: 'github', owner: 'acme', repo: 'api', pullNumber: 1, headSha: 'sha', headRef: 'f', baseRef: 'main', installationId: 1, checkRunId: 777 },
+      { verdict: 'pass', summary: 's', findings: [] },
+    );
+    const done = calls.find((c) => c.url.endsWith('/check-runs/777'));
+    expect(done?.method).toBe('PATCH');
+    expect(done?.body).toMatchObject({ status: 'completed', conclusion: 'success' });
+  });
+});
