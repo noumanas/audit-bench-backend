@@ -51,3 +51,14 @@ describe('check run verdict', () => {
     ]);
   });
 });
+
+describe('merge gate', () => {
+  it('fails the check whenever the PR is not ready to merge, listing why', () => {
+    const run = buildCheckRun(
+      { ...base, verdict: 'needs_work', findings: [], readiness: { status: 'not_ready', blockers: ['1 high-severity security issue in the changed lines.'], notes: [] } },
+      'sha',
+    );
+    expect(run.conclusion).toBe('failure');
+    expect(run.output.summary).toContain('- 1 high-severity security issue in the changed lines.');
+  });
+});

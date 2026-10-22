@@ -42,7 +42,13 @@ import {
   rulesPromptText,
   withRulesFile,
 } from '../review-rules/review-rules.service';
-import { PrInsights, buildInsightsPrompt, deterministicChecks, prInsightsSchema } from '../pr-feedback/pr-insights';
+import {
+  PrInsights,
+  buildInsightsPrompt,
+  deterministicChecks,
+  prInsightsSchema,
+  reconcileReadiness,
+} from '../pr-feedback/pr-insights';
 import { PrContext, PrFeedback } from '../pr-feedback/pr-feedback.types';
 import { Finding, FindingStatus, FindingStatuses, FINDING_STATUSES } from '../common/finding.schema';
 import { RepoRef } from '../common/repo-ref.types';
@@ -584,22 +590,28 @@ export class RepositoryService {
         confidence: f.confidence,
       })),
     );
+    const insights = (job.prInsights ?? undefined) as PrInsights | undefined;
+    const checks = snapshot
+      ? deterministicChecks(snapshot, {
+          findings,
+          secrets: Array.isArray(job.secrets) ? job.secrets.length : 0,
+          changedPaths: Object.keys((job.changedRanges ?? {}) as object),
+        })
+      : undefined;
     return {
       verdict: job.verdict ?? 'pass',
       summary: job.summary ?? '',
       findings,
       changedRanges: (job.changedRanges ?? undefined) as PrFeedback['changedRanges'],
       scanUrl,
-      readiness: readinessForScan(job) ?? undefined,
+      // The headline must agree with the checks listed under it (and drives the merge gate).
+      readiness: reconcileReadiness(readinessForScan(job) ?? undefined, [
+        ...(checks ?? []),
+        ...(insights?.checks ?? []).map((c) => ({ ...c, resolution: c.resolution ?? undefined })),
+      ]),
       headSha: snapshot?.headSha,
-      insights: (job.prInsights ?? undefined) as PrInsights | undefined,
-      checks: snapshot
-        ? deterministicChecks(snapshot, {
-            findings,
-            secrets: Array.isArray(job.secrets) ? job.secrets.length : 0,
-            changedPaths: Object.keys((job.changedRanges ?? {}) as object),
-          })
-        : undefined,
+      insights,
+      checks,
       local: job.localOnly,
     };
   }

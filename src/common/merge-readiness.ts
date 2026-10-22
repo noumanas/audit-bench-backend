@@ -43,6 +43,8 @@ export interface MergeReadiness {
 export interface ReviewOutcome {
   verdict: Verdict | null;
   findings: { critical: number; high: number; medium: number; low: number };
+  /** High-severity findings in the Security category: these block a merge like critical ones. */
+  highSecurity?: number;
   secrets: number;
 }
 
@@ -71,8 +73,14 @@ export function assessMergeReadiness(pr: PrSnapshot, review: ReviewOutcome): Mer
     blockers.push(`${plural(review.secrets, 'potential secret')} added in the changed code.`);
   }
   const serious = review.findings.critical + review.findings.high;
+  const highSecurity = review.highSecurity ?? 0;
   if (review.verdict === 'do_not_ship' || review.findings.critical > 0) {
     blockers.push(`${plural(serious, 'critical or high-severity issue')} in the changed lines.`);
+  } else if (highSecurity > 0) {
+    blockers.push(`${plural(highSecurity, 'high-severity security issue')} in the changed lines.`);
+    const otherHigh = review.findings.high - highSecurity;
+    if (otherHigh > 0)
+      notes.push(`${plural(otherHigh, 'other high-severity finding')} in the changed lines worth checking.`);
   } else if (serious > 0) {
     notes.push(`${plural(serious, 'high-severity finding')} in the changed lines worth checking.`);
   }
@@ -111,14 +119,17 @@ export function readinessForScan(job: {
 }): MergeReadiness | null {
   if (job.sourceType !== 'github_pr' || job.status !== 'completed' || !job.prSnapshot) return null;
   const findings = { critical: 0, high: 0, medium: 0, low: 0 };
+  let highSecurity = 0;
   for (const f of job.files) {
-    for (const x of (Array.isArray(f.findings) ? f.findings : []) as Array<{ severity?: string }>) {
+    for (const x of (Array.isArray(f.findings) ? f.findings : []) as Array<{ severity?: string; category?: string }>) {
       if (x.severity && x.severity in findings) findings[x.severity as keyof typeof findings]++;
+      if (x.severity === 'high' && x.category === 'Security') highSecurity++;
     }
   }
   return assessMergeReadiness(job.prSnapshot as PrSnapshot, {
     verdict: job.verdict,
     findings,
+    highSecurity,
     secrets: Array.isArray(job.secrets) ? job.secrets.length : 0,
   });
 }

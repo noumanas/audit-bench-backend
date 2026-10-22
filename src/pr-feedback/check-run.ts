@@ -16,7 +16,9 @@ export type CheckConclusion = 'success' | 'neutral' | 'failure';
  * still satisfies a required check; a clean review succeeds.
  */
 export function checkConclusion(feedback: PrFeedback): CheckConclusion {
-  if (feedback.verdict === 'do_not_ship') return 'failure';
+  // Blocking: a critical issue, or anything that makes the PR "not ready to merge"
+  // (a high-severity security issue, an exposed secret, failing CI, conflicts).
+  if (feedback.verdict === 'do_not_ship' || feedback.readiness?.status === 'not_ready') return 'failure';
   return feedback.verdict === 'needs_work' ? 'neutral' : 'success';
 }
 
@@ -42,7 +44,14 @@ export function buildCheckRun(feedback: PrFeedback, headSha: string) {
 
   const summary = [
     conclusion === 'failure'
-      ? 'Audit Bench Ai found a critical issue in the changed lines. Fix it, or reply on the review comment if it’s not an issue, then push again.'
+      ? [
+          'Audit Bench Ai found something that should be fixed before merging:',
+          ...(feedback.readiness?.blockers.length
+            ? feedback.readiness.blockers.map((b) => `- ${b}`)
+            : ['- A critical issue in the changed lines.']),
+          '',
+          'Fix it and push again, or reply on the review comment if it’s not an issue.',
+        ].join('\n')
       : conclusion === 'neutral'
         ? 'Nothing blocking, but some findings are worth reviewing before merging.'
         : 'Audit Bench Ai found no issues in the changed lines.',
