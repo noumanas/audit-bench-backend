@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { LineRange } from '../common/diff-ranges';
-import { PrSnapshot } from '../common/merge-readiness';
+import { MergeReadiness, PrSnapshot } from '../common/merge-readiness';
 
 export type CheckStatus = 'pass' | 'warning' | 'fail';
 
@@ -225,4 +225,27 @@ export function deterministicChecks(
       : { name: 'PR size', status: 'pass', explanation: `${lines.toLocaleString('en-US')} lines changed.` },
   );
   return checks;
+}
+
+/**
+ * Keeps the headline verdict honest with the checks shown under it: a
+ * failing check makes the PR "not ready", and any warning turns a plain
+ * "ready" into "ready, with notes".
+ */
+export function reconcileReadiness(
+  readiness: MergeReadiness | undefined,
+  checks: PreMergeCheck[],
+): MergeReadiness | undefined {
+  if (!readiness || readiness.status === 'merged' || readiness.status === 'closed') return readiness;
+  const failed = checks.filter((c) => c.status === 'fail');
+  const warned = checks.filter((c) => c.status === 'warning');
+  const blockers = [...readiness.blockers];
+  const notes = [...readiness.notes];
+  for (const c of failed) {
+    const line = `${c.name}: ${c.explanation}`;
+    if (!blockers.some((b) => b.includes(c.explanation))) blockers.push(line);
+  }
+  for (const c of warned) notes.push(`${c.name}: ${c.explanation}`);
+  const status = blockers.length ? 'not_ready' : notes.length ? 'ready_with_notes' : 'ready';
+  return { status, blockers, notes };
 }
