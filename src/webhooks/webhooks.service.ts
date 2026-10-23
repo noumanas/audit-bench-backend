@@ -651,8 +651,16 @@ export class WebhooksService {
     this.logger.error('Auto-review failed', err as Error);
   }
 
+  /**
+   * Why a review didn't run, for the PR. Plan limits and permissions are
+   * explained as-is; anything else is an internal error whose details (SQL,
+   * stack traces) belong in our logs, not on someone's pull request.
+   */
   private quotaSkipMessage(err: Error): string {
-    return `Audit Bench Ai skipped the automatic review of this commit: ${err.message}`;
+    if (err instanceof HttpException) {
+      return `Audit Bench Ai skipped the automatic review of this commit: ${err.message}`;
+    }
+    return 'Audit Bench Ai couldn’t review this commit because of a temporary problem on our side. Click “Re-run” on this check, or push a new commit, to try again.';
   }
 
   private async generateReply(question: string, files: { path: string; content: string }[]): Promise<string> {

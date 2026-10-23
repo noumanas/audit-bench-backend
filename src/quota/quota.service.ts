@@ -7,6 +7,10 @@ import { isPlanExpired } from '../common/plan-expiry';
 /** Repository scans (not PR/MR reviews) — what monthlyRepoScanLimit counts. */
 const REPO_SCAN_SOURCE_TYPES = ['zip', 'github_repo', 'gitlab_repo', 'bitbucket_repo'] as const;
 
+/** How long the quota check-and-create transaction may wait to start, and run. */
+const QUOTA_TX_MAX_WAIT_MS = 10_000;
+const QUOTA_TX_TIMEOUT_MS = 20_000;
+
 /** Either the top-level client or a client scoped to an in-flight transaction. */
 type Db = Prisma.TransactionClient;
 
@@ -69,7 +73,12 @@ export class QuotaService {
   /** AI-invoking repository scans this calendar month — see Plan.monthlyRepoScanLimit. */
   private countAiRepoScans(db: Db, scopeWhere: { userId: string } | { organizationId: string }, since: Date) {
     return db.scanJob.count({
-      where: { ...scopeWhere, createdAt: { gte: since }, aiInvoked: true, sourceType: { in: [...REPO_SCAN_SOURCE_TYPES] } },
+      where: {
+        ...scopeWhere,
+        createdAt: { gte: since },
+        aiInvoked: true,
+        sourceType: { in: [...REPO_SCAN_SOURCE_TYPES] },
+      },
     });
   }
 
@@ -171,7 +180,9 @@ export class QuotaService {
     const user = await this.loadUserWithPlan(db, userId);
     const plan = await this.effectivePlan(db, user);
     if (!plan.repositoryScan) {
-      throw new ForbiddenException(`Repository scanning isn't included in the ${plan.name} plan. Upgrade to Pro or higher.`);
+      throw new ForbiddenException(
+        `Repository scanning isn't included in the ${plan.name} plan. Upgrade to Pro or higher.`,
+      );
     }
   }
 
@@ -187,7 +198,9 @@ export class QuotaService {
     const user = await this.loadUserWithPlan(db, userId);
     const plan = await this.effectivePlan(db, user);
     if (!plan.repositoryScan) {
-      throw new ForbiddenException(`Repository scanning isn't included in the ${plan.name} plan. Upgrade to Pro or higher.`);
+      throw new ForbiddenException(
+        `Repository scanning isn't included in the ${plan.name} plan. Upgrade to Pro or higher.`,
+      );
     }
 
     if (plan.maxRepositories != null) {
@@ -233,7 +246,11 @@ export class QuotaService {
    * Technical due diligence is Enterprise-only. admin/super_admin always
    * pass, same support/testing bypass as Alignment Lab.
    */
-  async canUseDueDiligence(userId: string, role: 'user' | 'admin' | 'super_admin', db: Db = this.prisma): Promise<boolean> {
+  async canUseDueDiligence(
+    userId: string,
+    role: 'user' | 'admin' | 'super_admin',
+    db: Db = this.prisma,
+  ): Promise<boolean> {
     if (role === 'admin' || role === 'super_admin') return true;
     const user = await this.loadUserWithPlan(db, userId);
     return (await this.effectivePlan(db, user)).dueDiligence;
@@ -284,21 +301,27 @@ export class QuotaService {
    * can't close on its own). Postgres aborts one side of a genuine
    * conflict with a P2034 error, which we retry once.
    */
-  async withQuotaCheck<T>(
-    checker: (db: Db) => Promise<void>,
-    create: (db: Db) => Promise<T>,
-    attempt = 0,
-  ): Promise<T> {
+  async withQuotaCheck<T>(checker: (db: Db) => Promise<void>, create: (db: Db) => Promise<T>, attempt = 0): Promise<T> {
     try {
       return await this.prisma.$transaction(
         async (tx) => {
           await checker(tx);
           return create(tx);
         },
-        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+        {
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+          // Prisma's 5s default is too tight for work that runs in the
+          // background after a webhook has been answered, where the server
+          // may be slow (e.g. Cloud Run throttling CPU between requests).
+          maxWait: QUOTA_TX_MAX_WAIT_MS,
+          timeout: QUOTA_TX_TIMEOUT_MS,
+        },
       );
     } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2034' && attempt < 1) {
+      // P2034: a concurrent write conflict; P2028: the transaction expired. Both are worth one retry.
+      const retryable =
+        err instanceof Prisma.PrismaClientKnownRequestError && (err.code === 'P2034' || err.code === 'P2028');
+      if (retryable && attempt < 1) {
         return this.withQuotaCheck(checker, create, attempt + 1);
       }
       throw err;

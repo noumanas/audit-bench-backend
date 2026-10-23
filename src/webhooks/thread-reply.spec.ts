@@ -336,6 +336,15 @@ describe('WebhooksService.autoReviewPullRequest status', () => {
   it('closes the status when the review fails, so it never spins forever', async () => {
     const { service, github } = setup(false);
     await service.autoReviewPullRequest({ installationId: 1 }, { id: 'u1', organizationId: null }, 'acme', 'api', 7, 'sha1');
-    expect(github.stopReviewStatus).toHaveBeenCalledWith({ installationId: 1 }, 'acme', 'api', 'sha1', expect.stringContaining('GitHub is down'), 777);
+    expect(github.stopReviewStatus).toHaveBeenCalledWith(
+      { installationId: 1 },
+      'acme',
+      'api',
+      'sha1',
+      expect.stringContaining('temporary problem on our side'),
+      777,
+    );
+    // Internal error details stay in our logs, never on the pull request.
+    expect(github.stopReviewStatus.mock.calls[0][4]).not.toContain('GitHub is down');
   });
 });
