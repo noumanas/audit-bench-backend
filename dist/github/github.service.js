@@ -319,19 +319,72 @@ let GithubService = class GithubService {
     async publish(userId, context, feedback) {
         const token = await this.requireToken(context.installationId ? { installationId: context.installationId } : userId);
         await this.postPrReview(token, context.owner, context.repo, context.pullNumber, context.headSha, feedback);
-        if (context.installationId)
-            await this.postCheckRun(token, context.owner, context.repo, context.headSha, feedback);
+        if (context.installationId) {
+            await this.postCheckRun(token, context.owner, context.repo, context.headSha, feedback, context.checkRunId);
+        }
         else
             await this.postCommitStatus(token, context.owner, context.repo, context.headSha, feedback);
     }
-    async postCheckRun(token, owner, repo, sha, feedback) {
-        const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/check-runs`, {
-            method: 'POST',
-            headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
-            body: JSON.stringify((0, check_run_1.buildCheckRun)(feedback, sha)),
-        });
+    async postCheckRun(token, owner, repo, sha, feedback, checkRunId) {
+        const body = { ...(0, check_run_1.buildCheckRun)(feedback, sha), completed_at: new Date().toISOString() };
+        const res = checkRunId
+            ? await fetch(`${GITHUB_API}/repos/${owner}/${repo}/check-runs/${checkRunId}`, {
+                method: 'PATCH',
+                headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            })
+            : await fetch(`${GITHUB_API}/repos/${owner}/${repo}/check-runs`, {
+                method: 'POST',
+                headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
         if (!res.ok)
             throw new Error(explainPostFailure(res.status, await githubErrorMessage(res)));
+    }
+    async startReviewStatus(auth, owner, repo, sha) {
+        try {
+            const token = await this.requireToken(auth);
+            if (typeof auth !== 'string') {
+                const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/check-runs`, {
+                    method: 'POST',
+                    headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+                    body: JSON.stringify((0, check_run_1.inProgressCheckRun)(sha)),
+                });
+                return res.ok ? (await res.json()).id : undefined;
+            }
+            await fetch(`${GITHUB_API}/repos/${owner}/${repo}/statuses/${sha}`, {
+                method: 'POST',
+                headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    state: 'pending',
+                    description: 'Audit Bench Ai is reviewing this commit…',
+                    context: 'audit/bench',
+                }),
+            });
+        }
+        catch (err) {
+        }
+        return undefined;
+    }
+    async fail(userId, context, reason) {
+        await this.stopReviewStatus(context.installationId ? { installationId: context.installationId } : userId, context.owner, context.repo, context.headSha, reason, context.checkRunId);
+    }
+    async stopReviewStatus(auth, owner, repo, sha, reason, checkRunId) {
+        const token = await this.requireToken(auth);
+        if (checkRunId) {
+            await fetch(`${GITHUB_API}/repos/${owner}/${repo}/check-runs/${checkRunId}`, {
+                method: 'PATCH',
+                headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+                body: JSON.stringify((0, check_run_1.stoppedCheckRun)(reason)),
+            });
+        }
+        else if (typeof auth === 'string') {
+            await fetch(`${GITHUB_API}/repos/${owner}/${repo}/statuses/${sha}`, {
+                method: 'POST',
+                headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+                body: JSON.stringify({ state: 'error', description: reason.slice(0, 140), context: 'audit/bench' }),
+            });
+        }
     }
     async postReviewWithToken(token, owner, repo, pullNumber, headSha, feedback) {
         await this.postPrReview(token, owner, repo, pullNumber, headSha, feedback);

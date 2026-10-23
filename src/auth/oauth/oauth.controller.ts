@@ -1,13 +1,38 @@
-import { Body, Controller, Get, Post, Query, Req, Res } from "@nestjs/common";
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  Req,
+  Res,
+  UseGuards,
+} from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Request, Response } from "express";
 import * as crypto from "crypto";
-import { OAuthService } from "./oauth.service";
+import { ConnectProvider, OAuthService } from "./oauth.service";
 import { OAuthProvider } from "./oauth.types";
 import { ExchangeOAuthDto } from "./dto/exchange-oauth.dto";
+import { CompleteConnectDto } from "./dto/complete-connect.dto";
+import { JwtAuthGuard } from "../jwt-auth.guard";
+import { CurrentUser } from "../current-user.decorator";
+import { RequestUser } from "../types";
 import { AuthService } from "../auth.service";
 
 const STATE_COOKIE = "oauth_state";
+const CONNECT_PROVIDERS = new Set<string>(["github", "gitlab"]);
+
+function connectProvider(value: string): ConnectProvider {
+  if (!CONNECT_PROVIDERS.has(value)) {
+    throw new BadRequestException(
+      "Only GitHub and GitLab can be connected this way.",
+    );
+  }
+  return value as ConnectProvider;
+}
 
 @Controller("auth")
 export class OAuthController {
@@ -69,6 +94,36 @@ export class OAuthController {
     return this.authService.buildSession(user);
   }
 
+  /**
+   * "Connect GitHub/GitLab" for a signed-in user: the provider's consent
+   * page to send the browser to. No cookie: the signed state is checked
+   * against the signed-in user when the frontend completes the connection.
+   */
+  @Post(":provider/connect")
+  @UseGuards(JwtAuthGuard)
+  connectUrl(
+    @CurrentUser() user: RequestUser,
+    @Param("provider") provider: string,
+  ) {
+    return {
+      url: this.oauthService.connectUrl(connectProvider(provider), user.id),
+    };
+  }
+
+  @Post("connect/complete")
+  @UseGuards(JwtAuthGuard)
+  completeConnect(
+    @CurrentUser() user: RequestUser,
+    @Body() dto: CompleteConnectDto,
+  ) {
+    return this.oauthService.connectAccount(
+      user.id,
+      connectProvider(dto.provider),
+      dto.code,
+      dto.state,
+    );
+  }
+
   private redirectToProvider(
     provider: OAuthProvider,
     req: Request,
@@ -113,6 +168,14 @@ export class OAuthController {
     )
       .split(",")[0]
       .trim();
+    // A signed-in user connecting their repositories, not a sign-in: hand the
+    // code to the frontend, which finishes it with the user's session.
+    if (provider !== "google" && this.oauthService.isConnectState(state)) {
+      const params = new URLSearchParams({ provider, code: code ?? "", state });
+      res.redirect(`${frontendOrigin}/oauth/connect?${params}`);
+      return;
+    }
+
     const cookieState = (req as unknown as { cookies?: Record<string, string> })
       .cookies?.[STATE_COOKIE];
     res.clearCookie(STATE_COOKIE);

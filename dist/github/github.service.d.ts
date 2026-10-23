@@ -55,6 +55,11 @@ export declare class GithubService implements OnModuleInit, PrPublisher {
         kind: 'github';
     }>, feedback: PrFeedback): Promise<void>;
     private postCheckRun;
+    startReviewStatus(auth: GithubAuth, owner: string, repo: string, sha: string): Promise<number | undefined>;
+    fail(userId: string, context: Extract<PrContext, {
+        kind: 'github';
+    }>, reason: string): Promise<void>;
+    stopReviewStatus(auth: GithubAuth, owner: string, repo: string, sha: string, reason: string, checkRunId?: number): Promise<void>;
     postReviewWithToken(token: string, owner: string, repo: string, pullNumber: number, headSha: string, feedback: PrFeedback): Promise<void>;
     private postPrReview;
     private postCommitStatus;

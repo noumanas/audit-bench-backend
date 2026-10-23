@@ -328,10 +328,13 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
         }
         catch (err) {
             this.logger.error(`Scan ${jobId} failed`, err);
-            await this.prisma.scanJob.update({
+            const failed = await this.prisma.scanJob.update({
                 where: { id: jobId },
                 data: { status: 'failed', error: err.message, completedAt: new Date() },
             });
+            if (failed.prContext) {
+                await this.prFeedback.fail(failed.userId, failed.prContext, 'Audit Bench Ai couldn’t finish reviewing this commit. Push another commit, or click Re-run, to try again.');
+            }
         }
     }
     async republishPrFeedback(actor, id) {
@@ -374,22 +377,27 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
             replacement: f.replacement ?? null,
             confidence: f.confidence,
         })));
+        const insights = (job.prInsights ?? undefined);
+        const checks = snapshot
+            ? (0, pr_insights_1.deterministicChecks)(snapshot, {
+                findings,
+                secrets: Array.isArray(job.secrets) ? job.secrets.length : 0,
+                changedPaths: Object.keys((job.changedRanges ?? {})),
+            })
+            : undefined;
         return {
             verdict: job.verdict ?? 'pass',
             summary: job.summary ?? '',
             findings,
             changedRanges: (job.changedRanges ?? undefined),
             scanUrl,
-            readiness: (0, merge_readiness_1.readinessForScan)(job) ?? undefined,
+            readiness: (0, pr_insights_1.reconcileReadiness)((0, merge_readiness_1.readinessForScan)(job) ?? undefined, [
+                ...(checks ?? []),
+                ...(insights?.checks ?? []).map((c) => ({ ...c, resolution: c.resolution ?? undefined })),
+            ]),
             headSha: snapshot?.headSha,
-            insights: (job.prInsights ?? undefined),
-            checks: snapshot
-                ? (0, pr_insights_1.deterministicChecks)(snapshot, {
-                    findings,
-                    secrets: Array.isArray(job.secrets) ? job.secrets.length : 0,
-                    changedPaths: Object.keys((job.changedRanges ?? {})),
-                })
-                : undefined,
+            insights,
+            checks,
             local: job.localOnly,
         };
     }

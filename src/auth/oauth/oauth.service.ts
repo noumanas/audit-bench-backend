@@ -9,10 +9,17 @@ import { Role } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { gitlabInstanceUrl } from "../../common/gitlab-url";
 import { TokenCryptoService } from "../../common/token-crypto.service";
+import { requireJwtSecret } from "../jwt-secret";
 import { OAuthProfile, OAuthProvider, OAuthTokenSet } from "./oauth.types";
 
 const DEFAULT_PLAN_SLUG = "free";
 const LOGIN_CODE_TTL_MS = 60_000;
+/** How long a "Connect GitHub/GitLab" round trip may take before its state expires. */
+const CONNECT_STATE_TTL_MS = 10 * 60_000;
+const CONNECT_STATE_PREFIX = "connect.";
+
+/** The hosts a signed-in user can connect by OAuth instead of pasting a token. */
+export type ConnectProvider = "github" | "gitlab";
 const PROVIDER_LABELS: Record<OAuthProvider, string> = {
   github: "GitHub",
   gitlab: "GitLab",
@@ -116,6 +123,100 @@ export class OAuthService {
     return `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
   }
 
+  // ---------- Connecting a host to an existing account ----------
+
+  /**
+   * The provider's consent page for a signed-in user connecting their
+   * repositories (rather than signing in). The state names the user and is
+   * signed, and the callback only finishes the connection for that same
+   * signed-in user, so a link minted for one account can't attach someone
+   * else's token to it.
+   */
+  connectUrl(
+    provider: ConnectProvider,
+    userId: string,
+    now = Date.now(),
+  ): string {
+    const body = `${provider}.${userId}.${now + CONNECT_STATE_TTL_MS}`;
+    const state = `${CONNECT_STATE_PREFIX}${Buffer.from(body).toString("base64url")}.${this.connectMac(body)}`;
+    return this.getAuthorizeUrl(provider, state);
+  }
+
+  isConnectState(state: string | undefined): boolean {
+    return Boolean(state?.startsWith(CONNECT_STATE_PREFIX));
+  }
+
+  /** The user a connect state was minted for, or null if it's forged, expired or for another provider. */
+  verifyConnectState(
+    provider: ConnectProvider,
+    state: string | undefined,
+    now = Date.now(),
+  ): string | null {
+    if (!state?.startsWith(CONNECT_STATE_PREFIX)) return null;
+    const [encoded, mac] = state.slice(CONNECT_STATE_PREFIX.length).split(".");
+    if (!encoded || !mac) return null;
+    const body = Buffer.from(encoded, "base64url").toString();
+    const expected = this.connectMac(body);
+    if (
+      mac.length !== expected.length ||
+      !crypto.timingSafeEqual(Buffer.from(mac), Buffer.from(expected))
+    )
+      return null;
+    const [p, userId, exp] = body.split(".");
+    if (p !== provider || !userId || Number(exp) < now) return null;
+    return userId;
+  }
+
+  /** Finishes "Connect GitHub/GitLab": saves the token on the signed-in user who started it. */
+  async connectAccount(
+    userId: string,
+    provider: ConnectProvider,
+    code: string,
+    state: string,
+  ): Promise<{ connected: true; username: string }> {
+    if (this.verifyConnectState(provider, state) !== userId) {
+      throw new BadRequestException(
+        `This ${PROVIDER_LABELS[provider]} connection expired or was started from another account. Click Connect again.`,
+      );
+    }
+    const tokens =
+      provider === "github"
+        ? await this.exchangeGithubCode(code)
+        : await this.exchangeGitlabCode(code);
+    const profile =
+      provider === "github"
+        ? await this.fetchGithubProfile(tokens.accessToken)
+        : await this.fetchGitlabProfile(tokens.accessToken);
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: this.tokenFields(provider, profile, tokens),
+    });
+    // Also lets them sign in with this account next time, unless it already
+    // signs in to a different Audit Bench account.
+    const linked = await this.prisma.oAuthAccount.findUnique({
+      where: {
+        provider_providerUserId: {
+          provider,
+          providerUserId: profile.providerUserId,
+        },
+      },
+    });
+    if (!linked) {
+      await this.prisma.oAuthAccount.create({
+        data: { userId, provider, providerUserId: profile.providerUserId },
+      });
+    }
+    return { connected: true, username: profile.username };
+  }
+
+  private connectMac(body: string): string {
+    const key = crypto
+      .createHash("sha256")
+      .update(`oauth-connect-state:${requireJwtSecret(this.config)}`)
+      .digest();
+    return crypto.createHmac("sha256", key).update(body).digest("base64url");
+  }
+
   /** Runs the whole code → tokens → profile → user pipeline and returns a one-time login code. */
   async handleCallback(provider: OAuthProvider, code: string): Promise<string> {
     const tokens =
@@ -189,27 +290,35 @@ export class OAuthService {
     return code;
   }
 
+  /** The user columns that store a provider's token (none for Google, which only signs in). */
+  private tokenFields(
+    provider: OAuthProvider,
+    profile: OAuthProfile,
+    tokens: OAuthTokenSet,
+  ) {
+    return provider === "github"
+      ? {
+          githubToken: this.tokenCrypto.encrypt(tokens.accessToken),
+          githubUsername: profile.username,
+        }
+      : provider === "gitlab"
+        ? {
+            gitlabToken: this.tokenCrypto.encrypt(tokens.accessToken),
+            gitlabUsername: profile.username,
+            gitlabRefreshToken: tokens.refreshToken
+              ? this.tokenCrypto.encrypt(tokens.refreshToken)
+              : null,
+            gitlabTokenExpiresAt: tokens.expiresAt,
+          }
+        : {};
+  }
+
   private async findOrCreateUser(
     provider: OAuthProvider,
     profile: OAuthProfile,
     tokens: OAuthTokenSet,
   ) {
-    const tokenFields =
-      provider === "github"
-        ? {
-            githubToken: this.tokenCrypto.encrypt(tokens.accessToken),
-            githubUsername: profile.username,
-          }
-        : provider === "gitlab"
-          ? {
-              gitlabToken: this.tokenCrypto.encrypt(tokens.accessToken),
-              gitlabUsername: profile.username,
-              gitlabRefreshToken: tokens.refreshToken
-                ? this.tokenCrypto.encrypt(tokens.refreshToken)
-                : null,
-              gitlabTokenExpiresAt: tokens.expiresAt,
-            }
-          : {};
+    const tokenFields = this.tokenFields(provider, profile, tokens);
     const providerLabel = PROVIDER_LABELS[provider];
 
     return this.prisma.$transaction(async (tx) => {
