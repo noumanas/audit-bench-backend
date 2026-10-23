@@ -1,5 +1,6 @@
 import AdmZip = require('adm-zip');
 import { ScannedFile } from './types';
+import path = require('path');
 
 const IGNORED_DIR_SEGMENTS = new Set([
   'node_modules',
@@ -58,7 +59,10 @@ function isIgnoredPath(relativePath: string): boolean {
 
 /** Strips the single top-level directory zip tools add (e.g. "my-repo-main/"). */
 function stripRootPrefix(entries: { entryName: string }[]): string | null {
-  const tops = new Set(entries.map((e) => e.entryName.split('/')[0]));
+  const tops = new Set(entries.map((e) => {
+    const normalized = path.posix.normalize(e.entryName.replace(/\\/g, '/'));
+    return normalized.split('/')[0];
+  }));
   return tops.size === 1 ? [...tops][0] : null;
 }
 
@@ -73,11 +77,16 @@ export function extractZip(buffer: Buffer, maxFileSizeBytes: number): ScannedFil
   for (const entry of entries) {
     if (files.length >= MAX_TOTAL_FILES) break;
 
-    let relativePath = entry.entryName;
+    let relativePath = entry.entryName.replace(/\\/g, '/');
+    relativePath = path.posix.normalize(relativePath);
+
     if (rootPrefix && relativePath.startsWith(`${rootPrefix}/`)) {
       relativePath = relativePath.slice(rootPrefix.length + 1);
     }
-    if (!relativePath || isIgnoredPath(relativePath)) continue;
+
+    // Reject absolute paths and any traversal outside the root (../)
+    if (relativePath === '' || relativePath === '..' || relativePath.startsWith('../') || path.posix.isAbsolute(relativePath)) continue;
+    if (isIgnoredPath(relativePath)) continue;
 
     const declaredSize = declaredUncompressedSize(entry);
     if (declaredSize === 0 || declaredSize > maxFileSizeBytes) continue;
