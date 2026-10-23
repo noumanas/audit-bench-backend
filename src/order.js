@@ -24,6 +24,10 @@ Deno.serve(async (req) => {
     .from("invoices")
     .update({ status: "sent", total_sent: cachedTotal })
     .eq("id", invoiceId);
-
+  const { data: invoice } = await supabase
+    .from("invoices")
+    .select("*")
+    .eq("id", invoiceId)
+    .single();
   return new Response(JSON.stringify({ ok: true, total: cachedTotal }));
 });
