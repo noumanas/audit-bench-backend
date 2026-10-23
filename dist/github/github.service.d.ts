@@ -13,6 +13,7 @@ export declare class GithubService implements OnModuleInit, PrPublisher {
     private readonly prFeedback;
     private readonly tokenCrypto;
     private readonly appAuth;
+    private readonly logger;
     constructor(prisma: PrismaService, prFeedback: PrFeedbackService, tokenCrypto: TokenCryptoService, appAuth: GithubAppAuthService);
     onModuleInit(): void;
     private authHeaders;
@@ -63,7 +64,18 @@ export declare class GithubService implements OnModuleInit, PrPublisher {
     postReviewWithToken(token: string, owner: string, repo: string, pullNumber: number, headSha: string, feedback: PrFeedback): Promise<void>;
     private postPrReview;
     private postCommitStatus;
+    private postStatuses;
     canPushTo(userId: string, owner: string, repo: string): Promise<boolean>;
+    createReviewComment(auth: GithubAuth, owner: string, repo: string, pullNumber: number, opts: {
+        commitId: string;
+        path: string;
+        start: number;
+        end: number;
+        body: string;
+    }): Promise<{
+        id: number;
+        htmlUrl: string;
+    }>;
     getReviewComment(auth: GithubAuth, owner: string, repo: string, commentId: number): Promise<GithubReviewComment>;
     listPullReviewComments(auth: GithubAuth, owner: string, repo: string, pullNumber: number): Promise<GithubReviewComment[]>;
     reviewThreadStates(auth: GithubAuth, owner: string, repo: string, pullNumber: number): Promise<Map<number, {

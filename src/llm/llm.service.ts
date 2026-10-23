@@ -1,7 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { z } from 'zod';
-import { LlmProvider } from './llm-provider.interface';
+import { CompleteOptions, LlmProvider } from './llm-provider.interface';
 import { AnthropicProvider } from './providers/anthropic.provider';
 import { OpenAiProvider } from './providers/openai.provider';
 import { GeminiProvider } from './providers/gemini.provider';
@@ -29,6 +29,7 @@ function extractJson(raw: string): string {
 
 @Injectable()
 export class LlmService {
+  private readonly logger = new Logger(LlmService.name);
   private readonly providers: Record<LlmProviderName, LlmProvider>;
 
   constructor(
@@ -60,8 +61,24 @@ export class LlmService {
 
   /** Plain-text completion — for the conversational PR/MR chat reply, which isn't structured output. */
   async completeText(providerName: LlmProviderName, prompt: string): Promise<string> {
-    const { text } = await this.providers[providerName].complete(prompt);
+    const { text } = await this.callProvider(providerName, prompt);
     return text;
+  }
+
+  /**
+   * One call to `providerName`, or to LLM_FALLBACK_PROVIDER if that call
+   * fails (out of credits, bad key, rate limit, outage), so one provider's
+   * problem doesn't stop every review.
+   */
+  private async callProvider(providerName: LlmProviderName, prompt: string, opts?: CompleteOptions) {
+    try {
+      return await this.providers[providerName].complete(prompt, opts);
+    } catch (err) {
+      const fallback = this.config.get<string>('LLM_FALLBACK_PROVIDER')?.trim() as LlmProviderName | undefined;
+      if (!fallback || fallback === providerName || !(fallback in this.providers)) throw err;
+      this.logger.warn(`${providerName} failed (${(err as Error).message.slice(0, 200)}); using ${fallback} instead`);
+      return this.providers[fallback].complete(prompt, opts);
+    }
   }
 
   /**
@@ -75,18 +92,15 @@ export class LlmService {
     schema: z.ZodType<T>,
     opts?: { escalate?: boolean },
   ): Promise<StructuredResult<T>> {
-    const provider = this.providers[providerName];
-
     // Providers with a native JSON mode (OpenAI, Gemini) only enable it here
     // — never for completeText's free-form callers. OpenAI specifically
     // requires the literal word "json" to appear in the prompt whenever that
     // mode is on, so this appends a guaranteed mention rather than trusting
     // every prompt author to remember it (see openai.provider.ts).
-    const withJsonReminder = (p: string) =>
-      /\bjson\b/i.test(p) ? p : `${p}\n\nRespond with a JSON object.`;
+    const withJsonReminder = (p: string) => (/\bjson\b/i.test(p) ? p : `${p}\n\nRespond with a JSON object.`);
 
     const attempt = async (p: string) => {
-      const { text, usage } = await provider.complete(withJsonReminder(p), { ...opts, jsonMode: true });
+      const { text, usage } = await this.callProvider(providerName, withJsonReminder(p), { ...opts, jsonMode: true });
       const json = JSON.parse(extractJson(text));
       return { result: schema.parse(json), usage };
     };

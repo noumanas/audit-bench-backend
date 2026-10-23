@@ -8,6 +8,7 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var LlmService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.LlmService = void 0;
 const common_1 = require("@nestjs/common");
@@ -30,8 +31,9 @@ function extractJson(raw) {
         return withoutFences;
     return withoutFences.slice(start, end + 1);
 }
-let LlmService = class LlmService {
+let LlmService = LlmService_1 = class LlmService {
     config;
+    logger = new common_1.Logger(LlmService_1.name);
     providers;
     constructor(config, anthropic, openai, gemini, deepseek, glm, qwen, kimi, xai, mistral, minimax) {
         this.config = config;
@@ -47,14 +49,25 @@ let LlmService = class LlmService {
         return Boolean(this.config.get(`${providerName.toUpperCase()}_ESCALATION_MODEL`));
     }
     async completeText(providerName, prompt) {
-        const { text } = await this.providers[providerName].complete(prompt);
+        const { text } = await this.callProvider(providerName, prompt);
         return text;
     }
+    async callProvider(providerName, prompt, opts) {
+        try {
+            return await this.providers[providerName].complete(prompt, opts);
+        }
+        catch (err) {
+            const fallback = this.config.get('LLM_FALLBACK_PROVIDER')?.trim();
+            if (!fallback || fallback === providerName || !(fallback in this.providers))
+                throw err;
+            this.logger.warn(`${providerName} failed (${err.message.slice(0, 200)}); using ${fallback} instead`);
+            return this.providers[fallback].complete(prompt, opts);
+        }
+    }
     async completeStructured(providerName, prompt, schema, opts) {
-        const provider = this.providers[providerName];
-        const withJsonReminder = (p) => /\bjson\b/i.test(p) ? p : `${p}\n\nRespond with a JSON object.`;
+        const withJsonReminder = (p) => (/\bjson\b/i.test(p) ? p : `${p}\n\nRespond with a JSON object.`);
         const attempt = async (p) => {
-            const { text, usage } = await provider.complete(withJsonReminder(p), { ...opts, jsonMode: true });
+            const { text, usage } = await this.callProvider(providerName, withJsonReminder(p), { ...opts, jsonMode: true });
             const json = JSON.parse(extractJson(text));
             return { result: schema.parse(json), usage };
         };
@@ -68,7 +81,7 @@ let LlmService = class LlmService {
     }
 };
 exports.LlmService = LlmService;
-exports.LlmService = LlmService = __decorate([
+exports.LlmService = LlmService = LlmService_1 = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [config_1.ConfigService,
         anthropic_provider_1.AnthropicProvider,

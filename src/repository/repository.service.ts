@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import pLimit = require('p-limit');
+import { reviewFailureReason } from '../common/review-failure';
 import { PrismaService } from '../prisma/prisma.service';
 import { LlmService } from '../llm/llm.service';
 import { QuotaService } from '../quota/quota.service';
@@ -386,6 +387,7 @@ export class RepositoryService {
       let filesFromCache = 0;
       let filesAiSkipped = 0;
       let anyFreshAiInvoked = false;
+      const failures: Array<{ path: string; reason: string }> = [];
 
       const results = await Promise.all(
         files.map((file) =>
@@ -428,11 +430,19 @@ export class RepositoryService {
               return { path: file.path, result, usage };
             } catch (err) {
               this.logger.warn(`Skipping ${file.path}: ${(err as Error).message}`);
+              failures.push({ path: file.path, reason: reviewFailureReason(err) });
               return null;
             }
           }),
         ),
       );
+
+      // A review that couldn't read the code must never look like a clean one
+      // ("0 findings, ship it"): fail the scan, which also closes the PR's
+      // check as "didn't finish" with the reason.
+      if (files.length && failures.length === files.length) {
+        throw new Error(`The AI review couldn't run: ${failures[0].reason}`);
+      }
 
       const succeededByFile = results.filter((r): r is NonNullable<typeof r> => r !== null);
       const succeeded = succeededByFile.map((r) => r.result);
@@ -505,7 +515,13 @@ export class RepositoryService {
         crossFileNote = ` ${depVulnCount} vulnerable dependency issue(s), ${licenseCount} license compliance issue(s), ${circularCount} circular import chain(s), ${deadCodeCount} possibly dead file(s), ${duplicatesCount} duplicate block(s),${testCoverageRisk ? ` ${testCoverageRisk} test-coverage risk,` : ''}${architectureAssessment ? ` architecture consistency ${architectureAssessment.consistencyScore}/100,` : ''}`;
       }
 
-      const summary = `Reviewed ${succeeded.length}/${files.length} files (of ${job.fileCount} total) — ${filesFromCache} from cache, ${filesAiSkipped} needed no AI review. Found ${totalFindings} finding(s),${crossFileNote} ${secretsCount} potential secret(s).`;
+      const failureNote = failures.length
+        ? ` ${failures.length} file(s) couldn't be reviewed (${failures
+            .slice(0, 3)
+            .map((f) => f.path)
+            .join(', ')}${failures.length > 3 ? ', …' : ''}): ${failures[0].reason}`
+        : '';
+      const summary = `Reviewed ${succeeded.length}/${files.length} files (of ${job.fileCount} total) — ${filesFromCache} from cache, ${filesAiSkipped} needed no AI review. Found ${totalFindings} finding(s),${crossFileNote} ${secretsCount} potential secret(s).${failureNote}`;
 
       await this.prisma.scanJob.update({
         where: { id: jobId },

@@ -5,4 +5,5 @@ export declare class GeminiProvider implements LlmProvider {
     readonly name = "gemini";
     constructor(config: ConfigService);
     complete(prompt: string, opts?: CompleteOptions): Promise<CompleteResult>;
+    private thinkingConfig;
 }

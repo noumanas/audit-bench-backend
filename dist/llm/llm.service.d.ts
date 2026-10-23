@@ -17,11 +17,13 @@ export interface StructuredResult<T> {
 }
 export declare class LlmService {
     private readonly config;
+    private readonly logger;
     private readonly providers;
     constructor(config: ConfigService, anthropic: AnthropicProvider, openai: OpenAiProvider, gemini: GeminiProvider, deepseek: DeepSeekProvider, glm: GlmProvider, qwen: QwenProvider, kimi: KimiProvider, xai: XaiProvider, mistral: MistralProvider, minimax: MiniMaxProvider);
     resolveProvider(requested?: string): LlmProviderName;
     hasEscalationModel(providerName: LlmProviderName): boolean;
     completeText(providerName: LlmProviderName, prompt: string): Promise<string>;
+    private callProvider;
     completeStructured<T>(providerName: LlmProviderName, prompt: string, schema: z.ZodType<T>, opts?: {
         escalate?: boolean;
     }): Promise<StructuredResult<T>>;

@@ -14,6 +14,7 @@ exports.RepositoryService = void 0;
 const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
 const pLimit = require("p-limit");
+const review_failure_1 = require("../common/review-failure");
 const prisma_service_1 = require("../prisma/prisma.service");
 const llm_service_1 = require("../llm/llm.service");
 const quota_service_1 = require("../quota/quota.service");
@@ -214,6 +215,7 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
             let filesFromCache = 0;
             let filesAiSkipped = 0;
             let anyFreshAiInvoked = false;
+            const failures = [];
             const results = await Promise.all(files.map((file) => limit(async () => {
                 try {
                     const { result, fromCache, usage } = await this.pipeline.run({
@@ -255,9 +257,13 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
                 }
                 catch (err) {
                     this.logger.warn(`Skipping ${file.path}: ${err.message}`);
+                    failures.push({ path: file.path, reason: (0, review_failure_1.reviewFailureReason)(err) });
                     return null;
                 }
             })));
+            if (files.length && failures.length === files.length) {
+                throw new Error(`The AI review couldn't run: ${failures[0].reason}`);
+            }
             const succeededByFile = results.filter((r) => r !== null);
             const succeeded = succeededByFile.map((r) => r.result);
             const totalFindings = succeeded.reduce((sum, r) => sum + r.findings.length, 0);
@@ -306,7 +312,13 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
                     : null;
                 crossFileNote = ` ${depVulnCount} vulnerable dependency issue(s), ${licenseCount} license compliance issue(s), ${circularCount} circular import chain(s), ${deadCodeCount} possibly dead file(s), ${duplicatesCount} duplicate block(s),${testCoverageRisk ? ` ${testCoverageRisk} test-coverage risk,` : ''}${architectureAssessment ? ` architecture consistency ${architectureAssessment.consistencyScore}/100,` : ''}`;
             }
-            const summary = `Reviewed ${succeeded.length}/${files.length} files (of ${job.fileCount} total) — ${filesFromCache} from cache, ${filesAiSkipped} needed no AI review. Found ${totalFindings} finding(s),${crossFileNote} ${secretsCount} potential secret(s).`;
+            const failureNote = failures.length
+                ? ` ${failures.length} file(s) couldn't be reviewed (${failures
+                    .slice(0, 3)
+                    .map((f) => f.path)
+                    .join(', ')}${failures.length > 3 ? ', …' : ''}): ${failures[0].reason}`
+                : '';
+            const summary = `Reviewed ${succeeded.length}/${files.length} files (of ${job.fileCount} total) — ${filesFromCache} from cache, ${filesAiSkipped} needed no AI review. Found ${totalFindings} finding(s),${crossFileNote} ${secretsCount} potential secret(s).${failureNote}`;
             await this.prisma.scanJob.update({
                 where: { id: jobId },
                 data: {

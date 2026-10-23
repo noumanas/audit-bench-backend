@@ -8,6 +8,7 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var GithubService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildSummaryBody = exports.GithubService = void 0;
 exports.mapGithubContributorStats = mapGithubContributorStats;
@@ -28,11 +29,12 @@ const check_run_1 = require("../pr-feedback/check-run");
 const github_pr_snapshot_1 = require("../common/github-pr-snapshot");
 const GITHUB_API = 'https://api.github.com';
 const REPO_CONTEXT_MAX_KB = 50 * 1024;
-let GithubService = class GithubService {
+let GithubService = GithubService_1 = class GithubService {
     prisma;
     prFeedback;
     tokenCrypto;
     appAuth;
+    logger = new common_1.Logger(GithubService_1.name);
     constructor(prisma, prFeedback, tokenCrypto, appAuth) {
         this.prisma = prisma;
         this.prFeedback = prFeedback;
@@ -319,11 +321,20 @@ let GithubService = class GithubService {
     async publish(userId, context, feedback) {
         const token = await this.requireToken(context.installationId ? { installationId: context.installationId } : userId);
         await this.postPrReview(token, context.owner, context.repo, context.pullNumber, context.headSha, feedback);
-        if (context.installationId) {
+        if (!context.installationId) {
+            await this.postCommitStatus(token, context.owner, context.repo, context.headSha, feedback);
+            return;
+        }
+        try {
             await this.postCheckRun(token, context.owner, context.repo, context.headSha, feedback, context.checkRunId);
         }
-        else
-            await this.postCommitStatus(token, context.owner, context.repo, context.headSha, feedback);
+        catch (err) {
+            this.logger.warn(`Check run refused on ${context.owner}/${context.repo}, posting a commit status instead: ${err.message}`);
+            const res = await this.postCommitStatus(token, context.owner, context.repo, context.headSha, feedback);
+            if (!res.every((r) => r.ok)) {
+                throw new Error(`The review was posted, but GitHub refused its pass/fail check. ${err.message}`);
+            }
+        }
     }
     async postCheckRun(token, owner, repo, sha, feedback, checkRunId) {
         const body = { ...(0, check_run_1.buildCheckRun)(feedback, sha), completed_at: new Date().toISOString() };
@@ -352,14 +363,9 @@ let GithubService = class GithubService {
                 });
                 return res.ok ? (await res.json()).id : undefined;
             }
-            await fetch(`${GITHUB_API}/repos/${owner}/${repo}/statuses/${sha}`, {
-                method: 'POST',
-                headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    state: 'pending',
-                    description: 'Audit Bench Ai is reviewing this commit…',
-                    context: 'audit/bench',
-                }),
+            await this.postStatuses(token, owner, repo, sha, {
+                state: 'pending',
+                description: 'Audit Bench Ai is reviewing this commit…',
             });
         }
         catch (err) {
@@ -379,11 +385,7 @@ let GithubService = class GithubService {
             });
         }
         else if (typeof auth === 'string') {
-            await fetch(`${GITHUB_API}/repos/${owner}/${repo}/statuses/${sha}`, {
-                method: 'POST',
-                headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
-                body: JSON.stringify({ state: 'error', description: reason.slice(0, 140), context: 'audit/bench' }),
-            });
+            await this.postStatuses(token, owner, repo, sha, { state: 'success', description: reason.slice(0, 140) });
         }
     }
     async postReviewWithToken(token, owner, repo, pullNumber, headSha, feedback) {
@@ -424,12 +426,14 @@ let GithubService = class GithubService {
         throw new Error(explainPostFailure(fallback.status, (await githubErrorMessage(fallback)) || reviewError));
     }
     async postCommitStatus(token, owner, repo, sha, feedback) {
-        const { state, description } = commitStatusFor(feedback);
-        await fetch(`${GITHUB_API}/repos/${owner}/${repo}/statuses/${sha}`, {
+        return this.postStatuses(token, owner, repo, sha, commitStatusFor(feedback));
+    }
+    async postStatuses(token, owner, repo, sha, status) {
+        return Promise.all([check_run_1.CHECK_NAME, 'audit/bench'].map((context) => fetch(`${GITHUB_API}/repos/${owner}/${repo}/statuses/${sha}`, {
             method: 'POST',
             headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
-            body: JSON.stringify({ state, description, context: 'audit/bench' }),
-        });
+            body: JSON.stringify({ ...status, context }),
+        })));
     }
     async canPushTo(userId, owner, repo) {
         const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
@@ -442,6 +446,25 @@ let GithubService = class GithubService {
             return false;
         const body = (await res.json());
         return Boolean(body.permissions?.push || body.permissions?.maintain || body.permissions?.admin);
+    }
+    async createReviewComment(auth, owner, repo, pullNumber, opts) {
+        const token = await this.requireToken(auth);
+        const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${pullNumber}/comments`, {
+            method: 'POST',
+            headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                body: opts.body,
+                commit_id: opts.commitId,
+                path: opts.path,
+                line: opts.end,
+                side: 'RIGHT',
+                ...(opts.end > opts.start ? { start_line: opts.start, start_side: 'RIGHT' } : {}),
+            }),
+        });
+        if (!res.ok)
+            throw (0, git_host_errors_1.gitHostRequestFailed)('GitHub', res.status);
+        const data = (await res.json());
+        return { id: data.id, htmlUrl: data.html_url };
     }
     async getReviewComment(auth, owner, repo, commentId) {
         const token = await this.requireToken(auth);
@@ -579,7 +602,7 @@ let GithubService = class GithubService {
     }
 };
 exports.GithubService = GithubService;
-exports.GithubService = GithubService = __decorate([
+exports.GithubService = GithubService = GithubService_1 = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         pr_feedback_service_1.PrFeedbackService,
@@ -620,6 +643,9 @@ function explainPostFailure(status, message) {
     if (/personal access token/i.test(message)) {
         return `${base} Fine-grained tokens can only comment on repositories they were granted access to. To comment on other people's public repositories, reconnect GitHub with a classic token that has the public_repo scope.`;
     }
+    if (/not accessible by integration/i.test(message)) {
+        return `${base} The Audit Bench Ai GitHub App is missing a permission on this repository. In the app's settings set Pull requests and Checks to "Read and write", then accept the new permissions on the installation (GitHub → Settings → Applications → Audit Bench Ai → Review request).`;
+    }
     if (status === 401)
         return `${base} The GitHub token has expired or been revoked; reconnect GitHub with a new token.`;
     if (status === 403 && /locked|limited/i.test(message))
@@ -630,7 +656,7 @@ function explainPostFailure(status, message) {
     return base;
 }
 function commitStatusFor(feedback) {
-    if (feedback.verdict === 'do_not_ship') {
+    if ((0, check_run_1.checkConclusion)(feedback) === 'failure') {
         return { state: 'failure', description: 'Audit Bench Ai found blocking issues — see review comments' };
     }
     if (feedback.verdict === 'needs_work') {
