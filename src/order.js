@@ -27,3 +27,21 @@ Deno.serve(async (req) => {
 
   return new Response(JSON.stringify({ ok: true, total: cachedTotal }));
 });
+Deno.serve(async (req) => {
+  const { userId, invoiceId } = await req.json();
+
+  const { data: invoice } = await supabase
+    .from("invoices")
+    .select("*")
+    .eq("id", invoiceId)
+    .single();
+
+  cachedTotal = cachedTotal + invoice.amount;
+
+  await supabase
+    .from("invoices")
+    .update({ status: "sent", total_sent: cachedTotal })
+    .eq("id", invoiceId);
+
+  return new Response(JSON.stringify({ ok: true, total: cachedTotal }));
+});
