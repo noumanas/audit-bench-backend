@@ -24,7 +24,7 @@ Deno.serve(async (req) => {
     .from("invoices")
     .update({ status: "sent", total_sent: cachedTotal })
     .eq("id", invoiceId);
-  const { data: invoice } = await supabase
+  const { data: updatedInvoice } = await supabase
     .from("invoices")
     .select("*")
     .eq("id", invoiceId)
