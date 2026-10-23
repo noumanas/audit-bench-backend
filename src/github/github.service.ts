@@ -14,7 +14,13 @@ export type { GithubAuth };
 import { ContributorStat, ScannedFile } from '../analysis/types';
 import { extractZip } from '../analysis/file-walker';
 import { buildSummaryBody } from '../pr-feedback/summary-comment';
-import { buildCheckRun, inProgressCheckRun, stoppedCheckRun } from '../pr-feedback/check-run';
+import {
+  CHECK_NAME,
+  buildCheckRun,
+  checkConclusion,
+  inProgressCheckRun,
+  stoppedCheckRun,
+} from '../pr-feedback/check-run';
 import { GithubPull, fetchCiChecks, refetchIfMergeabilityPending, toPrSnapshot } from '../common/github-pr-snapshot';
 
 const GITHUB_API = 'https://api.github.com';
@@ -473,14 +479,9 @@ export class GithubService implements OnModuleInit, PrPublisher {
         });
         return res.ok ? ((await res.json()) as { id: number }).id : undefined;
       }
-      await fetch(`${GITHUB_API}/repos/${owner}/${repo}/statuses/${sha}`, {
-        method: 'POST',
-        headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          state: 'pending',
-          description: 'Audit Bench Ai is reviewing this commit…',
-          context: 'audit/bench',
-        }),
+      await this.postStatuses(token, owner, repo, sha, {
+        state: 'pending',
+        description: 'Audit Bench Ai is reviewing this commit…',
       });
     } catch (err) {
       // Status is a courtesy; the review itself carries on.
@@ -516,11 +517,8 @@ export class GithubService implements OnModuleInit, PrPublisher {
         body: JSON.stringify(stoppedCheckRun(reason)),
       });
     } else if (typeof auth === 'string') {
-      await fetch(`${GITHUB_API}/repos/${owner}/${repo}/statuses/${sha}`, {
-        method: 'POST',
-        headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ state: 'error', description: reason.slice(0, 140), context: 'audit/bench' }),
-      });
+      // "success", not "error": a review that couldn't finish never blocks a merge.
+      await this.postStatuses(token, owner, repo, sha, { state: 'success', description: reason.slice(0, 140) });
     }
   }
 
@@ -592,16 +590,30 @@ export class GithubService implements OnModuleInit, PrPublisher {
     sha: string,
     feedback: PrFeedback,
   ): Promise<void> {
-    const { state, description } = commitStatusFor(feedback);
-    await fetch(`${GITHUB_API}/repos/${owner}/${repo}/statuses/${sha}`, {
-      method: 'POST',
-      headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
-      // Kept as the pre-rebrand name, not "Audit Bench Ai" — this is the
-      // stable status-check identifier branch protection rules key off of;
-      // renaming it would silently break any required-check rule an
-      // existing user already configured against "audit/bench".
-      body: JSON.stringify({ state, description, context: 'audit/bench' }),
-    });
+    await this.postStatuses(token, owner, repo, sha, commitStatusFor(feedback));
+  }
+
+  /**
+   * Posts a commit status under both names: "Audit Bench Ai", the name the
+   * GitHub App's check uses and the docs tell teams to require, and the
+   * pre-rebrand "audit/bench", which existing required-check rules key off of.
+   */
+  private async postStatuses(
+    token: string,
+    owner: string,
+    repo: string,
+    sha: string,
+    status: { state: 'pending' | 'success' | 'failure'; description: string },
+  ): Promise<void> {
+    await Promise.all(
+      [CHECK_NAME, 'audit/bench'].map((context) =>
+        fetch(`${GITHUB_API}/repos/${owner}/${repo}/statuses/${sha}`, {
+          method: 'POST',
+          headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...status, context }),
+        }),
+      ),
+    );
   }
 
   /** Whether the user's own connected token can push to the repository (a maintainer, not just a reader). */
@@ -873,7 +885,8 @@ export function explainPostFailure(status: number, message: string): string {
  * hard gate.
  */
 function commitStatusFor(feedback: PrFeedback): { state: 'success' | 'failure'; description: string } {
-  if (feedback.verdict === 'do_not_ship') {
+  // Same gate as the GitHub App's check: critical issues, or anything that makes the PR "not ready".
+  if (checkConclusion(feedback) === 'failure') {
     return { state: 'failure', description: 'Audit Bench Ai found blocking issues — see review comments' };
   }
   if (feedback.verdict === 'needs_work') {
