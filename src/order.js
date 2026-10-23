@@ -2,14 +2,22 @@
 const express = require("express");
 import { createClient } from "@supabase/supabase-js";
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY,
-);
-
 let cachedTotal = 0;
 
 Deno.serve(async (req) => {
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+  }
+
+  const supabase = createClient(
+    Deno.env.get("SUPABASE_URL"),
+    Deno.env.get("SUPABASE_ANON_KEY"),
+    {
+      global: { headers: { Authorization: authHeader } },
+    }
+  );
+
   const { userId, invoiceId } = await req.json();
 
   const { data: invoice } = await supabase
@@ -24,10 +32,5 @@ Deno.serve(async (req) => {
     .from("invoices")
     .update({ status: "sent", total_sent: cachedTotal })
     .eq("id", invoiceId);
-  const { data: updatedInvoice } = await supabase
-    .from("invoices")
-    .select("*")
-    .eq("id", invoiceId)
-    .single();
   return new Response(JSON.stringify({ ok: true, total: cachedTotal }));
 });
