@@ -10,7 +10,13 @@ export interface PreMergeCheck {
   status: CheckStatus;
   explanation: string;
   resolution?: string;
+  /** Where it applies, e.g. "src/orders.ts" or "src/orders.ts:12", shown under the explanation. */
+  files?: string[];
 }
+
+/** How many files a check names before "and N more". */
+const MAX_CHECK_FILES = 5;
+const fileList = (paths: string[]) => [...new Set(paths)].slice(0, MAX_CHECK_FILES);
 
 const aiCheckSchema = z.object({
   name: z.enum(['Title check', 'Description check', 'Linked issues check', 'Out of scope changes check']),
@@ -103,7 +109,7 @@ Keep every explanation under 40 words, in plain language. Use "warning" for some
 export function deterministicChecks(
   pr: PrSnapshot,
   review: {
-    findings: Array<{ severity: string }>;
+    findings: Array<{ severity: string; path?: string; line?: number | null }>;
     secrets: number;
     changedPaths: string[];
   },
@@ -172,6 +178,10 @@ export function deterministicChecks(
       : { name: 'Secrets', status: 'pass', explanation: 'No keys, passwords or tokens in the changed code.' },
   );
 
+  const where = (sev: string) =>
+    review.findings
+      .filter((f) => f.severity === sev && f.path)
+      .map((f) => (f.line ? `${f.path}:${f.line}` : (f.path as string)));
   const critical = review.findings.filter((f) => f.severity === 'critical').length;
   const high = review.findings.filter((f) => f.severity === 'high').length;
   checks.push(
@@ -181,6 +191,7 @@ export function deterministicChecks(
           status: 'fail',
           explanation: `${critical} critical issue${critical === 1 ? '' : 's'} in the changed lines.`,
           resolution: 'Fix the critical inline comments before merging.',
+          files: fileList(where('critical')),
         }
       : high
         ? {
@@ -188,6 +199,7 @@ export function deterministicChecks(
             status: 'warning',
             explanation: `${high} high-severity issue${high === 1 ? '' : 's'} worth fixing first.`,
             resolution: 'Address the high-severity inline comments, or reply explaining why not.',
+            files: fileList(where('high')),
           }
         : {
             name: 'Blocking issues',
@@ -199,16 +211,17 @@ export function deterministicChecks(
   const isTest = (p: string) =>
     /(^|\/)(tests?|__tests__|spec)\/|\.(test|spec)\.[a-z]+$|_test\.(go|py)$|Test\.(java|kt)$/i.test(p);
   const isCode = (p: string) => /\.(ts|tsx|js|jsx|mjs|cjs|py|go|java|kt|rb|php|cs|rs|swift|scala|c|cc|cpp|h)$/i.test(p);
-  const sourceChanged = review.changedPaths.some((p) => isCode(p) && !isTest(p));
-  if (sourceChanged) {
+  const sourcePaths = review.changedPaths.filter((p) => isCode(p) && !isTest(p));
+  if (sourcePaths.length) {
     checks.push(
       review.changedPaths.some(isTest)
         ? { name: 'Tests', status: 'pass', explanation: 'Tests were changed alongside the code.' }
         : {
             name: 'Tests',
             status: 'warning',
-            explanation: 'Code changed but no test files did.',
+            explanation: `${sourcePaths.length} source file${sourcePaths.length === 1 ? '' : 's'} changed but no test files did.`,
             resolution: 'Add or update tests that cover the new behaviour.',
+            files: fileList(sourcePaths),
           },
     );
   }

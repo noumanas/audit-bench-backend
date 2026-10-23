@@ -113,7 +113,13 @@ describe('GithubService.publish', () => {
 
     const review = calls.find((c) => c.url.endsWith('/pulls/7/reviews'))!.body;
     expect(review.comments).toHaveLength(2);
-    expect(review.comments[0]).toMatchObject({ path: 'src/a.ts', start_line: 233, start_side: 'RIGHT', line: 235, side: 'RIGHT' });
+    expect(review.comments[0]).toMatchObject({
+      path: 'src/a.ts',
+      start_line: 233,
+      start_side: 'RIGHT',
+      line: 235,
+      side: 'RIGHT',
+    });
     expect(review.comments[1]).toMatchObject({ line: 240, side: 'RIGHT' });
     expect(review.comments[1].start_line).toBeUndefined();
     expect(review.comments[0].body).toContain('**🟡 Medium**\n\n**Range**');
@@ -141,7 +147,15 @@ describe('GithubService.publish when GitHub refuses', () => {
     await expect(
       service.publish(
         'u1',
-        { kind: 'github', owner: 'Netflix', repo: 'dgs-framework', pullNumber: 2363, headSha: 's', headRef: 'f', baseRef: 'master' },
+        {
+          kind: 'github',
+          owner: 'Netflix',
+          repo: 'dgs-framework',
+          pullNumber: 2363,
+          headSha: 's',
+          headRef: 'f',
+          baseRef: 'master',
+        },
         { verdict: 'pass', summary: 's', findings: [] },
       ),
     ).rejects.toThrow(/classic token that has the public_repo scope/);
@@ -173,7 +187,16 @@ describe('GithubService.publish verdict', () => {
     );
     await service.publish(
       'u1',
-      { kind: 'github', owner: 'acme', repo: 'api', pullNumber: 1, headSha: 'sha', headRef: 'f', baseRef: 'main', installationId },
+      {
+        kind: 'github',
+        owner: 'acme',
+        repo: 'api',
+        pullNumber: 1,
+        headSha: 'sha',
+        headRef: 'f',
+        baseRef: 'main',
+        installationId,
+      },
       { verdict: 'pass', summary: 's', findings: [] },
     );
     return urls;
@@ -183,6 +206,45 @@ describe('GithubService.publish verdict', () => {
     const urls = await run(42);
     expect(urls.some((u) => u.endsWith('/check-runs'))).toBe(true);
     expect(urls.some((u) => u.includes('/statuses/'))).toBe(false);
+  });
+
+  it('falls back to a commit status when the app may not write checks, without failing the posted review', async () => {
+    const calls: Array<{ url: string; body: any }> = [];
+    global.fetch = jest.fn(async (url: string, init?: { body?: string }) => {
+      calls.push({ url, body: init?.body ? JSON.parse(init.body) : null });
+      if (url.endsWith('/check-runs'))
+        return { ok: false, status: 403, json: async () => ({ message: 'Resource not accessible by integration' }) };
+      return { ok: true, json: async () => ({}) };
+    }) as never;
+    const service = new GithubService(
+      { user: { findUniqueOrThrow: jest.fn() } } as never,
+      { register: jest.fn() } as never,
+      { decrypt: () => 't' } as never,
+      { installationToken: jest.fn().mockResolvedValue('app-token') } as never,
+    );
+    await service.publish(
+      'u1',
+      {
+        kind: 'github',
+        owner: 'acme',
+        repo: 'api',
+        pullNumber: 1,
+        headSha: 'sha',
+        headRef: 'f',
+        baseRef: 'main',
+        installationId: 42,
+      },
+      { verdict: 'pass', summary: 's', findings: [] },
+    );
+    expect(calls.some((c) => c.url.endsWith('/pulls/1/reviews'))).toBe(true);
+    const contexts = calls.filter((c) => c.url.includes('/statuses/sha')).map((c) => c.body.context);
+    expect(contexts).toEqual(expect.arrayContaining(['Audit Bench Ai', 'audit/bench']));
+  });
+
+  it('explains a missing app permission instead of blaming token scopes', () => {
+    expect(explainPostFailure(403, 'Resource not accessible by integration')).toMatch(
+      /GitHub App is missing a permission/,
+    );
   });
 
   it('posts a commit status for personal-token reviews (they cannot create checks)', async () => {
@@ -215,7 +277,17 @@ describe('GithubService check run lifecycle', () => {
 
     await service.publish(
       'u1',
-      { kind: 'github', owner: 'acme', repo: 'api', pullNumber: 1, headSha: 'sha', headRef: 'f', baseRef: 'main', installationId: 1, checkRunId: 777 },
+      {
+        kind: 'github',
+        owner: 'acme',
+        repo: 'api',
+        pullNumber: 1,
+        headSha: 'sha',
+        headRef: 'f',
+        baseRef: 'main',
+        installationId: 1,
+        checkRunId: 777,
+      },
       { verdict: 'pass', summary: 's', findings: [] },
     );
     const done = calls.find((c) => c.url.endsWith('/check-runs/777'));

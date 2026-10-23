@@ -143,7 +143,14 @@ describe('GithubAppService webhook', () => {
   it('reviews a new pull request as the app, on the linked account', async () => {
     const { service, webhooks } = setup(linked);
     expect(await deliver(service, 'pull_request', prBody())).toEqual({ ok: true, status: 'reviewing' });
-    expect(webhooks.autoReviewPullRequest).toHaveBeenCalledWith({ installationId: 42 }, linked.user, 'acme', 'api', 7, 'abc');
+    expect(webhooks.autoReviewPullRequest).toHaveBeenCalledWith(
+      { installationId: 42 },
+      linked.user,
+      'acme',
+      'api',
+      7,
+      'abc',
+    );
   });
 
   it('skips drafts, repeats, unlinked installs and auto-review switched off', async () => {
@@ -177,7 +184,7 @@ describe('GithubAppService webhook', () => {
       sender: { type: 'User' },
       repository: { full_name: 'acme/api' },
       issue: { number: 7, pull_request: {} },
-      comment: { body: '@auditbench is this safe?' },
+      comment: { body: '@auditbench is this safe?', user: { login: 'dev1' } },
     });
     expect(webhooks.answerMention).toHaveBeenCalledWith(
       { installationId: 42 },
@@ -185,6 +192,7 @@ describe('GithubAppService webhook', () => {
       'api',
       7,
       '@auditbench is this safe?',
+      'dev1',
     );
 
     const fromBot = await deliver(service, 'pull_request_review_comment', {

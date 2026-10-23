@@ -25,6 +25,15 @@ import {
   recheckSchema,
   settlesThread,
 } from './thread-reply';
+import {
+  ANSWER_MARKER,
+  buildMentionPrompt,
+  excerpt,
+  formatConversationReply,
+  formatThreadAnswer,
+  mentionAnswerSchema,
+  placeAnswer,
+} from './mention-answer';
 
 const BOT_MENTION = '@auditbench';
 const MAX_CONTEXT_FILES = 5;
@@ -117,16 +126,63 @@ export class WebhooksService {
     }
 
     const [owner, repo] = repoIdentifier.split('/');
-    await this.answerMention(config.userId, owner, repo, body.issue.number, commentBody);
+    await this.answerMention(config.userId, owner, repo, body.issue.number, commentBody, commentAuthor || undefined);
     return { ok: true };
   }
 
-  /** Answers an @auditbench question in a PR conversation, as the user or the GitHub App. */
-  async answerMention(auth: GithubAuth, owner: string, repo: string, pullNumber: number, question: string) {
+  /**
+   * Answers an @auditbench question in a PR conversation, as the user or the
+   * GitHub App. When the answer is about one place in the changed code, it
+   * opens an inline thread on those lines (where the team can keep talking
+   * to it) and replies in the conversation with the code and a link there.
+   */
+  async answerMention(
+    auth: GithubAuth,
+    owner: string,
+    repo: string,
+    pullNumber: number,
+    question: string,
+    author?: string,
+  ) {
     try {
-      const { files } = await this.github.fetchPrFiles(auth, owner, repo, pullNumber);
-      const reply = await this.generateReply(question, files);
-      await this.github.postIssueComment(auth, owner, repo, pullNumber, reply);
+      const { files, headSha } = await this.github.fetchPrFiles(auth, owner, repo, pullNumber);
+      const { result } = await this.llm.completeStructured(
+        this.llm.resolveProvider(),
+        buildMentionPrompt(question, files, BOT_MENTION),
+        mentionAnswerSchema,
+      );
+      const spot = placeAnswer(result.location, files);
+      let threadUrl: string | null = null;
+      if (spot) {
+        threadUrl = await this.github
+          .createReviewComment(auth, owner, repo, pullNumber, {
+            commitId: headSha,
+            path: spot.path,
+            start: spot.start,
+            end: spot.end,
+            body: formatThreadAnswer(result.answer, { author, question }),
+          })
+          .then((c) => c.htmlUrl)
+          .catch((err: unknown) => {
+            // Still answer in the conversation, just without the thread.
+            this.logger.warn(`Couldn't open a thread on ${spot.path}:${spot.start}: ${(err as Error).message}`);
+            return null;
+          });
+      }
+      const file = spot ? files.find((f) => f.path === spot.path) : undefined;
+      await this.github.postIssueComment(
+        auth,
+        owner,
+        repo,
+        pullNumber,
+        formatConversationReply(result.answer, {
+          author,
+          question,
+          spot: threadUrl ? spot : null,
+          code: file && spot ? excerpt(file.content, spot) : null,
+          threadUrl,
+        }),
+      );
     } catch (err) {
       this.logger.error(`Failed to reply on ${owner}/${repo}#${pullNumber}`, err as Error);
     }
@@ -173,7 +229,8 @@ export class WebhooksService {
 
     try {
       const root = rootId === comment.id ? comment : await this.github.getReviewComment(auth, owner, repo, rootId);
-      if (!String(root.body ?? '').includes(FINDING_MARKER) && !mentioned) {
+      const ours = String(root.body ?? '');
+      if (!ours.includes(FINDING_MARKER) && !ours.includes(ANSWER_MARKER) && !mentioned) {
         return { ok: true, skipped: 'not an Audit Bench Ai thread' };
       }
       const thread = await this.github.listReviewThread(auth, owner, repo, pullNumber, rootId);

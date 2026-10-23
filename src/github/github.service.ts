@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { gitHostRequestFailed } from '../common/git-host-errors';
 import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -29,6 +29,7 @@ const REPO_CONTEXT_MAX_KB = 50 * 1024;
 
 @Injectable()
 export class GithubService implements OnModuleInit, PrPublisher {
+  private readonly logger = new Logger(GithubService.name);
   constructor(
     private readonly prisma: PrismaService,
     private readonly prFeedback: PrFeedbackService,
@@ -430,9 +431,24 @@ export class GithubService implements OnModuleInit, PrPublisher {
     const token = await this.requireToken(context.installationId ? { installationId: context.installationId } : userId);
     await this.postPrReview(token, context.owner, context.repo, context.pullNumber, context.headSha, feedback);
     // Only a GitHub App can create check runs; a personal token gets the older commit status.
-    if (context.installationId) {
+    if (!context.installationId) {
+      await this.postCommitStatus(token, context.owner, context.repo, context.headSha, feedback);
+      return;
+    }
+    try {
       await this.postCheckRun(token, context.owner, context.repo, context.headSha, feedback, context.checkRunId);
-    } else await this.postCommitStatus(token, context.owner, context.repo, context.headSha, feedback);
+    } catch (err) {
+      // The review is already on the PR. An app installed without "Checks:
+      // write" still gets the verdict to the PR as a commit status, under the
+      // same name, so a required "Audit Bench Ai" check is satisfied.
+      this.logger.warn(
+        `Check run refused on ${context.owner}/${context.repo}, posting a commit status instead: ${(err as Error).message}`,
+      );
+      const res = await this.postCommitStatus(token, context.owner, context.repo, context.headSha, feedback);
+      if (!res.every((r) => r.ok)) {
+        throw new Error(`The review was posted, but GitHub refused its pass/fail check. ${(err as Error).message}`);
+      }
+    }
   }
 
   /**
@@ -589,8 +605,8 @@ export class GithubService implements OnModuleInit, PrPublisher {
     repo: string,
     sha: string,
     feedback: PrFeedback,
-  ): Promise<void> {
-    await this.postStatuses(token, owner, repo, sha, commitStatusFor(feedback));
+  ): Promise<Response[]> {
+    return this.postStatuses(token, owner, repo, sha, commitStatusFor(feedback));
   }
 
   /**
@@ -604,8 +620,8 @@ export class GithubService implements OnModuleInit, PrPublisher {
     repo: string,
     sha: string,
     status: { state: 'pending' | 'success' | 'failure'; description: string },
-  ): Promise<void> {
-    await Promise.all(
+  ): Promise<Response[]> {
+    return Promise.all(
       [CHECK_NAME, 'audit/bench'].map((context) =>
         fetch(`${GITHUB_API}/repos/${owner}/${repo}/statuses/${sha}`, {
           method: 'POST',
@@ -626,6 +642,35 @@ export class GithubService implements OnModuleInit, PrPublisher {
     if (!res.ok) return false;
     const body = (await res.json()) as { permissions?: { push?: boolean; maintain?: boolean; admin?: boolean } };
     return Boolean(body.permissions?.push || body.permissions?.maintain || body.permissions?.admin);
+  }
+
+  /**
+   * Opens a new inline thread on lines `start`..`end` of the PR's head
+   * commit (they must be changed lines). Returns the comment's link.
+   */
+  async createReviewComment(
+    auth: GithubAuth,
+    owner: string,
+    repo: string,
+    pullNumber: number,
+    opts: { commitId: string; path: string; start: number; end: number; body: string },
+  ): Promise<{ id: number; htmlUrl: string }> {
+    const token = await this.requireToken(auth);
+    const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${pullNumber}/comments`, {
+      method: 'POST',
+      headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        body: opts.body,
+        commit_id: opts.commitId,
+        path: opts.path,
+        line: opts.end,
+        side: 'RIGHT',
+        ...(opts.end > opts.start ? { start_line: opts.start, start_side: 'RIGHT' } : {}),
+      }),
+    });
+    if (!res.ok) throw gitHostRequestFailed('GitHub', res.status);
+    const data = (await res.json()) as { id: number; html_url: string };
+    return { id: data.id, htmlUrl: data.html_url };
   }
 
   /** One inline review comment. */
@@ -868,6 +913,9 @@ export function explainPostFailure(status: number, message: string): string {
   const base = `GitHub refused the comment (${status}${message ? `: ${message}` : ''}).`;
   if (/personal access token/i.test(message)) {
     return `${base} Fine-grained tokens can only comment on repositories they were granted access to. To comment on other people's public repositories, reconnect GitHub with a classic token that has the public_repo scope.`;
+  }
+  if (/not accessible by integration/i.test(message)) {
+    return `${base} The Audit Bench Ai GitHub App is missing a permission on this repository. In the app's settings set Pull requests and Checks to "Read and write", then accept the new permissions on the installation (GitHub → Settings → Applications → Audit Bench Ai → Review request).`;
   }
   if (status === 401) return `${base} The GitHub token has expired or been revoked; reconnect GitHub with a new token.`;
   if (status === 403 && /locked|limited/i.test(message))

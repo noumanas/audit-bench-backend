@@ -363,7 +363,7 @@ export class GithubAppService {
       if (!text.toLowerCase().includes(BOT_MENTION) || text.includes('<!-- audit-bench')) {
         return { ok: true, skipped: 'no mention' };
       }
-      void this.webhooks.answerMention(auth, owner, repo, body.issue.number, text);
+      void this.webhooks.answerMention(auth, owner, repo, body.issue.number, text, body.comment?.user?.login);
       return { ok: true, status: 'answering' };
     }
 

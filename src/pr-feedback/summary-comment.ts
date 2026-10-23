@@ -21,6 +21,10 @@ const READINESS_LABEL: Record<MergeReadiness['status'], string> = {
 const RISK_LABEL = { minimal: '⚪ Minimal', low: '🟢 Low', medium: '🟡 Medium', high: '🔴 High' } as const;
 const CHECK_ICON: Record<PreMergeCheck['status'], string> = { pass: '✅', warning: '⚠️', fail: '❌' };
 
+/** The files a check applies to, on their own lines inside its table cell. */
+const fileCell = (files: string[] | undefined) =>
+  files?.length ? files.map((f) => `<br>📄 \`${cell(f).replace(/`/g, '')}\``).join('') : '';
+
 /** Table cells can't hold pipes or line breaks. */
 const cell = (s: string | null | undefined) =>
   (s ?? '')
@@ -94,16 +98,20 @@ export function buildSummaryBody(feedback: PrFeedback, opts: { posted?: number; 
     const passed = checks.filter((c) => c.status === 'pass');
     const errors = failed.filter((c) => c.status === 'fail').length;
     const warnings = failed.length - errors;
+    const counts = [
+      errors && `${errors} error${errors === 1 ? '' : 's'}`,
+      warnings && `${warnings} warning${warnings === 1 ? '' : 's'}`,
+    ].filter(Boolean);
     const body: string[] = [];
     if (failed.length) {
       body.push(
-        `❌ **Failed checks: ${[errors && `${errors} error${errors === 1 ? '' : 's'}`, warnings && `${warnings} warning${warnings === 1 ? '' : 's'}`].filter(Boolean).join(', ')}**`,
+        errors ? `❌ **Failed checks: ${counts.join(', ')}**` : `⚠️ **Checks to review: ${counts.join(', ')}**`,
         '',
         '| Check name | Status | Explanation | Resolution |',
         '| --- | :---: | --- | --- |',
         ...failed.map(
           (c) =>
-            `| ${cell(c.name)} | ${CHECK_ICON[c.status]} | ${cell(c.explanation)} | ${cell(c.resolution) || '-'} |`,
+            `| ${cell(c.name)} | ${CHECK_ICON[c.status]} | ${cell(c.explanation)}${fileCell(c.files)} | ${cell(c.resolution) || '-'} |`,
         ),
         '',
       );
@@ -121,7 +129,8 @@ export function buildSummaryBody(feedback: PrFeedback, opts: { posted?: number; 
         ),
       );
     }
-    lines.push(...details(`<b>Pre-merge checks:</b> ✅ ${passed.length} · ❌ ${failed.length}`, body, true), '');
+    const tally = [`✅ ${passed.length}`, warnings && `⚠️ ${warnings}`, errors && `❌ ${errors}`].filter(Boolean);
+    lines.push(...details(`<b>Pre-merge checks:</b> ${tally.join(' · ')}`, body, true), '');
   }
 
   if (insights) {
