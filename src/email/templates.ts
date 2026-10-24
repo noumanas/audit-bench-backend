@@ -315,3 +315,64 @@ export function inactivityEmail(input: InactivityEmailInput): RenderedEmail {
 
   return { subject: 'Your code reviews are waiting on Audit Bench Ai', html, text };
 }
+
+export interface WelcomeEmailInput {
+  name: string | null;
+  /** Frontend origin — the step links are paths under it. */
+  appOrigin: string;
+  /** The plan the account starts on (Free for every self-serve signup). */
+  plan: Pick<PlanLimits, 'name' | 'monthlyAuditLimit' | 'maxRepositories'>;
+}
+
+/** Sent once, right after an account is created — see WelcomeEmailService. */
+export function welcomeEmail({ name, appOrigin, plan }: WelcomeEmailInput): RenderedEmail {
+  const steps: [string, string, string][] = [
+    ['Run your first audit', 'Paste a file, diff or pull request link and get findings ranked by severity.', '/app'],
+    ['Connect a repository', 'Link GitHub, GitLab or Bitbucket to scan a whole codebase.', '/app/repository'],
+    ['Set your review rules', 'Tell Audit Bench what your team cares about so every review checks it.', '/app/rules'],
+  ];
+  const stepRows = steps
+    .map(
+      ([title, body, path], i) => `<tr>
+    <td width="36" valign="top" style="padding:14px 0;${i < steps.length - 1 ? `border-bottom:1px solid ${C.line};` : ''}">
+      <div style="width:26px;height:26px;line-height:26px;border-radius:13px;background:${C.paper};text-align:center;font-family:${FONT};font-size:13px;font-weight:700;color:${C.cobalt};">${i + 1}</div>
+    </td>
+    <td valign="top" style="padding:14px 0;${i < steps.length - 1 ? `border-bottom:1px solid ${C.line};` : ''}">
+      <a href="${escapeHtml(appOrigin + path)}" style="font-family:${FONT};font-size:15px;font-weight:600;color:${C.ink};text-decoration:none;">${title}</a>
+      <div style="margin-top:4px;font-family:${FONT};font-size:14px;line-height:1.5;color:${C.muted};">${body}</div>
+    </td>
+  </tr>`,
+    )
+    .join('');
+
+  const limits: string[] = [];
+  if (plan.monthlyAuditLimit !== null) limits.push(`${plan.monthlyAuditLimit.toLocaleString('en-US')} audits a month`);
+  if (plan.maxRepositories !== null) {
+    limits.push(`${plan.maxRepositories} ${plan.maxRepositories === 1 ? 'repository' : 'repositories'}`);
+  }
+  const planLine = limits.length
+    ? `You're on the <strong>${escapeHtml(plan.name)}</strong> plan — ${limits.join(' and ')}, no card needed.`
+    : `You're on the <strong>${escapeHtml(plan.name)}</strong> plan.`;
+
+  const footerNote = "You're getting this because you just created an Audit Bench Ai account.";
+  const html = layout({
+    preheader: 'Your account is ready — here are three steps to your first AI code review.',
+    heading: 'Welcome to Audit Bench Ai',
+    bodyHtml:
+      paragraph(name ? `Hi ${escapeHtml(name)},` : 'Hi there,') +
+      paragraph(`Thanks for signing up. Audit Bench reviews your code for bugs, security issues and risky changes before they ship. ${planLine}`) +
+      `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 0;">${stepRows}</table>` +
+      button('Run your first audit', `${appOrigin}/app`) +
+      `<p style="margin:16px 0 0;font-family:${FONT};font-size:13px;line-height:1.6;color:${C.muted};">Questions or feedback? Just reply to this email — it goes straight to our team.</p>`,
+    footerNote,
+  });
+
+  const text =
+    `${name ? `Hi ${name},` : 'Hi there,'}\n\n` +
+    `Thanks for signing up. Audit Bench reviews your code for bugs, security issues and risky changes before they ship. ${planLine.replace(/<\/?strong>/g, '')}\n\n` +
+    steps.map(([title, body, path], i) => `${i + 1}. ${title}: ${body}\n   ${appOrigin}${path}`).join('\n') +
+    `\n\nRun your first audit: ${appOrigin}/app\n\nQuestions or feedback? Just reply to this email.` +
+    textFooter(footerNote);
+
+  return { subject: 'Welcome to Audit Bench Ai — your account is ready', html, text };
+}

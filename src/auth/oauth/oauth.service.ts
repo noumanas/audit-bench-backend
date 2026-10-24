@@ -7,6 +7,7 @@ import { ConfigService } from "@nestjs/config";
 import * as crypto from "crypto";
 import { Role } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
+import { WelcomeEmailService } from "../../email/welcome-email.service";
 import { gitlabInstanceUrl } from "../../common/gitlab-url";
 import { TokenCryptoService } from "../../common/token-crypto.service";
 import { requireJwtSecret } from "../jwt-secret";
@@ -79,6 +80,7 @@ export class OAuthService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly tokenCrypto: TokenCryptoService,
+    private readonly welcomeEmail: WelcomeEmailService,
   ) {}
 
   redirectUri(provider: OAuthProvider): string {
@@ -320,8 +322,9 @@ export class OAuthService {
   ) {
     const tokenFields = this.tokenFields(provider, profile, tokens);
     const providerLabel = PROVIDER_LABELS[provider];
+    let created = false;
 
-    return this.prisma.$transaction(async (tx) => {
+    const user = await this.prisma.$transaction(async (tx) => {
       const existingAccount = await tx.oAuthAccount.findUnique({
         where: {
           provider_providerUserId: {
@@ -397,8 +400,13 @@ export class OAuthService {
         },
       });
 
+      created = true;
       return user;
     });
+
+    // Only after the transaction commits — never welcome an account that rolled back.
+    if (created) this.welcomeEmail.send(user);
+    return user;
   }
 
   // ---------- GitHub ----------

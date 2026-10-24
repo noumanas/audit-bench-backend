@@ -9,7 +9,7 @@ describe('OAuthService connecting GitHub/GitLab to a signed-in account', () => {
   };
   const setup = () => {
     const prisma = { user: { update: jest.fn() }, oAuthAccount: { findUnique: jest.fn(), create: jest.fn() } };
-    const service = new OAuthService(prisma as never, { get: (k: string) => env[k] } as never, {} as never);
+    const service = new OAuthService(prisma as never, { get: (k: string) => env[k] } as never, {} as never, {} as never);
     return { service, prisma };
   };
   const stateOf = (url: string) => new URL(url).searchParams.get('state') as string;

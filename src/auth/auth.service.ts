@@ -8,6 +8,7 @@ import { JwtService } from "@nestjs/jwt";
 import * as bcrypt from "bcryptjs";
 import { OrgRole, Role } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
+import { WelcomeEmailService } from "../email/welcome-email.service";
 import { SignupDto } from "./dto/signup.dto";
 import { LoginDto } from "./dto/login.dto";
 import { JwtPayload } from "./types";
@@ -24,6 +25,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
+    private readonly welcomeEmail: WelcomeEmailService,
   ) {}
 
   async signup(dto: SignupDto) {
@@ -62,6 +64,7 @@ export class AuthService {
       include: { plan: true, organization: true },
     });
 
+    this.welcomeEmail.send(user);
     return this.buildSession(user);
   }
 
