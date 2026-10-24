@@ -1,4 +1,4 @@
-import { BadRequestException, Controller, Get, HttpCode, Post, Query, Res, UseGuards } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, Controller, Get, HttpCode, Post, Query, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -57,7 +57,7 @@ export class EmailController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('super_admin')
   async preview(@CurrentUser() user: RequestUser) {
-    await this.upgradeEmails.sendTo({ id: user.id, email: user.email, name: null });
+    await mailOrBadGateway(this.upgradeEmails.sendTo({ id: user.id, email: user.email, name: null }));
     return { sentTo: user.email };
   }
 
@@ -72,7 +72,7 @@ export class EmailController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('super_admin')
   async previewInactivity(@CurrentUser() user: RequestUser) {
-    await this.inactivityEmails.sendTo({ id: user.id, email: user.email, name: null }, INACTIVE_AFTER_DAYS);
+    await mailOrBadGateway(this.inactivityEmails.sendTo({ id: user.id, email: user.email, name: null }, INACTIVE_AFTER_DAYS));
     return { sentTo: user.email };
   }
 
@@ -84,6 +84,16 @@ export class EmailController {
     if (!userId || !token || !this.unsubscribe.verify(userId, token)) return false;
     await this.unsubscribe.unsubscribe(userId);
     return true;
+  }
+}
+
+// The admin sees the mail server's actual reason (e.g. a 421 from Google)
+// rather than a bare "Internal server error".
+async function mailOrBadGateway(sending: Promise<void>): Promise<void> {
+  try {
+    await sending;
+  } catch (err) {
+    throw new BadGatewayException(`The mail server refused the email: ${(err as Error).message.split('\n')[0]}`);
   }
 }
 

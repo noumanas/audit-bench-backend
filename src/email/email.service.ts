@@ -27,6 +27,11 @@ export class EmailService {
             port: Number(port),
             secure: this.config.get<string>('SMTP_SECURE') === 'true',
             auth: { user, pass },
+            // The EHLO greeting. Left unset, nodemailer sends the machine's
+            // hostname, or "[127.0.0.1]" when that has no dot — which is what
+            // a container (Cloud Run, Docker) has, and Google's SMTP relay
+            // refuses it: "421 4.7.0 Try again later, closing connection. (EHLO)".
+            name: this.config.get<string>('SMTP_EHLO_NAME') || ehloNameFor(user),
           })
         : null;
   }
@@ -52,4 +57,10 @@ export class EmailService {
     const from = this.config.get<string>('SMTP_FROM') || '"Audit Bench Ai" <no-reply@audit-bench.dev>';
     await this.transporter.sendMail({ from, to, subject, html, text, headers });
   }
+}
+
+/** A real domain to greet the SMTP server with — the sending account's own. */
+export function ehloNameFor(smtpUser: string): string | undefined {
+  const domain = smtpUser.split('@')[1]?.trim();
+  return domain && domain.includes('.') ? domain : undefined;
 }

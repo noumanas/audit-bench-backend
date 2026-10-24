@@ -1,6 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Campaign, isDeliverableAddress } from './campaign';
+import { ehloNameFor } from './email.service';
 import { InactivityEmailService } from './inactivity-email.service';
 import { UnsubscribeService } from './unsubscribe.service';
 
@@ -77,5 +78,13 @@ describe('InactivityEmailService.start (admin "Send now")', () => {
   it('refuses when SMTP is not configured or nobody is eligible', async () => {
     await expect(make([user('a@gmail.com')], false).service.start()).rejects.toThrow('SMTP is not configured');
     await expect(make([]).service.start()).rejects.toThrow('Nobody is eligible');
+  });
+});
+
+describe('ehloNameFor', () => {
+  it('uses the sending account’s domain, never a container hostname', () => {
+    expect(ehloNameFor('contact@auditbenchai.com')).toBe('auditbenchai.com');
+    expect(ehloNameFor('no-at-sign')).toBeUndefined();
+    expect(ehloNameFor('user@localhost')).toBeUndefined();
   });
 });
