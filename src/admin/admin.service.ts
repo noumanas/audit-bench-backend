@@ -5,9 +5,13 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
+import { EmailService } from '../email/email.service';
+import { planApprovedEmail, planRejectedEmail, RenderedEmail } from '../email/templates';
 import { PlanRequestStatus, Role } from '@prisma/client';
 
 const SAFE_USER_SELECT = {
@@ -38,10 +42,26 @@ const VALID_STATUSES: PlanRequestStatus[] = ['pending', 'approved', 'rejected'];
 
 @Injectable()
 export class AdminService {
+  private readonly logger = new Logger(AdminService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly subscriptions: SubscriptionService,
+    private readonly email: EmailService,
+    private readonly config: ConfigService,
   ) {}
+
+  private appUrl(path: string): string {
+    return `${(this.config.get<string>('FRONTEND_ORIGIN') || 'http://localhost:3000').split(',')[0].trim()}${path}`;
+  }
+
+  // The decision is already committed by the time this runs — a mail
+  // failure is logged, never surfaced as a failed approve/reject.
+  private notifyRequester(to: string, message: RenderedEmail) {
+    this.email
+      .send(to, message.subject, message.html, message.text)
+      .catch((err: Error) => this.logger.error(`Plan request email to ${to} failed: ${err.message}`));
+  }
 
   async listUsers() {
     return this.prisma.user.findMany({ select: SAFE_USER_SELECT, orderBy: { createdAt: 'desc' } });
@@ -88,6 +108,15 @@ export class AdminService {
       requestedPlan,
       { source: 'approval', actorId: adminId },
     );
+    this.notifyRequester(
+      updatedRequest.user.email,
+      planApprovedEmail({
+        name: updatedRequest.user.name,
+        planName: requestedPlan.name,
+        appUrl: this.appUrl('/app'),
+        expiresAt: planData.planExpiresAt,
+      }),
+    );
     return updatedRequest;
   }
 
@@ -98,11 +127,21 @@ export class AdminService {
       throw new ConflictException('This request has already been reviewed');
     }
 
-    return this.prisma.planRequest.update({
+    const updatedRequest = await this.prisma.planRequest.update({
       where: { id: requestId },
       data: { status: 'rejected', reviewedById: adminId, reviewedAt: new Date(), note },
       include: PLAN_REQUEST_INCLUDE,
     });
+    this.notifyRequester(
+      updatedRequest.user.email,
+      planRejectedEmail({
+        name: updatedRequest.user.name,
+        planName: updatedRequest.requestedPlan.name,
+        appUrl: this.appUrl('/pricing'),
+        note,
+      }),
+    );
+    return updatedRequest;
   }
 
   async updateUserRole(actingAdminId: string, targetUserId: string, role: Role) {

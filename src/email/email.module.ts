@@ -1,9 +1,16 @@
 import { Global, Module } from '@nestjs/common';
+import { QuotaModule } from '../quota/quota.module';
 import { EmailService } from './email.service';
+import { EmailController } from './email.controller';
+import { UpgradeEmailService } from './upgrade-email.service';
+import { InactivityEmailService } from './inactivity-email.service';
+import { UnsubscribeService } from './unsubscribe.service';
 
 @Global()
 @Module({
-  providers: [EmailService],
+  imports: [QuotaModule],
+  controllers: [EmailController],
+  providers: [EmailService, UnsubscribeService, UpgradeEmailService, InactivityEmailService],
   exports: [EmailService],
 })
 export class EmailModule {}

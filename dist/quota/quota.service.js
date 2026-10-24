@@ -16,6 +16,8 @@ const prisma_service_1 = require("../prisma/prisma.service");
 const repo_key_1 = require("../common/repo-key");
 const plan_expiry_1 = require("../common/plan-expiry");
 const REPO_SCAN_SOURCE_TYPES = ['zip', 'github_repo', 'gitlab_repo', 'bitbucket_repo'];
+const QUOTA_TX_MAX_WAIT_MS = 10_000;
+const QUOTA_TX_TIMEOUT_MS = 20_000;
 function startOfDay(d = new Date()) {
     return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
@@ -55,7 +57,12 @@ let QuotaService = class QuotaService {
     }
     countAiRepoScans(db, scopeWhere, since) {
         return db.scanJob.count({
-            where: { ...scopeWhere, createdAt: { gte: since }, aiInvoked: true, sourceType: { in: [...REPO_SCAN_SOURCE_TYPES] } },
+            where: {
+                ...scopeWhere,
+                createdAt: { gte: since },
+                aiInvoked: true,
+                sourceType: { in: [...REPO_SCAN_SOURCE_TYPES] },
+            },
         });
     }
     async countUsage(db, scopeWhere, since) {
@@ -180,10 +187,15 @@ let QuotaService = class QuotaService {
             return await this.prisma.$transaction(async (tx) => {
                 await checker(tx);
                 return create(tx);
-            }, { isolationLevel: client_1.Prisma.TransactionIsolationLevel.Serializable });
+            }, {
+                isolationLevel: client_1.Prisma.TransactionIsolationLevel.Serializable,
+                maxWait: QUOTA_TX_MAX_WAIT_MS,
+                timeout: QUOTA_TX_TIMEOUT_MS,
+            });
         }
         catch (err) {
-            if (err instanceof client_1.Prisma.PrismaClientKnownRequestError && err.code === 'P2034' && attempt < 1) {
+            const retryable = err instanceof client_1.Prisma.PrismaClientKnownRequestError && (err.code === 'P2034' || err.code === 'P2028');
+            if (retryable && attempt < 1) {
                 return this.withQuotaCheck(checker, create, attempt + 1);
             }
             throw err;

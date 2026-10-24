@@ -163,76 +163,88 @@ model OrganizationInvite {
 }
 
 model User {
-  id                   String               @id @default(uuid())
-  email                String               @unique
+  id                    String               @id @default(uuid())
+  email                 String               @unique
   // Null for an account created via GitHub/GitLab OAuth (no password ever
   // set) — see AuthService.login, which rejects password login for these.
-  passwordHash         String?
-  name                 String?
-  plan                 Plan                 @relation(fields: [planId], references: [id])
-  planId               String
+  passwordHash          String?
+  name                  String?
+  plan                  Plan                 @relation(fields: [planId], references: [id])
+  planId                String
   // Paid plans run 30 days from approval (see common/plan-expiry.ts); past
   // this, QuotaService treats the account as Free immediately and
   // PlanExpiryService switches planId back to Free. null = no expiry (Free).
-  planExpiresAt        DateTime?
-  role                 Role                 @default(user)
+  planExpiresAt         DateTime?
+  role                  Role                 @default(user)
   // Flipped off by an admin to lock the account out immediately (checked at
   // login and on every authenticated request via JwtStrategy) without
   // deleting any of the user's data.
-  isActive             Boolean              @default(true)
+  isActive              Boolean              @default(true)
   // Personal Access Tokens for repo listing/scanning — plaintext in this
   // dev-scoped build; a real deployment would encrypt these at rest.
-  githubToken          String?
-  githubUsername       String?
-  githubInstallations  GithubInstallation[]
-  reviewRules          ReviewRule[]
-  findingFeedback      FindingFeedback[]
-  gitlabToken          String?
-  gitlabUsername       String?
+  githubToken           String?
+  githubUsername        String?
+  githubInstallations   GithubInstallation[]
+  reviewRules           ReviewRule[]
+  findingFeedback       FindingFeedback[]
+  gitlabToken           String?
+  gitlabUsername        String?
   // GitLab OAuth access tokens (unlike a pasted PAT, or GitHub's classic
   // OAuth App tokens) expire after ~2h — these let GitlabService silently
   // refresh gitlabToken before it goes stale. Unused for a pasted PAT.
-  gitlabRefreshToken   String?
-  gitlabTokenExpiresAt DateTime?
+  gitlabRefreshToken    String?
+  gitlabTokenExpiresAt  DateTime?
   // Bitbucket Cloud API token (Bearer), encrypted like the others — see BitbucketService.
-  bitbucketToken       String?
-  bitbucketUsername    String?
+  bitbucketToken        String?
+  bitbucketUsername     String?
   // Public, unguessable token used in the README badge URL — distinct from
   // `id` so a leaked badge URL can't be used to look up the account by id
   // and can be rotated independently. Generated on first request.
-  badgeToken           String?              @unique
+  badgeToken            String?              @unique
   // Long-lived credential for the CLI/CI (see auth/api-key.util.ts,
   // JwtAuthGuard) — grants full API access as this user, unlike badgeToken
   // (read-only, meant to be public). Prefixed "abk_" so JwtAuthGuard can
   // tell it apart from a real JWT without attempting to verify it as one.
-  apiKey               String?              @unique
-  createdAt            DateTime             @default(now())
+  apiKey                String?              @unique
+  createdAt             DateTime             @default(now())
   // Set on every password login, signup, and OAuth session — see
   // AuthService.buildSession — but not on ordinary API/JWT requests, so it
   // reflects actual sign-ins, not general activity.
-  lastLoginAt          DateTime?
-  audits               Audit[]
-  scanJobs             ScanJob[]
-  planRequests         PlanRequest[]        @relation("PlanRequestsByUser")
+  lastLoginAt           DateTime?
+  // Opt-out for non-transactional mail (the weekly Free-plan upgrade email,
+  // the inactivity reminder — see UpgradeEmailService, InactivityEmailService).
+  // Flipped off by the unsubscribe link; invites and plan-request outcomes
+  // are transactional and ignore it.
+  marketingEmails       Boolean              @default(true)
+  // When the weekly upgrade email last went out — stops a double send if the
+  // cron fires twice (restart, more than one instance).
+  lastUpgradeEmailAt    DateTime?
+  // When the "we haven't seen you in a while" email last went out. One per
+  // inactive stretch: it only goes again once the user has been active
+  // since this and then gone quiet for another week.
+  lastInactivityEmailAt DateTime?
+  audits                Audit[]
+  scanJobs              ScanJob[]
+  planRequests          PlanRequest[]        @relation("PlanRequestsByUser")
   // Requests this user reviewed as an admin/super_admin — distinct relation
   // from the requests they themselves filed.
-  reviewedPlanRequests PlanRequest[]        @relation("PlanRequestsReviewedBy")
-  webhookConfigs       WebhookConfig[]
-  oauthAccounts        OAuthAccount[]
-  oauthLoginCodes      OAuthLoginCode[]
+  reviewedPlanRequests  PlanRequest[]        @relation("PlanRequestsReviewedBy")
+  webhookConfigs        WebhookConfig[]
+  oauthAccounts         OAuthAccount[]
+  oauthLoginCodes       OAuthLoginCode[]
   // Nullable — most users are on a personal plan and never join a team.
   // When set, this user's quota/plan/audits/scans are org-scoped instead of
   // personal (see QuotaService, AuditService, RepositoryService).
-  organization         Organization?        @relation("OrganizationMembers", fields: [organizationId], references: [id], onDelete: SetNull)
-  organizationId       String?
-  orgRole              OrgRole?
-  sentOrgInvites       OrganizationInvite[] @relation("OrgInvitesSent")
+  organization          Organization?        @relation("OrganizationMembers", fields: [organizationId], references: [id], onDelete: SetNull)
+  organizationId        String?
+  orgRole               OrgRole?
+  sentOrgInvites        OrganizationInvite[] @relation("OrgInvitesSent")
   // Alignment-lab pilot (see AlignmentLabModule) — a separate research
   // feature, admin-only, unrelated to the core code-review product below.
-  benchmarkModels      BenchmarkModel[]
-  investigations       Investigation[]
-  subscriptions        Subscription[]       @relation("UserSubscriptions")
-  payments             Payment[]            @relation("UserPayments")
+  benchmarkModels       BenchmarkModel[]
+  investigations        Investigation[]
+  subscriptions         Subscription[]       @relation("UserSubscriptions")
+  payments              Payment[]            @relation("UserPayments")
 
   @@index([organizationId])
 }

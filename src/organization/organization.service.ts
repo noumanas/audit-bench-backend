@@ -10,6 +10,7 @@ import * as crypto from 'crypto';
 import { OrgRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
+import { orgInviteEmail } from '../email/templates';
 
 const DEFAULT_PLAN_SLUG = 'free';
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -143,12 +144,8 @@ export class OrganizationService {
 
     const url = this.inviteUrl(token);
     const inviterName = actor.name || actor.email;
-    await this.email.send(
-      email,
-      `You've been invited to join ${actor.organization.name} on Audit Bench Ai`,
-      `<p>${inviterName} invited you to join <strong>${actor.organization.name}</strong> on Audit Bench Ai.</p><p><a href="${url}">Accept invite</a></p><p>This link expires in 7 days.</p>`,
-      `${inviterName} invited you to join ${actor.organization.name} on Audit Bench Ai.\n\nAccept: ${url}\n\nThis link expires in 7 days.`,
-    );
+    const message = orgInviteEmail({ inviterName, orgName: actor.organization.name, acceptUrl: url });
+    await this.email.send(email, message.subject, message.html, message.text);
 
     return {
       id: invite.id,
