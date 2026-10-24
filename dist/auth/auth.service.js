@@ -15,16 +15,19 @@ const config_1 = require("@nestjs/config");
 const jwt_1 = require("@nestjs/jwt");
 const bcrypt = require("bcryptjs");
 const prisma_service_1 = require("../prisma/prisma.service");
+const welcome_email_service_1 = require("../email/welcome-email.service");
 const SALT_ROUNDS = 12;
 const DEFAULT_PLAN_SLUG = "free";
 let AuthService = class AuthService {
     prisma;
     jwt;
     config;
-    constructor(prisma, jwt, config) {
+    welcomeEmail;
+    constructor(prisma, jwt, config, welcomeEmail) {
         this.prisma = prisma;
         this.jwt = jwt;
         this.config = config;
+        this.welcomeEmail = welcomeEmail;
     }
     async signup(dto) {
         const existing = await this.prisma.user.findUnique({
@@ -53,6 +56,7 @@ let AuthService = class AuthService {
             },
             include: { plan: true, organization: true },
         });
+        this.welcomeEmail.send(user);
         return this.buildSession(user);
     }
     async login(dto) {
@@ -111,6 +115,7 @@ exports.AuthService = AuthService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         jwt_1.JwtService,
-        config_1.ConfigService])
+        config_1.ConfigService,
+        welcome_email_service_1.WelcomeEmailService])
 ], AuthService);
 //# sourceMappingURL=auth.service.js.map

@@ -1,15 +1,14 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from './email.service';
 import { UnsubscribeService } from './unsubscribe.service';
 import { inactivityEmail } from './templates';
+import { Campaign, CampaignTrigger, isDeliverableAddress } from './campaign';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 export const INACTIVE_AFTER_DAYS = 7;
-// Same pacing as UpgradeEmailService — stays inside SMTP relay rate limits.
-const SEND_GAP_MS = 1500;
 
 export interface InactivityCampaignResult {
   eligible: number;
@@ -28,7 +27,7 @@ export interface InactivityCampaignResult {
 @Injectable()
 export class InactivityEmailService {
   private readonly logger = new Logger(InactivityEmailService.name);
-  private running = false;
+  private readonly campaign = new Campaign('Inactivity email', this.logger);
 
   constructor(
     private readonly prisma: PrismaService,
@@ -80,6 +79,7 @@ export class InactivityEmailService {
         return { user: u, lastActivity };
       })
       .filter(({ user, lastActivity }) => !user.lastInactivityEmailAt || user.lastInactivityEmailAt.getTime() < lastActivity)
+      .filter(({ user }) => isDeliverableAddress(user.email))
       .map(({ user, lastActivity }) => ({
         id: user.id,
         email: user.email,
@@ -88,7 +88,7 @@ export class InactivityEmailService {
       }));
   }
 
-  async run({ dryRun = false, now = new Date() } = {}): Promise<InactivityCampaignResult> {
+  async run({ dryRun = false, now = new Date(), trigger = 'schedule' as CampaignTrigger } = {}): Promise<InactivityCampaignResult> {
     const recipients = await this.findInactive(now);
     const result: InactivityCampaignResult = {
       eligible: recipients.length,
@@ -103,28 +103,45 @@ export class InactivityEmailService {
       this.logger.warn(`Inactivity email: SMTP not configured — skipping ${recipients.length} recipient(s)`);
       return result;
     }
-    if (this.running) {
+    if (this.campaign.running) {
       this.logger.warn('Inactivity email: a run is already in progress — skipping');
       return result;
     }
-    this.running = true;
-    try {
-      for (const [i, user] of recipients.entries()) {
-        if (i > 0) await new Promise((r) => setTimeout(r, SEND_GAP_MS));
-        try {
-          await this.sendTo(user, user.daysInactive);
-          await this.prisma.user.update({ where: { id: user.id }, data: { lastInactivityEmailAt: new Date() } });
-          result.sent++;
-        } catch (err) {
-          result.failed++;
-          this.logger.error(`Inactivity email to ${user.email} failed: ${(err as Error).message}`);
-        }
-      }
-    } finally {
-      this.running = false;
-    }
-    this.logger.log(`Inactivity email: sent ${result.sent}/${result.eligible} (${result.failed} failed)`);
-    return result;
+    const run = await this.campaign.execute(recipients, trigger, (user) => this.sendAndRecord(user));
+    return { ...result, sent: run.sent, failed: run.failed };
+  }
+
+  private async sendAndRecord(user: { id: string; email: string; name: string | null; daysInactive: number }) {
+    await this.sendTo(user, user.daysInactive);
+    await this.prisma.user.update({ where: { id: user.id }, data: { lastInactivityEmailAt: new Date() } });
+  }
+
+  /**
+   * Admin "Send now": same rules as the daily run (including once per
+   * inactive stretch), ignoring the schedule and INACTIVITY_EMAILS_ENABLED.
+   * Returns as soon as sending starts — progress is in status().
+   */
+  async start(): Promise<{ started: true; eligible: number }> {
+    if (!this.email.isConfigured) throw new ConflictException('SMTP is not configured on the server');
+    if (this.campaign.running) throw new ConflictException('This email is already being sent');
+    const recipients = await this.findInactive();
+    // Checked again after the await — execute() marks the run as started
+    // synchronously, so two quick clicks can't both get past this.
+    if (this.campaign.running) throw new ConflictException('This email is already being sent');
+    if (recipients.length === 0) throw new ConflictException('Nobody is eligible for this email right now');
+    this.campaign
+      .execute(recipients, 'manual', (user) => this.sendAndRecord(user))
+      .catch((err: Error) => this.logger.error(`Inactivity email run failed: ${err.message}`));
+    return { started: true, eligible: recipients.length };
+  }
+
+  status() {
+    return {
+      enabled: this.config.get<string>('INACTIVITY_EMAILS_ENABLED') === 'true',
+      schedule: 'Daily 11:00 UTC',
+      running: this.campaign.running,
+      lastRun: this.campaign.lastRun,
+    };
   }
 
   /** Renders and sends the email to one user — also used to preview it. */

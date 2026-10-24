@@ -9,7 +9,7 @@ const daysAgo = (n: number) => new Date(NOW.getTime() - n * 24 * 60 * 60 * 1000)
 function candidate(overrides: Record<string, unknown> = {}) {
   return {
     id: 'u1',
-    email: 'dev@example.com',
+    email: 'dev@acme.io',
     name: 'Dev',
     createdAt: daysAgo(60),
     lastLoginAt: daysAgo(10),
@@ -72,7 +72,7 @@ describe('InactivityEmailService', () => {
     const result = await live.service.run({ now: NOW });
     expect(result).toMatchObject({ eligible: 1, sent: 1, failed: 0 });
     const [to, subject, , , headers] = live.email.send.mock.calls[0];
-    expect(to).toBe('dev@example.com');
+    expect(to).toBe('dev@acme.io');
     expect(subject).toBe('Your code reviews are waiting on Audit Bench Ai');
     expect(headers['List-Unsubscribe']).toMatch(/^<.*\/email\/unsubscribe\?u=u1&t=[0-9a-f]{64}>$/);
     expect(live.prisma.user.update).toHaveBeenCalledWith({

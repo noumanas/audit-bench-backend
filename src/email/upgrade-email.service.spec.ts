@@ -39,9 +39,9 @@ describe('UpgradeEmailService', () => {
   });
 
   it('dry run lists recipients without sending', async () => {
-    const { service, email } = makeService([{ id: 'u1', email: 'a@example.com', name: null }]);
+    const { service, email } = makeService([{ id: 'u1', email: 'a@acme.io', name: null }]);
     const result = await service.run({ dryRun: true });
-    expect(result).toMatchObject({ eligible: 1, sent: 0, recipients: ['a@example.com'] });
+    expect(result).toMatchObject({ eligible: 1, sent: 0, recipients: ['a@acme.io'] });
     expect(email.send).not.toHaveBeenCalled();
   });
 

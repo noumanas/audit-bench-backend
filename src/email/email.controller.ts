@@ -6,7 +6,7 @@ import { Roles } from '../auth/roles.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { RequestUser } from '../auth/types';
 import { UpgradeEmailService } from './upgrade-email.service';
-import { InactivityEmailService } from './inactivity-email.service';
+import { INACTIVE_AFTER_DAYS, InactivityEmailService } from './inactivity-email.service';
 import { UnsubscribeService } from './unsubscribe.service';
 import { escapeHtml } from './templates';
 
@@ -36,36 +36,43 @@ export class EmailController {
     return { unsubscribed: true };
   }
 
-  // Admin tools: preview who'd get this week's email (dryRun, the default),
-  // send the campaign now, or send yourself a copy to check the design.
+  // ---- Admin Emails tab (super admin): check recipients, preview, send now ----
+
+  @Get('campaigns')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('super_admin')
+  campaignStatus() {
+    return { upgrade: this.upgradeEmails.status(), inactivity: this.inactivityEmails.status() };
+  }
+
+  // Dry run by default — lists who'd get it; ?send=true sends in the background.
   @Post('upgrade-campaign')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('super_admin')
   runCampaign(@Query('send') send?: string) {
-    return this.upgradeEmails.run({ dryRun: send !== 'true' });
+    return send === 'true' ? this.upgradeEmails.start() : this.upgradeEmails.run({ dryRun: true });
   }
 
   @Post('upgrade-campaign/preview')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin', 'super_admin')
+  @Roles('super_admin')
   async preview(@CurrentUser() user: RequestUser) {
     await this.upgradeEmails.sendTo({ id: user.id, email: user.email, name: null });
     return { sentTo: user.email };
   }
 
-  // Same idea for the inactivity reminder: dry run by default.
   @Post('inactivity-campaign')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('super_admin')
   runInactivity(@Query('send') send?: string) {
-    return this.inactivityEmails.run({ dryRun: send !== 'true' });
+    return send === 'true' ? this.inactivityEmails.start() : this.inactivityEmails.run({ dryRun: true });
   }
 
   @Post('inactivity-campaign/preview')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin', 'super_admin')
+  @Roles('super_admin')
   async previewInactivity(@CurrentUser() user: RequestUser) {
-    await this.inactivityEmails.sendTo({ id: user.id, email: user.email, name: null }, 7);
+    await this.inactivityEmails.sendTo({ id: user.id, email: user.email, name: null }, INACTIVE_AFTER_DAYS);
     return { sentTo: user.email };
   }
 
