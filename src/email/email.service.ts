@@ -46,6 +46,7 @@ export class EmailService {
     html: string,
     text: string,
     headers?: Record<string, string>,
+    replyTo?: string,
   ): Promise<void> {
     if (!this.transporter) {
       this.logger.warn(`SMTP not configured — would have sent to ${to}: "${subject}"\n${text}`);
@@ -55,7 +56,7 @@ export class EmailService {
     // Display name only — the address itself is left as the domain SMTP is
     // actually configured/verified for (SPF/DKIM), not the newer auditbenchai.com.
     const from = this.config.get<string>('SMTP_FROM') || '"Audit Bench Ai" <no-reply@audit-bench.dev>';
-    await this.transporter.sendMail({ from, to, subject, html, text, headers });
+    await this.transporter.sendMail({ from, to, subject, html, text, headers, replyTo });
   }
 }
 

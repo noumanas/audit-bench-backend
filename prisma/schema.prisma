@@ -766,3 +766,20 @@ model FindingFeedback {
   @@index([userId, repo, fingerprint])
   @@index([organizationId, repo, fingerprint])
 }
+
+// A message from the public /contact form. Stored before any email goes out,
+// so a mail outage never loses a lead — see ContactService.
+model ContactMessage {
+  id        String    @id @default(uuid())
+  name      String
+  email     String
+  company   String?
+  // One of CONTACT_TOPICS (contact/contact.dto.ts).
+  topic     String
+  message   String
+  // When the team-inbox notification went out; null = it failed (check logs).
+  emailedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([createdAt])
+}

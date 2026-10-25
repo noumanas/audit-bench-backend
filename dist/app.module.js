@@ -13,6 +13,7 @@ const config_1 = require("@nestjs/config");
 const throttler_1 = require("@nestjs/throttler");
 const schedule_1 = require("@nestjs/schedule");
 const revenue_module_1 = require("./revenue/revenue.module");
+const contact_module_1 = require("./contact/contact.module");
 const public_scan_module_1 = require("./public-scan/public-scan.module");
 const app_controller_1 = require("./app.controller");
 const app_service_1 = require("./app.service");
@@ -73,6 +74,7 @@ exports.AppModule = AppModule = __decorate([
             web_vitals_module_1.WebVitalsModule,
             public_scan_module_1.PublicScanModule,
             revenue_module_1.RevenueModule,
+            contact_module_1.ContactModule,
         ],
         controllers: [app_controller_1.AppController],
         providers: [app_service_1.AppService, { provide: core_1.APP_GUARD, useClass: throttler_1.ThrottlerGuard }],

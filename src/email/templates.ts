@@ -376,3 +376,69 @@ export function welcomeEmail({ name, appOrigin, plan }: WelcomeEmailInput): Rend
 
   return { subject: 'Welcome to Audit Bench Ai — your account is ready', html, text };
 }
+
+export interface ContactEmailInput {
+  name: string;
+  email: string;
+  company: string | null;
+  topicLabel: string;
+  message: string;
+  receivedAt: Date;
+}
+
+/**
+ * Lands in the team inbox (CONTACT_INBOX). Reply-To is the visitor — see
+ * ContactService — so hitting Reply answers them directly.
+ */
+export function contactTeamEmail(input: ContactEmailInput): RenderedEmail {
+  const when = input.receivedAt.toUTCString();
+  const row = (label: string, value: string) => `<tr>
+    <td valign="top" style="padding:6px 16px 6px 0;font-family:${FONT};font-size:13px;color:${C.muted};white-space:nowrap;">${label}</td>
+    <td style="padding:6px 0;font-family:${FONT};font-size:14px;color:${C.ink};">${value}</td>
+  </tr>`;
+  const html = layout({
+    preheader: `${input.name}: ${input.message.slice(0, 100)}`,
+    heading: `New message · ${input.topicLabel}`,
+    bodyHtml:
+      `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px;">
+        ${row('From', `${escapeHtml(input.name)} &lt;<a href="mailto:${escapeHtml(input.email)}" style="color:${C.cobalt};">${escapeHtml(input.email)}</a>&gt;`)}
+        ${input.company ? row('Company', escapeHtml(input.company)) : ''}
+        ${row('Topic', escapeHtml(input.topicLabel))}
+        ${row('Received', escapeHtml(when))}
+      </table>` +
+      `<div style="padding:16px 18px;background:${C.paper};border-radius:8px;font-family:${FONT};font-size:15px;line-height:1.6;color:${C.ink};white-space:pre-wrap;">${escapeHtml(input.message)}</div>` +
+      `<p style="margin:20px 0 0;font-family:${FONT};font-size:13px;color:${C.muted};">Reply to this email to answer ${escapeHtml(input.name)} directly.</p>`,
+    footerNote: 'Sent from the contact form on auditbenchai.com.',
+  });
+  const text =
+    `New message · ${input.topicLabel}\n\nFrom: ${input.name} <${input.email}>\n` +
+    (input.company ? `Company: ${input.company}\n` : '') +
+    `Received: ${when}\n\n${input.message}\n\nReply to this email to answer ${input.name} directly.`;
+  return { subject: `[Contact] ${input.topicLabel} — ${input.name}`, html, text };
+}
+
+/**
+ * Confirmation to the visitor. Deliberately does NOT echo their message:
+ * the form is public, so echoing would let anyone send arbitrary text to
+ * any address from our domain.
+ */
+export function contactConfirmationEmail(input: { name: string; topicLabel: string; appOrigin: string }): RenderedEmail {
+  const footerNote = "You're getting this because this address was entered on the Audit Bench Ai contact form. If that wasn't you, you can ignore it.";
+  const html = layout({
+    preheader: 'Thanks for getting in touch — a person will reply, usually within one business day.',
+    heading: 'We got your message',
+    bodyHtml:
+      paragraph(`Hi ${escapeHtml(input.name)},`) +
+      paragraph(
+        `Thanks for contacting Audit Bench Ai about <strong>${escapeHtml(input.topicLabel.toLowerCase())}</strong>. A person on our team reads every message and will reply to this address, usually within one business day.`,
+      ) +
+      paragraph('In the meantime, you can try a free scan of any public GitHub repository — no sign-up needed.') +
+      button('Run a free scan', `${input.appOrigin}/scan`),
+    footerNote,
+  });
+  const text =
+    `Hi ${input.name},\n\nThanks for contacting Audit Bench Ai about ${input.topicLabel.toLowerCase()}. A person on our team reads every message and will reply to this address, usually within one business day.\n\n` +
+    `In the meantime, try a free scan of any public GitHub repository: ${input.appOrigin}/scan` +
+    textFooter(footerNote);
+  return { subject: 'We got your message — Audit Bench Ai', html, text };
+}
