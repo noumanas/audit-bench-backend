@@ -1,4 +1,5 @@
 import { PrSnapshot } from './merge-readiness';
+import { repoApiPath } from './github-url';
 
 const GITHUB_API = 'https://api.github.com';
 
@@ -33,7 +34,7 @@ export async function refetchIfMergeabilityPending(
 ): Promise<GithubPull> {
   if (pr.state !== 'open' || pr.mergeable !== null) return pr;
   await new Promise((r) => setTimeout(r, 1500));
-  const again = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${number}`, { headers });
+  const again = await fetch(`${GITHUB_API}/repos/${repoApiPath(owner, repo)}/pulls/${number}`, { headers });
   return again.ok ? ((await again.json()) as GithubPull) : pr;
 }
 
@@ -46,14 +47,18 @@ export async function fetchCiChecks(
 ): Promise<PrSnapshot['checks']> {
   const checks: PrSnapshot['checks'] = { passed: 0, failed: [], pending: [] };
   const [runsRes, statusRes] = await Promise.all([
-    fetch(`${GITHUB_API}/repos/${owner}/${repo}/commits/${sha}/check-runs?per_page=100`, { headers }),
-    fetch(`${GITHUB_API}/repos/${owner}/${repo}/commits/${sha}/status`, { headers }),
+    fetch(`${GITHUB_API}/repos/${repoApiPath(owner, repo)}/commits/${sha}/check-runs?per_page=100`, { headers }),
+    fetch(`${GITHUB_API}/repos/${repoApiPath(owner, repo)}/commits/${sha}/status`, { headers }),
   ]);
   if (runsRes.ok) {
-    const body = (await runsRes.json()) as { check_runs?: Array<{ name: string; status: string; conclusion: string | null }> };
+    const body = (await runsRes.json()) as {
+      check_runs?: Array<{ name: string; status: string; conclusion: string | null }>;
+    };
     for (const run of body.check_runs ?? []) {
       if (run.status !== 'completed') checks.pending.push(run.name);
-      else if (['failure', 'timed_out', 'cancelled', 'action_required', 'startup_failure'].includes(run.conclusion ?? '')) {
+      else if (
+        ['failure', 'timed_out', 'cancelled', 'action_required', 'startup_failure'].includes(run.conclusion ?? '')
+      ) {
         checks.failed.push(run.name);
       } else checks.passed++;
     }

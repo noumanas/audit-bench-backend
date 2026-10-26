@@ -70,10 +70,7 @@ const DATA_FILE = /\.(json|ya?ml|prisma|sql)$/i;
  * left out — so a report says "97 not reviewed: 60 not source code, 37 over
  * the file limit" instead of skipping them silently.
  */
-function selectFilesToAnalyze(
-  files: ScannedFile[],
-  max: number,
-): { selected: ScannedFile[]; skipped: SkippedFile[] } {
+function selectFilesToAnalyze(files: ScannedFile[], max: number): { selected: ScannedFile[]; skipped: SkippedFile[] } {
   const skipped: SkippedFile[] = [];
   const analyzable = files.filter((f) => {
     const ext = f.path.split('.').pop()?.toLowerCase();
@@ -84,7 +81,8 @@ function selectFilesToAnalyze(
 
   // Code before config and data files; within code, risky paths, then source directories.
   const priority = (p: string) =>
-    (DATA_FILE.test(p) ? 4 : 0) + (RISKY_PATH.test(p.split('/').slice(-2).join('/')) ? 0 : 1) +
+    (DATA_FILE.test(p) ? 4 : 0) +
+    (RISKY_PATH.test(p.split('/').slice(-2).join('/')) ? 0 : 1) +
     (/(^|\/)(src|app|pages|api|lib)\//.test(p) ? 0 : 1);
 
   const sorted = analyzable.sort((a, b) => priority(a.path) - priority(b.path) || a.path.localeCompare(b.path));
@@ -156,7 +154,6 @@ interface JobDataBase {
 }
 
 const REPO_WIDE_SOURCE_TYPES = new Set<ScanSourceType>(['zip', 'github_repo', 'gitlab_repo', 'bitbucket_repo']);
-
 
 @Injectable()
 export class RepositoryService {
@@ -425,8 +422,11 @@ export class RepositoryService {
         file.changedRanges,
         cacheExtraKey(rulesKey, file.relatedContext),
       );
-      if (await this.cache.exists(hash)) continue; // cached — no fresh call needed for this file
-      if (file.changedRanges?.length) return true; // PR/MR hunks always get an AI pass — see PipelineService.run
+      const cached = await this.cache.peek(hash);
+      // PR/MR hunks always get an AI pass (see PipelineService.run): only an
+      // AI-reviewed cache entry spares one, not a cached local-only result.
+      if (cached && (cached.aiInvoked || !file.changedRanges?.length)) continue;
+      if (file.changedRanges?.length) return true;
       const fullStage1 = await runStage1(file.content, file.path);
       const stage1 = file.changedRanges ? filterStage1ToRanges(fullStage1, file.changedRanges) : fullStage1;
       if (!stage1.clean) return true;
@@ -672,22 +672,24 @@ export class RepositoryService {
   async buildPrFeedback(jobId: string, scanUrl?: string): Promise<PrFeedback> {
     const job = await this.prisma.scanJob.findUniqueOrThrow({ where: { id: jobId }, include: { files: true } });
     const snapshot = job.sourceType === 'github_pr' ? (job.prSnapshot as unknown as PrSnapshot | null) : null;
-    const findings = withoutConflictingReplacements(job.files.flatMap((file) =>
-      ((Array.isArray(file.findings) ? file.findings : []) as unknown as Finding[]).map((f) => ({
-        path: file.path,
-        line: f.line,
-        endLine: f.endLine ?? null,
-        severity: f.severity,
-        title: f.title,
-        description: f.description,
-        category: f.category,
-        rootCause: f.rootCause,
-        suggestedFix: f.suggestedFix,
-        examplePatch: f.examplePatch,
-        replacement: f.replacement ?? null,
-        confidence: f.confidence,
-      })),
-    ));
+    const findings = withoutConflictingReplacements(
+      job.files.flatMap((file) =>
+        ((Array.isArray(file.findings) ? file.findings : []) as unknown as Finding[]).map((f) => ({
+          path: file.path,
+          line: f.line,
+          endLine: f.endLine ?? null,
+          severity: f.severity,
+          title: f.title,
+          description: f.description,
+          category: f.category,
+          rootCause: f.rootCause,
+          suggestedFix: f.suggestedFix,
+          examplePatch: f.examplePatch,
+          replacement: f.replacement ?? null,
+          confidence: f.confidence,
+        })),
+      ),
+    );
     const insights = (job.prInsights ?? undefined) as PrInsights | undefined;
     const checks = snapshot
       ? deterministicChecks(snapshot, {

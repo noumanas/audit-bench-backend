@@ -39,6 +39,14 @@ function startOfDayUtc(d: Date): string {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())).toISOString().slice(0, 10);
 }
 
+/**
+ * Most audits and most scans whose findings are loaded for one analytics
+ * request, newest first. Every finding is read into memory to score it, so
+ * without a cap a busy workspace's 180-day window could exhaust the server;
+ * averages over the newest 1,000 of each still describe the period.
+ */
+const MAX_RESOURCES_PER_KIND = 1000;
+
 @Injectable()
 export class AnalyticsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -54,6 +62,8 @@ export class AnalyticsService {
         : this.prisma.audit.findMany({
             where: { ...scope, createdAt: { gte: since } },
             select: { id: true, filename: true, verdict: true, findings: true, createdAt: true },
+            orderBy: { createdAt: 'desc' },
+            take: MAX_RESOURCES_PER_KIND,
           }),
       this.prisma.scanJob.findMany({
         where: {
@@ -75,6 +85,8 @@ export class AnalyticsService {
           circularImports: true,
           files: { select: { findings: true } },
         },
+        orderBy: { createdAt: 'desc' },
+        take: MAX_RESOURCES_PER_KIND,
       }),
     ]);
 
@@ -108,7 +120,10 @@ export class AnalyticsService {
 
       const security = clampScore(
         scoreForCategories(findings, ['Security']) -
-          extraSecurityDeduction(secretsCount, vulns.map((v) => v.severity ?? 'unknown')),
+          extraSecurityDeduction(
+            secretsCount,
+            vulns.map((v) => v.severity ?? 'unknown'),
+          ),
       );
       const technicalDebt = clampScore(
         scoreForCategories(findings, ['Maintainability', 'Architecture']) -

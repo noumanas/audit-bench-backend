@@ -12,6 +12,11 @@ function startOfDay(d = new Date()): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
+/** Midnight UTC of the day `d` falls on. UTC days are always 24 h, and match toISOString() dates. */
+function startOfUtcDay(d = new Date()): Date {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+}
+
 function startOfMonth(d = new Date()): Date {
   return new Date(d.getFullYear(), d.getMonth(), 1);
 }
@@ -66,14 +71,22 @@ export class AdminUsageService {
         _count: { _all: true },
         _sum: { inputTokens: true, outputTokens: true },
       }),
-      this.prisma.audit.groupBy({ by: [key], where: { ...notNull, ...AI_AUDIT, createdAt: { gte: day } }, _count: { _all: true } }),
+      this.prisma.audit.groupBy({
+        by: [key],
+        where: { ...notNull, ...AI_AUDIT, createdAt: { gte: day } },
+        _count: { _all: true },
+      }),
       this.prisma.scanJob.groupBy({
         by: [key],
         where: { ...notNull, ...AI_SCAN, createdAt: { gte: month } },
         _count: { _all: true },
         _sum: { inputTokens: true, outputTokens: true },
       }),
-      this.prisma.scanJob.groupBy({ by: [key], where: { ...notNull, ...AI_SCAN, createdAt: { gte: day } }, _count: { _all: true } }),
+      this.prisma.scanJob.groupBy({
+        by: [key],
+        where: { ...notNull, ...AI_SCAN, createdAt: { gte: day } },
+        _count: { _all: true },
+      }),
       this.prisma.scanJob.groupBy({
         by: [key],
         where: { ...notNull, ...AI_SCAN, createdAt: { gte: month }, sourceType: { in: [...REPO_SCAN_SOURCE_TYPES] } },
@@ -201,10 +214,26 @@ export class AdminUsageService {
       this.prisma.user.count(),
       this.prisma.user.count({ where: { isActive: false } }),
       this.prisma.user.count({ where: { createdAt: { gte: month } } }),
-      this.prisma.audit.findMany({ where: { createdAt: { gte: since7 } }, select: { userId: true }, distinct: ['userId'] }),
-      this.prisma.scanJob.findMany({ where: { createdAt: { gte: since7 } }, select: { userId: true }, distinct: ['userId'] }),
-      this.prisma.audit.findMany({ where: { createdAt: { gte: since30 } }, select: { userId: true }, distinct: ['userId'] }),
-      this.prisma.scanJob.findMany({ where: { createdAt: { gte: since30 } }, select: { userId: true }, distinct: ['userId'] }),
+      this.prisma.audit.findMany({
+        where: { createdAt: { gte: since7 } },
+        select: { userId: true },
+        distinct: ['userId'],
+      }),
+      this.prisma.scanJob.findMany({
+        where: { createdAt: { gte: since7 } },
+        select: { userId: true },
+        distinct: ['userId'],
+      }),
+      this.prisma.audit.findMany({
+        where: { createdAt: { gte: since30 } },
+        select: { userId: true },
+        distinct: ['userId'],
+      }),
+      this.prisma.scanJob.findMany({
+        where: { createdAt: { gte: since30 } },
+        select: { userId: true },
+        distinct: ['userId'],
+      }),
       this.prisma.audit.aggregate({
         where: { ...AI_AUDIT, createdAt: { gte: month } },
         _count: { _all: true },
@@ -251,45 +280,86 @@ export class AdminUsageService {
     });
     if (!user) throw new NotFoundException('User not found');
 
-    const since = startOfDay(new Date(Date.now() - 29 * DAY_MS));
-    const [quota, audits30, scans30, auditTotals, scanTotals, recentAudits, recentScans, planRequests] = await Promise.all([
-      this.quota.getUsage(userId),
-      this.prisma.audit.findMany({
-        where: { userId, createdAt: { gte: since } },
-        select: { createdAt: true, aiInvoked: true, fromCache: true, inputTokens: true, outputTokens: true },
-      }),
-      this.prisma.scanJob.findMany({
-        where: { userId, createdAt: { gte: since } },
-        select: { createdAt: true, aiInvoked: true, inputTokens: true, outputTokens: true },
-      }),
-      this.prisma.audit.aggregate({ where: { userId }, _count: { _all: true }, _sum: { inputTokens: true, outputTokens: true } }),
-      this.prisma.scanJob.aggregate({ where: { userId }, _count: { _all: true }, _sum: { inputTokens: true, outputTokens: true } }),
-      this.prisma.audit.findMany({
-        where: { userId },
-        orderBy: { createdAt: 'desc' },
-        take: 8,
-        select: { id: true, filename: true, verdict: true, provider: true, aiInvoked: true, fromCache: true, inputTokens: true, outputTokens: true, createdAt: true },
-      }),
-      this.prisma.scanJob.findMany({
-        where: { userId },
-        orderBy: { createdAt: 'desc' },
-        take: 8,
-        select: { id: true, sourceName: true, sourceType: true, status: true, verdict: true, provider: true, aiInvoked: true, inputTokens: true, outputTokens: true, createdAt: true, prContext: true, prPublishedAt: true, prPublishError: true },
-      }),
-      this.prisma.planRequest.findMany({
-        where: { userId },
-        orderBy: { createdAt: 'desc' },
-        take: 5,
-        select: { id: true, status: true, createdAt: true, reviewedAt: true, requestedPlan: { select: { name: true } } },
-      }),
-    ]);
+    const since = startOfUtcDay(new Date(Date.now() - 29 * DAY_MS));
+    const [quota, audits30, scans30, auditTotals, scanTotals, recentAudits, recentScans, planRequests] =
+      await Promise.all([
+        this.quota.getUsage(userId),
+        this.prisma.audit.findMany({
+          where: { userId, createdAt: { gte: since } },
+          select: { createdAt: true, aiInvoked: true, fromCache: true, inputTokens: true, outputTokens: true },
+        }),
+        this.prisma.scanJob.findMany({
+          where: { userId, createdAt: { gte: since } },
+          select: { createdAt: true, aiInvoked: true, inputTokens: true, outputTokens: true },
+        }),
+        this.prisma.audit.aggregate({
+          where: { userId },
+          _count: { _all: true },
+          _sum: { inputTokens: true, outputTokens: true },
+        }),
+        this.prisma.scanJob.aggregate({
+          where: { userId },
+          _count: { _all: true },
+          _sum: { inputTokens: true, outputTokens: true },
+        }),
+        this.prisma.audit.findMany({
+          where: { userId },
+          orderBy: { createdAt: 'desc' },
+          take: 8,
+          select: {
+            id: true,
+            filename: true,
+            verdict: true,
+            provider: true,
+            aiInvoked: true,
+            fromCache: true,
+            inputTokens: true,
+            outputTokens: true,
+            createdAt: true,
+          },
+        }),
+        this.prisma.scanJob.findMany({
+          where: { userId },
+          orderBy: { createdAt: 'desc' },
+          take: 8,
+          select: {
+            id: true,
+            sourceName: true,
+            sourceType: true,
+            status: true,
+            verdict: true,
+            provider: true,
+            aiInvoked: true,
+            inputTokens: true,
+            outputTokens: true,
+            createdAt: true,
+            prContext: true,
+            prPublishedAt: true,
+            prPublishError: true,
+          },
+        }),
+        this.prisma.planRequest.findMany({
+          where: { userId },
+          orderBy: { createdAt: 'desc' },
+          take: 5,
+          select: {
+            id: true,
+            status: true,
+            createdAt: true,
+            reviewedAt: true,
+            requestedPlan: { select: { name: true } },
+          },
+        }),
+      ]);
 
-    // Daily series, oldest first, one point per calendar day (local time).
+    // Daily series, oldest first, one point per UTC calendar day. All UTC, so
+    // each bucket's date label is the day its records fall on, whatever the
+    // server's timezone (and no 23/25-hour daylight-saving days).
     const days = Array.from({ length: 30 }, (_, i) => {
       const d = new Date(since.getTime() + i * DAY_MS);
       return { date: d.toISOString().slice(0, 10), audits: 0, scans: 0, aiRuns: 0, tokens: 0 };
     });
-    const bucket = (d: Date) => days[Math.min(29, Math.max(0, Math.floor((startOfDay(d).getTime() - since.getTime()) / DAY_MS)))];
+    const bucket = (d: Date) => days[Math.min(29, Math.max(0, Math.floor((d.getTime() - since.getTime()) / DAY_MS)))];
     for (const a of audits30) {
       const b = bucket(a.createdAt);
       b.audits++;

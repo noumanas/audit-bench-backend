@@ -1,5 +1,7 @@
 import {
   BadRequestException,
+  HttpException,
+  Logger,
   Body,
   Controller,
   Get,
@@ -36,6 +38,8 @@ function connectProvider(value: string): ConnectProvider {
 
 @Controller("auth")
 export class OAuthController {
+  private readonly logger = new Logger(OAuthController.name);
+
   constructor(
     private readonly oauthService: OAuthService,
     private readonly authService: AuthService,
@@ -169,7 +173,11 @@ export class OAuthController {
       .split(",")[0]
       .trim();
     // A signed-in user connecting their repositories, not a sign-in: hand the
-    // code to the frontend, which finishes it with the user's session.
+    // code to the frontend, which finishes it with the user's session. No
+    // cookie check here on purpose: connect links are made by an API call, so
+    // no state cookie exists. The state is instead signed with the user's id
+    // and expiry, and OAuthService.connectAccount refuses it unless that user
+    // is the one signed in when the frontend completes it.
     if (provider !== "google" && this.oauthService.isConnectState(state)) {
       const params = new URLSearchParams({ provider, code: code ?? "", state });
       res.redirect(`${frontendOrigin}/oauth/connect?${params}`);
@@ -191,7 +199,15 @@ export class OAuthController {
       const loginCode = await this.oauthService.handleCallback(provider, code);
       res.redirect(`${frontendOrigin}/oauth/callback?code=${loginCode}`);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Login failed.";
+      // Our own HTTP errors carry messages written for the user ("An account
+      // already exists for…"); anything else is internal and stays in the log.
+      const message =
+        err instanceof HttpException
+          ? err.message
+          : "Sign-in failed. Please try again.";
+      if (!(err instanceof HttpException)) {
+        this.logger.error(`${provider} sign-in failed`, err as Error);
+      }
       res.redirect(
         `${frontendOrigin}/oauth/callback?error=${encodeURIComponent(message)}`,
       );
