@@ -100,8 +100,28 @@ describe('PipelineService — Stage 1 → AI escalation', () => {
         verdict: 'do_not_ship',
         summary: 's',
         findings: [
-          { severity: 'critical', category: 'Logic', title: 'The `x` value is never checked', line: 1, description: 'd', rootCause: 'r', suggestedFix: 'f', examplePatch: null, confidence: 0.9 },
-          { severity: 'low', category: 'Maintainability', title: 'Long function', line: 2, description: 'd', rootCause: 'r', suggestedFix: 'f', examplePatch: null, confidence: 0.9 },
+          {
+            severity: 'critical',
+            category: 'Logic',
+            title: 'The `x` value is never checked',
+            line: 1,
+            description: 'd',
+            rootCause: 'r',
+            suggestedFix: 'f',
+            examplePatch: null,
+            confidence: 0.9,
+          },
+          {
+            severity: 'low',
+            category: 'Maintainability',
+            title: 'Long function',
+            line: 2,
+            description: 'd',
+            rootCause: 'r',
+            suggestedFix: 'f',
+            examplePatch: null,
+            confidence: 0.9,
+          },
         ],
       },
       usage: { inputTokens: 1, outputTokens: 1 },
@@ -174,7 +194,13 @@ describe('PipelineService — Stage 1 → AI escalation', () => {
 
   it('never touches the AI or the quota gate on a cache hit, even when Stage 1 would otherwise flag it', async () => {
     (runStage1Module.runStage1 as jest.Mock).mockResolvedValue(makeStage1({ clean: false }));
-    cache.lookup.mockResolvedValue({ verdict: 'pass', summary: 'cached', findings: [], stage1: null, aiInvoked: false });
+    cache.lookup.mockResolvedValue({
+      verdict: 'pass',
+      summary: 'cached',
+      findings: [],
+      stage1: null,
+      aiInvoked: false,
+    });
     const beforeAiCall = jest.fn();
 
     const { fromCache, usage } = await pipeline.run(
@@ -214,5 +240,69 @@ describe('PipelineService — Stage 1 → AI escalation', () => {
     expect(result.aiInvoked).toBe(false);
     expect(fromCache).toBe(false);
     expect(usage).toEqual({ inputTokens: 0, outputTokens: 0 });
+  });
+});
+
+describe('PipelineService — cache keys', () => {
+  const setup = (cached: unknown) => {
+    const llm = {
+      completeStructured: jest.fn().mockResolvedValue({
+        result: { verdict: 'pass', summary: 'Reviewed.', findings: [] },
+        usage: { inputTokens: 1, outputTokens: 1 },
+      }),
+      hasEscalationModel: jest.fn().mockReturnValue(false),
+    };
+    const cache = {
+      hashFor: jest.fn().mockReturnValue('hash123'),
+      lookup: jest.fn().mockResolvedValue(cached),
+      store: jest.fn().mockResolvedValue(undefined),
+    };
+    (runStage1Module.runStage1 as jest.Mock).mockResolvedValue(makeStage1({ clean: true }));
+    return {
+      llm,
+      cache,
+      pipeline: new PipelineService(llm as unknown as LlmService, cache as unknown as AuditCacheService),
+    };
+  };
+  const changed = [{ start: 1, end: 1 }];
+
+  it('never serves a cached local-only result to a full PR review: the AI still runs', async () => {
+    const localOnly = {
+      verdict: 'pass',
+      summary: 'Local checks found nothing.',
+      findings: [],
+      stage1: null,
+      aiInvoked: false,
+    };
+    const { llm, pipeline } = setup(localOnly);
+    const { result, fromCache } = await pipeline.run({
+      filename: 'a.ts',
+      code: 'x',
+      provider: 'openai',
+      changedLineRanges: changed,
+    });
+    expect(fromCache).toBe(false);
+    expect(result.aiInvoked).toBe(true);
+    expect(llm.completeStructured).toHaveBeenCalled();
+  });
+
+  it('keys local-only PR reviews apart from full ones', async () => {
+    const { cache, pipeline } = setup(null);
+    await pipeline.run({
+      filename: 'a.ts',
+      code: 'x',
+      provider: 'openai',
+      changedLineRanges: changed,
+      localOnly: true,
+    });
+    expect(cache.hashFor.mock.calls[0][4]).toBe('mode:local');
+  });
+
+  it("puts team rules and suppressions in the key even when the caller didn't pass rulesKey", async () => {
+    const { cache, pipeline } = setup(null);
+    await pipeline.run({ filename: 'a.ts', code: 'x', provider: 'openai', suppressFingerprints: ['logic:x'] });
+    await pipeline.run({ filename: 'a.ts', code: 'x', provider: 'openai' });
+    expect(cache.hashFor.mock.calls[0][4]).toMatch(/^[0-9a-f]{16}$/);
+    expect(cache.hashFor.mock.calls[1][4]).toBeUndefined();
   });
 });

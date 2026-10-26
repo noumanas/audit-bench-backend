@@ -297,3 +297,82 @@ describe('GithubService check run lifecycle', () => {
     expect(done?.body).toMatchObject({ status: 'completed', conclusion: 'success' });
   });
 });
+
+describe('GithubService.fetchPrFiles', () => {
+  const realFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = realFetch;
+  });
+
+  it('downloads changed files in parallel, at most 8 at a time, in order, skipping what has nothing to review', async () => {
+    const changed = Array.from({ length: 20 }, (_, i) => ({
+      filename: `src/f${i}.ts`,
+      status: 'modified',
+      patch: '@@ -1 +1 @@\n-a\n+b',
+    }));
+    const rawFiles = [
+      ...changed,
+      { filename: 'gone.ts', status: 'removed', patch: '@@ -1 +0,0 @@\n-a' },
+      { filename: 'logo.png', status: 'added' },
+    ];
+    let inFlight = 0;
+    let peak = 0;
+    global.fetch = jest.fn(async (url: string) => {
+      if (url.endsWith('/pulls/7')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ head: { sha: 'sha1', ref: 'f' }, base: { ref: 'main', repo: {} }, html_url: 'u' }),
+        };
+      }
+      if (url.includes('/pulls/7/files')) return { ok: true, status: 200, json: async () => rawFiles };
+      inFlight++;
+      peak = Math.max(peak, inFlight);
+      await new Promise((r) => setTimeout(r, 5));
+      inFlight--;
+      // One file GitHub can't serve: it's left out rather than failing the review.
+      if (url.includes('/contents/src/f3.ts')) return { ok: false, status: 404, json: async () => ({}) };
+      const name = decodeURIComponent(url.split('/contents/')[1].split('?')[0]);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ encoding: 'base64', content: Buffer.from(`// ${name}`).toString('base64') }),
+      };
+    }) as never;
+    const service = new GithubService(
+      { user: { findUniqueOrThrow: jest.fn() } } as never,
+      { register: jest.fn() } as never,
+      { decrypt: () => 't' } as never,
+      { installationToken: jest.fn().mockResolvedValue('app-token') } as never,
+    );
+
+    const { files } = await service.fetchPrFiles({ installationId: 1 }, 'acme', 'api', 7);
+
+    expect(peak).toBeGreaterThan(1);
+    expect(peak).toBeLessThanOrEqual(8);
+    expect(files.map((f) => f.path)).toEqual(changed.map((f) => f.filename).filter((p) => p !== 'src/f3.ts'));
+    expect(files[0]).toMatchObject({ content: '// src/f0.ts', changedRanges: [{ start: 1, end: 1 }] });
+  });
+});
+
+describe('GithubService with an unsafe repository name', () => {
+  const realFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = realFetch;
+  });
+
+  it('rejects it before any request reaches GitHub', async () => {
+    const fetchSpy = jest.fn();
+    global.fetch = fetchSpy as never;
+    const service = new GithubService(
+      { user: { findUniqueOrThrow: jest.fn() } } as never,
+      { register: jest.fn() } as never,
+      { decrypt: () => 't' } as never,
+      { installationToken: jest.fn().mockResolvedValue('app-token') } as never,
+    );
+    await expect(service.fetchPrFiles({ installationId: 1 }, '..', 'users', 1)).rejects.toThrow(
+      /isn't a valid GitHub repository/,
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});

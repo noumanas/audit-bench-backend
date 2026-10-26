@@ -16,10 +16,12 @@ export interface CachedAuditResult extends AuditResult {
  * the related code a PR review was shown. Empty when neither applies, so
  * keys made before either existed stay valid.
  */
-export function cacheExtraKey(rulesKey?: string, relatedContext?: string): string | undefined {
+export function cacheExtraKey(rulesKey?: string, relatedContext?: string, mode?: 'local'): string | undefined {
   const parts = [
     rulesKey,
     relatedContext ? `ctx:${createHash('sha256').update(relatedContext).digest('hex').slice(0, 16)}` : undefined,
+    // A free, local-only PR review must never be served to a full one (or the reverse).
+    mode ? `mode:${mode}` : undefined,
   ].filter(Boolean);
   return parts.length ? parts.join('|') : undefined;
 }
@@ -50,8 +52,12 @@ export class AuditCacheService {
 
   /** Existence check with no side effects — for deciding whether a fresh AI call is needed without inflating hit stats. */
   async exists(contentHash: string): Promise<boolean> {
-    const hit = await this.prisma.auditCache.findUnique({ where: { contentHash }, select: { contentHash: true } });
-    return hit !== null;
+    return (await this.peek(contentHash)) !== null;
+  }
+
+  /** Whether a cached result exists and if it came from an AI review, with no side effects. */
+  async peek(contentHash: string): Promise<{ aiInvoked: boolean } | null> {
+    return this.prisma.auditCache.findUnique({ where: { contentHash }, select: { aiInvoked: true } });
   }
 
   async lookup(contentHash: string): Promise<CachedAuditResult | null> {

@@ -14,6 +14,8 @@ import { requireJwtSecret } from "../jwt-secret";
 import { OAuthProfile, OAuthProvider, OAuthTokenSet } from "./oauth.types";
 
 const DEFAULT_PLAN_SLUG = "free";
+/** Providers whose sign-in email is verified by them (Google: email_verified; GitHub: verified emails only). */
+const VERIFIED_EMAIL_PROVIDERS = new Set<OAuthProvider>(["google", "github"]);
 const LOGIN_CODE_TTL_MS = 60_000;
 /** How long a "Connect GitHub/GitLab" round trip may take before its state expires. */
 const CONNECT_STATE_TTL_MS = 10 * 60_000;
@@ -373,8 +375,12 @@ export class OAuthService {
       if (!plan)
         throw new Error(`Default plan "${DEFAULT_PLAN_SLUG}" is not seeded`);
 
+      // The first admin can sign in with Google or GitHub, which only hand
+      // over addresses the person has verified. GitLab's profile email
+      // carries no such guarantee, so it never grants the role.
       const superAdminEmail = this.config.get<string>("SUPER_ADMIN_EMAIL");
       const role: Role =
+        VERIFIED_EMAIL_PROVIDERS.has(provider) &&
         superAdminEmail &&
         superAdminEmail.toLowerCase() === profile.email.toLowerCase()
           ? "super_admin"

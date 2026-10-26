@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { LlmService } from '../llm/llm.service';
 import { AuditCacheService, CachedAuditResult, cacheExtraKey } from './cache.service';
@@ -57,6 +58,24 @@ export interface PipelineOutput {
 
 const LOW_CONFIDENCE_THRESHOLD = 0.6;
 
+/**
+ * The rules part of the cache key. Callers pass rulesKey (a hash of the
+ * team's rules, suppressions included); if one passes team rules or
+ * suppressions without it, they're hashed here, so a result filtered for
+ * one team can never be served to another.
+ */
+export function pipelineRulesKey(
+  input: Pick<PipelineInput, 'rulesKey' | 'teamRules' | 'suppressFingerprints'>,
+): string | undefined {
+  if (input.rulesKey) return input.rulesKey;
+  const suppress = [...(input.suppressFingerprints ?? [])].sort();
+  if (!input.teamRules && !suppress.length) return undefined;
+  return createHash('sha256')
+    .update(JSON.stringify({ teamRules: input.teamRules ?? '', suppress }))
+    .digest('hex')
+    .slice(0, 16);
+}
+
 @Injectable()
 export class PipelineService {
   private readonly logger = new Logger(PipelineService.name);
@@ -67,18 +86,28 @@ export class PipelineService {
   ) {}
 
   async run(input: PipelineInput, opts: PipelineOptions = {}): Promise<PipelineOutput> {
+    // A PR/MR review sends its changed hunks to the AI whatever Stage 1
+    // found: Stage 1 only flags JavaScript/TypeScript functions and Python
+    // errors, so gating on it left most PRs (Java, Go, Kotlin…) unreviewed.
+    const diffReview = !input.localOnly && Boolean(input.changedLineRanges?.length);
     const hash = this.cache.hashFor(
       input.code,
       input.provider,
       input.focusAreas,
       input.changedLineRanges,
-      cacheExtraKey(input.rulesKey, input.relatedContext),
+      cacheExtraKey(
+        pipelineRulesKey(input),
+        input.relatedContext,
+        input.localOnly && input.changedLineRanges?.length ? 'local' : undefined,
+      ),
     );
     const suppressed = new Set(input.suppressFingerprints ?? []);
     const keep = <T extends { category?: string | null; title: string }>(findings: T[]) =>
       suppressed.size ? findings.filter((f) => !suppressed.has(findingFingerprint(f))) : findings;
     const cached = await this.cache.lookup(hash);
-    if (cached) {
+    // A full PR review always gets an AI pass, so a cached local-only result
+    // (stored under this key before the mode was part of it) doesn't count.
+    if (cached && !(diffReview && !cached.aiInvoked)) {
       return { result: cached, fromCache: true, usage: ZERO_USAGE };
     }
 
@@ -88,11 +117,6 @@ export class PipelineService {
 
     let result: CachedAuditResult;
     let usage: TokenUsage = ZERO_USAGE;
-
-    // A PR/MR review sends its changed hunks to the AI whatever Stage 1
-    // found: Stage 1 only flags JavaScript/TypeScript functions and Python
-    // errors, so gating on it left most PRs (Java, Go, Kotlin…) unreviewed.
-    const diffReview = !input.localOnly && Boolean(input.changedLineRanges?.length);
 
     if (!stage1.clean && input.localOnly) {
       return {

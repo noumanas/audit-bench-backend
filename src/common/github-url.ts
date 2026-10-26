@@ -5,7 +5,27 @@ export interface ParsedGithubRepo {
   ref?: string;
 }
 
+import { BadRequestException } from '@nestjs/common';
+
 const NAME = /^[A-Za-z0-9_.-]{1,100}$/;
+
+/** Whether a string can be a GitHub owner or repository name (and not "." or ".."). */
+export function isGithubName(value: string): boolean {
+  return NAME.test(value) && !/^\.+$/.test(value);
+}
+
+/**
+ * "owner/repo" for a GitHub API URL. Names come from requests and webhooks,
+ * so they're checked against GitHub's naming rules first: encoding alone
+ * would still let ".." through, which fetch resolves into a different API
+ * path called with the user's token. Then encoded, for good measure.
+ */
+export function repoApiPath(owner: string, repo: string): string {
+  if (!isGithubName(owner) || !isGithubName(repo)) {
+    throw new BadRequestException(`"${`${owner}/${repo}`.slice(0, 200)}" isn't a valid GitHub repository.`);
+  }
+  return `${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
+}
 
 /**
  * Accepts what people actually paste: a full URL (with or without
@@ -24,7 +44,7 @@ export function parseGithubRepoUrl(input: string): ParsedGithubRepo | null {
   if (parts.length < 2) return null;
   const owner = parts[0];
   const repo = parts[1].replace(/\.git$/i, '');
-  if (!NAME.test(owner) || !NAME.test(repo) || /^\.+$/.test(owner) || /^\.+$/.test(repo)) return null;
+  if (!isGithubName(owner) || !isGithubName(repo)) return null;
 
   let ref: string | undefined;
   if (parts[2] === 'tree' && parts.length > 3) ref = decodeURIComponent(parts.slice(3).join('/'));
@@ -61,6 +81,6 @@ export function parseGithubPrUrl(input: string): ParsedGithubPr | null {
 
 function validPr(owner: string, repo: string, num: string): ParsedGithubPr | null {
   const n = parseInt(num, 10);
-  if (!NAME.test(owner) || !NAME.test(repo) || /^\.+$/.test(owner) || /^\.+$/.test(repo) || n < 1) return null;
+  if (!isGithubName(owner) || !isGithubName(repo) || n < 1) return null;
   return { owner, repo: repo.replace(/\.git$/i, ''), number: n };
 }

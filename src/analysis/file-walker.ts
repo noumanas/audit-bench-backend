@@ -18,18 +18,39 @@ const IGNORED_DIR_SEGMENTS = new Set([
   '.cache',
 ]);
 
-const IGNORED_FILENAMES = new Set([
-  'package-lock.json',
-  'yarn.lock',
-  'pnpm-lock.yaml',
-]);
+const IGNORED_FILENAMES = new Set(['package-lock.json', 'yarn.lock', 'pnpm-lock.yaml']);
 
 const BINARY_EXTENSIONS = new Set([
-  'png', 'jpg', 'jpeg', 'gif', 'ico', 'svg', 'webp', 'bmp',
-  'woff', 'woff2', 'ttf', 'eot', 'otf',
-  'zip', 'gz', 'tar', 'rar', '7z',
-  'pdf', 'exe', 'dll', 'so', 'dylib', 'bin', 'wasm',
-  'mp3', 'mp4', 'mov', 'avi', 'webm',
+  'png',
+  'jpg',
+  'jpeg',
+  'gif',
+  'ico',
+  'svg',
+  'webp',
+  'bmp',
+  'woff',
+  'woff2',
+  'ttf',
+  'eot',
+  'otf',
+  'zip',
+  'gz',
+  'tar',
+  'rar',
+  '7z',
+  'pdf',
+  'exe',
+  'dll',
+  'so',
+  'dylib',
+  'bin',
+  'wasm',
+  'mp3',
+  'mp4',
+  'mov',
+  'avi',
+  'webm',
 ]);
 
 const MAX_TOTAL_FILES = 3000;
@@ -59,6 +80,12 @@ function ignoredReason(relativePath: string): SkippedFile['reason'] | 'silent' |
   return null;
 }
 
+/** A path with a ".." segment, or an absolute one, from a hostile or broken archive. */
+export function unsafeArchivePath(p: string): boolean {
+  const normalized = p.replace(/\\/g, '/');
+  return normalized.startsWith('/') || /^[A-Za-z]:/.test(normalized) || normalized.split('/').includes('..');
+}
+
 /** Strips the single top-level directory zip tools add (e.g. "my-repo-main/"). */
 function stripRootPrefix(entries: { entryName: string }[]): string | null {
   const tops = new Set(entries.map((e) => e.entryName.split('/')[0]));
@@ -86,6 +113,10 @@ export function extractZip(buffer: Buffer, maxFileSizeBytes: number, skipped?: S
       relativePath = relativePath.slice(rootPrefix.length + 1);
     }
     if (!relativePath) continue;
+    // Entry names come from the archive: never accept one that climbs out of
+    // the repository ("../x", "a/../../x") or is absolute ("/etc/x", "C:\\x").
+    // Nothing writes these paths to disk today; this keeps it that way.
+    if (unsafeArchivePath(relativePath)) continue;
     const ignored = ignoredReason(relativePath);
     if (ignored) {
       if (ignored !== 'silent') skipped?.push({ path: relativePath, reason: ignored });
@@ -100,7 +131,16 @@ export function extractZip(buffer: Buffer, maxFileSizeBytes: number, skipped?: S
     }
     if (totalDecompressedBytes + declaredSize > MAX_TOTAL_DECOMPRESSED_BYTES) break;
 
-    const data = entry.getData(); // safe now — declaredSize already bounded above
+    // adm-zip inflates with maxOutputLength = the declared size, so an entry
+    // that lies about its size can't expand past it: zlib throws instead.
+    // Skip just that entry rather than failing the whole upload.
+    let data: Buffer;
+    try {
+      data = entry.getData();
+    } catch {
+      skipped?.push({ path: relativePath, reason: 'too_large' });
+      continue;
+    }
     totalDecompressedBytes += data.length;
     if (data.length === 0) continue;
     if (data.length > maxFileSizeBytes) {

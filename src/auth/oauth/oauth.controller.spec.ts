@@ -1,3 +1,4 @@
+import { ConflictException } from '@nestjs/common';
 import { OAuthController } from './oauth.controller';
 
 describe('OAuthController sign-in start', () => {
@@ -35,5 +36,33 @@ describe('OAuthController sign-in start', () => {
       'https://api.auditbenchai.com/auth/github',
       'https://api.auditbenchai.com/auth/gitlab',
     ]);
+  });
+});
+
+describe('OAuthController sign-in callback errors', () => {
+  const callback = async (error: Error) => {
+    const oauthService = { isConnectState: () => false, handleCallback: jest.fn().mockRejectedValue(error) };
+    const controller = new OAuthController(
+      oauthService as never,
+      {} as never,
+      { get: () => 'https://app.example' } as never,
+    );
+    jest.spyOn((controller as any).logger, 'error').mockImplementation(() => undefined);
+    const res = { clearCookie: jest.fn(), redirect: jest.fn() };
+    const req = { cookies: { oauth_state: 's1' } };
+    await controller.githubCallback(req as never, 'code', 's1', res as never);
+    return decodeURIComponent(String(res.redirect.mock.calls[0][0]).split('error=')[1]);
+  };
+
+  it('shows messages written for the user', async () => {
+    expect(await callback(new ConflictException('An account already exists for a@b.com.'))).toBe(
+      'An account already exists for a@b.com.',
+    );
+  });
+
+  it('never puts internal error details in the URL', async () => {
+    const shown = await callback(new Error('connect ECONNREFUSED 10.0.0.5:5432 (prisma)'));
+    expect(shown).toBe('Sign-in failed. Please try again.');
+    expect(shown).not.toContain('5432');
   });
 });

@@ -42,16 +42,11 @@ export class AuthService {
       throw new Error(`Default plan "${DEFAULT_PLAN_SLUG}" is not seeded`);
 
     const passwordHash = await bcrypt.hash(dto.password, SALT_ROUNDS);
-    // One-time bootstrap: the very first account to sign up with the email
-    // configured as SUPER_ADMIN_EMAIL becomes a super_admin — there's no
-    // other way to create the first admin, since every other path requires
-    // an existing super_admin to grant the role.
-    const superAdminEmail = this.config.get<string>("SUPER_ADMIN_EMAIL");
-    const role: Role =
-      superAdminEmail &&
-      superAdminEmail.toLowerCase() === dto.email.toLowerCase()
-        ? "super_admin"
-        : "user";
+    // Never an admin from a password signup: nothing here proves the person
+    // owns the email address, so matching SUPER_ADMIN_EMAIL would let anyone
+    // who registers it first take over the app. The first admin comes from a
+    // provider-verified sign-in (OAuthService) or `npm run admin:promote`.
+    const role: Role = "user";
 
     const user = await this.prisma.user.create({
       data: {

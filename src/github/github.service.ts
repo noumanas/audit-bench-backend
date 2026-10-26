@@ -1,6 +1,8 @@
 import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { repoApiPath } from '../common/github-url';
 import { gitHostRequestFailed } from '../common/git-host-errors';
 import * as crypto from 'crypto';
+import pLimit = require('p-limit');
 import { PrismaService } from '../prisma/prisma.service';
 import { GithubPrDetails, GithubPrFile, GithubPrSummary, GithubRepoSummary } from './github.types';
 import { parseChangedRanges } from '../common/diff-ranges';
@@ -26,6 +28,9 @@ import { GithubPull, fetchCiChecks, refetchIfMergeabilityPending, toPrSnapshot }
 const GITHUB_API = 'https://api.github.com';
 /** Repos larger than this (GitHub reports KB) are reviewed without related-code context. */
 const REPO_CONTEXT_MAX_KB = 50 * 1024;
+
+/** How many of a PR's files are downloaded at once. */
+const PR_FILE_FETCH_CONCURRENCY = 8;
 
 @Injectable()
 export class GithubService implements OnModuleInit, PrPublisher {
@@ -136,7 +141,9 @@ export class GithubService implements OnModuleInit, PrPublisher {
 
   private async listInstallationRepos(installationId: number): Promise<GithubRepoSummary[]> {
     const token = await this.requireToken({ installationId });
-    const res = await fetch(`${GITHUB_API}/installation/repositories?per_page=100`, { headers: this.authHeaders(token) });
+    const res = await fetch(`${GITHUB_API}/installation/repositories?per_page=100`, {
+      headers: this.authHeaders(token),
+    });
     if (!res.ok) throw gitHostRequestFailed('GitHub', res.status);
     const body = (await res.json()) as { repositories: any[] };
     return body.repositories.map(toRepoSummary);
@@ -162,7 +169,7 @@ export class GithubService implements OnModuleInit, PrPublisher {
   async listBranches(auth: GithubAuth, owner: string, repo: string): Promise<string[]> {
     const token = await this.requireToken(auth);
 
-    const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/branches?per_page=100`, {
+    const res = await fetch(`${GITHUB_API}/repos/${repoApiPath(owner, repo)}/branches?per_page=100`, {
       headers: this.authHeaders(token),
     });
     if (res.status === 404) {
@@ -179,7 +186,7 @@ export class GithubService implements OnModuleInit, PrPublisher {
   async listPullRequests(auth: GithubAuth, owner: string, repo: string): Promise<GithubPrSummary[]> {
     const token = await this.requireToken(auth);
 
-    const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls?state=open&per_page=100`, {
+    const res = await fetch(`${GITHUB_API}/repos/${repoApiPath(owner, repo)}/pulls?state=open&per_page=100`, {
       headers: this.authHeaders(token),
     });
     if (res.status === 404) {
@@ -204,7 +211,7 @@ export class GithubService implements OnModuleInit, PrPublisher {
   async downloadRepoZip(auth: GithubAuth, owner: string, repo: string, ref?: string): Promise<Buffer> {
     const token = await this.requireToken(auth);
 
-    const path = ref ? `${owner}/${repo}/zipball/${ref}` : `${owner}/${repo}/zipball`;
+    const path = `${repoApiPath(owner, repo)}/zipball${ref ? `/${encodeURIComponent(ref)}` : ''}`;
     const res = await fetch(`${GITHUB_API}/repos/${path}`, { headers: this.authHeaders(token) });
 
     if (res.status === 404) {
@@ -240,7 +247,7 @@ export class GithubService implements OnModuleInit, PrPublisher {
    */
   private async requestContributorStats(token: string, owner: string, repo: string): Promise<unknown[] | null> {
     for (let attempt = 0; attempt < 2; attempt++) {
-      const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/stats/contributors`, {
+      const res = await fetch(`${GITHUB_API}/repos/${repoApiPath(owner, repo)}/stats/contributors`, {
         headers: this.authHeaders(token),
       });
       if (res.status === 202) {
@@ -273,7 +280,7 @@ export class GithubService implements OnModuleInit, PrPublisher {
   ): Promise<GithubPrDetails> {
     const token = await this.requireToken(auth);
 
-    const prRes = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${pullNumber}`, {
+    const prRes = await fetch(`${GITHUB_API}/repos/${repoApiPath(owner, repo)}/pulls/${pullNumber}`, {
       headers: this.authHeaders(token),
     });
     if (prRes.status === 404) {
@@ -285,24 +292,31 @@ export class GithubService implements OnModuleInit, PrPublisher {
       pr = await refetchIfMergeabilityPending(pr, this.authHeaders(token), owner, repo, pullNumber);
     const headSha: string = pr.head.sha;
 
-    const filesRes = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${pullNumber}/files?per_page=100`, {
-      headers: this.authHeaders(token),
-    });
+    const filesRes = await fetch(
+      `${GITHUB_API}/repos/${repoApiPath(owner, repo)}/pulls/${pullNumber}/files?per_page=100`,
+      {
+        headers: this.authHeaders(token),
+      },
+    );
     if (!filesRes.ok) throw new BadRequestException(`GitHub rejected the request (${filesRes.status})`);
     const rawFiles: any[] = await filesRes.json();
 
-    const files: GithubPrFile[] = [];
-    for (const f of rawFiles) {
-      if (f.status === 'removed' || !f.patch) continue;
-      const content = await this.fetchFileContent(token, owner, repo, f.filename, headSha);
-      if (content === null) continue;
-      files.push({
-        path: f.filename,
-        content,
-        changedRanges: parseChangedRanges(f.patch),
-        status: f.status,
-      });
-    }
+    // Fetched in parallel, a few at a time: one by one, a PR touching dozens
+    // of files waits on dozens of round trips; all at once trips GitHub's
+    // secondary rate limits. Order is kept.
+    const limit = pLimit(PR_FILE_FETCH_CONCURRENCY);
+    const fetched = await Promise.all(
+      rawFiles
+        .filter((f) => f.status !== 'removed' && f.patch)
+        .map((f) =>
+          limit(async (): Promise<GithubPrFile | null> => {
+            const content = await this.fetchFileContent(token, owner, repo, f.filename, headSha);
+            if (content === null) return null;
+            return { path: f.filename, content, changedRanges: parseChangedRanges(f.patch), status: f.status };
+          }),
+        ),
+    );
+    const files = fetched.filter((f): f is GithubPrFile => f !== null);
 
     const snapshot = opts.withSnapshot
       ? toPrSnapshot(
@@ -344,7 +358,7 @@ export class GithubService implements OnModuleInit, PrPublisher {
   /** Repo metadata needed to resolve "the ref that was scanned" when none was explicitly given. */
   async getRepoMeta(auth: GithubAuth, owner: string, repo: string): Promise<{ defaultBranch: string }> {
     const token = await this.requireToken(auth);
-    const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}`, { headers: this.authHeaders(token) });
+    const res = await fetch(`${GITHUB_API}/repos/${repoApiPath(owner, repo)}`, { headers: this.authHeaders(token) });
     if (res.status === 404)
       throw new NotFoundException(`Repository ${owner}/${repo} not found or not accessible with this token`);
     if (!res.ok) throw gitHostRequestFailed('GitHub', res.status);
@@ -363,7 +377,7 @@ export class GithubService implements OnModuleInit, PrPublisher {
     const token = await this.requireToken(auth);
     const encodedPath = path.split('/').map(encodeURIComponent).join('/');
     const res = await fetch(
-      `${GITHUB_API}/repos/${owner}/${repo}/contents/${encodedPath}?ref=${encodeURIComponent(ref)}`,
+      `${GITHUB_API}/repos/${repoApiPath(owner, repo)}/contents/${encodedPath}?ref=${encodeURIComponent(ref)}`,
       {
         headers: this.authHeaders(token),
       },
@@ -379,9 +393,12 @@ export class GithubService implements OnModuleInit, PrPublisher {
 
   async getBranchHeadSha(auth: GithubAuth, owner: string, repo: string, branch: string): Promise<string> {
     const token = await this.requireToken(auth);
-    const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/git/ref/heads/${encodeURIComponent(branch)}`, {
-      headers: this.authHeaders(token),
-    });
+    const res = await fetch(
+      `${GITHUB_API}/repos/${repoApiPath(owner, repo)}/git/ref/heads/${encodeURIComponent(branch)}`,
+      {
+        headers: this.authHeaders(token),
+      },
+    );
     if (!res.ok) throw new BadRequestException(`GitHub rejected resolving branch "${branch}" (${res.status})`);
     const data = await res.json();
     return data.object.sha;
@@ -389,7 +406,7 @@ export class GithubService implements OnModuleInit, PrPublisher {
 
   async createBranch(auth: GithubAuth, owner: string, repo: string, newBranch: string, fromSha: string): Promise<void> {
     const token = await this.requireToken(auth);
-    const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/git/refs`, {
+    const res = await fetch(`${GITHUB_API}/repos/${repoApiPath(owner, repo)}/git/refs`, {
       method: 'POST',
       headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
       body: JSON.stringify({ ref: `refs/heads/${newBranch}`, sha: fromSha }),
@@ -410,7 +427,7 @@ export class GithubService implements OnModuleInit, PrPublisher {
   ): Promise<string> {
     const token = await this.requireToken(auth);
     const encodedPath = path.split('/').map(encodeURIComponent).join('/');
-    const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/contents/${encodedPath}`, {
+    const res = await fetch(`${GITHUB_API}/repos/${repoApiPath(owner, repo)}/contents/${encodedPath}`, {
       method: 'PUT',
       headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
       body: JSON.stringify({ message, content: Buffer.from(content, 'utf8').toString('base64'), sha, branch }),
@@ -435,7 +452,7 @@ export class GithubService implements OnModuleInit, PrPublisher {
     body: string,
   ): Promise<{ url: string; number: number }> {
     const token = await this.requireToken(auth);
-    const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls`, {
+    const res = await fetch(`${GITHUB_API}/repos/${repoApiPath(owner, repo)}/pulls`, {
       method: 'POST',
       headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
       body: JSON.stringify({ title, head, base, body }),
@@ -458,9 +475,12 @@ export class GithubService implements OnModuleInit, PrPublisher {
     ref: string,
   ): Promise<string | null> {
     const encodedPath = path.split('/').map(encodeURIComponent).join('/');
-    const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/contents/${encodedPath}?ref=${ref}`, {
-      headers: this.authHeaders(token),
-    });
+    const res = await fetch(
+      `${GITHUB_API}/repos/${repoApiPath(owner, repo)}/contents/${encodedPath}?ref=${encodeURIComponent(ref)}`,
+      {
+        headers: this.authHeaders(token),
+      },
+    );
     if (!res.ok) return null;
     const data = await res.json();
     if (data.encoding !== 'base64' || typeof data.content !== 'string') return null;
@@ -509,12 +529,12 @@ export class GithubService implements OnModuleInit, PrPublisher {
   ) {
     const body = { ...buildCheckRun(feedback, sha), completed_at: new Date().toISOString() };
     const res = checkRunId
-      ? await fetch(`${GITHUB_API}/repos/${owner}/${repo}/check-runs/${checkRunId}`, {
+      ? await fetch(`${GITHUB_API}/repos/${repoApiPath(owner, repo)}/check-runs/${checkRunId}`, {
           method: 'PATCH',
           headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         })
-      : await fetch(`${GITHUB_API}/repos/${owner}/${repo}/check-runs`, {
+      : await fetch(`${GITHUB_API}/repos/${repoApiPath(owner, repo)}/check-runs`, {
           method: 'POST',
           headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
@@ -531,7 +551,7 @@ export class GithubService implements OnModuleInit, PrPublisher {
     try {
       const token = await this.requireToken(auth);
       if (typeof auth !== 'string') {
-        const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/check-runs`, {
+        const res = await fetch(`${GITHUB_API}/repos/${repoApiPath(owner, repo)}/check-runs`, {
           method: 'POST',
           headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
           body: JSON.stringify(inProgressCheckRun(sha)),
@@ -570,7 +590,7 @@ export class GithubService implements OnModuleInit, PrPublisher {
   ): Promise<void> {
     const token = await this.requireToken(auth);
     if (checkRunId) {
-      await fetch(`${GITHUB_API}/repos/${owner}/${repo}/check-runs/${checkRunId}`, {
+      await fetch(`${GITHUB_API}/repos/${repoApiPath(owner, repo)}/check-runs/${checkRunId}`, {
         method: 'PATCH',
         headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
         body: JSON.stringify(stoppedCheckRun(reason)),
@@ -618,7 +638,7 @@ export class GithubService implements OnModuleInit, PrPublisher {
         body: inlineCommentBody(f, { at, viaUserAccount: Boolean(feedback.viaUserAccount) }),
       }));
 
-    const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${pullNumber}/reviews`, {
+    const res = await fetch(`${GITHUB_API}/repos/${repoApiPath(owner, repo)}/pulls/${pullNumber}/reviews`, {
       method: 'POST',
       headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -633,7 +653,7 @@ export class GithubService implements OnModuleInit, PrPublisher {
     const reviewError = await githubErrorMessage(res);
     // A single out-of-diff line invalidates the whole batch — fall back to
     // a plain summary-only comment so the PR still gets *something* useful.
-    const fallback = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/issues/${pullNumber}/comments`, {
+    const fallback = await fetch(`${GITHUB_API}/repos/${repoApiPath(owner, repo)}/issues/${pullNumber}/comments`, {
       method: 'POST',
       headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
       body: JSON.stringify({ body: buildSummaryBody(feedback, { posted: 0, headSha }) }),
@@ -666,7 +686,7 @@ export class GithubService implements OnModuleInit, PrPublisher {
   ): Promise<Response[]> {
     return Promise.all(
       [CHECK_NAME, 'audit/bench'].map((context) =>
-        fetch(`${GITHUB_API}/repos/${owner}/${repo}/statuses/${sha}`, {
+        fetch(`${GITHUB_API}/repos/${repoApiPath(owner, repo)}/statuses/${sha}`, {
           method: 'POST',
           headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
           body: JSON.stringify({ ...status, context }),
@@ -679,7 +699,7 @@ export class GithubService implements OnModuleInit, PrPublisher {
   async canPushTo(userId: string, owner: string, repo: string): Promise<boolean> {
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
     if (!user.githubToken) return false;
-    const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}`, {
+    const res = await fetch(`${GITHUB_API}/repos/${repoApiPath(owner, repo)}`, {
       headers: this.authHeaders(this.tokenCrypto.decrypt(user.githubToken)),
     });
     if (!res.ok) return false;
@@ -699,7 +719,7 @@ export class GithubService implements OnModuleInit, PrPublisher {
     opts: { commitId: string; path: string; start: number; end: number; body: string },
   ): Promise<{ id: number; htmlUrl: string }> {
     const token = await this.requireToken(auth);
-    const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${pullNumber}/comments`, {
+    const res = await fetch(`${GITHUB_API}/repos/${repoApiPath(owner, repo)}/pulls/${pullNumber}/comments`, {
       method: 'POST',
       headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -724,7 +744,7 @@ export class GithubService implements OnModuleInit, PrPublisher {
     commentId: number,
   ): Promise<GithubReviewComment> {
     const token = await this.requireToken(auth);
-    const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/comments/${commentId}`, {
+    const res = await fetch(`${GITHUB_API}/repos/${repoApiPath(owner, repo)}/pulls/comments/${commentId}`, {
       headers: this.authHeaders(token),
     });
     if (!res.ok) throw gitHostRequestFailed('GitHub', res.status);
@@ -742,7 +762,7 @@ export class GithubService implements OnModuleInit, PrPublisher {
     const all: GithubReviewComment[] = [];
     for (let page = 1; page <= 5; page++) {
       const res = await fetch(
-        `${GITHUB_API}/repos/${owner}/${repo}/pulls/${pullNumber}/comments?per_page=100&page=${page}`,
+        `${GITHUB_API}/repos/${repoApiPath(owner, repo)}/pulls/${pullNumber}/comments?per_page=100&page=${page}`,
         { headers: this.authHeaders(token) },
       );
       if (!res.ok) throw gitHostRequestFailed('GitHub', res.status);
@@ -794,7 +814,7 @@ export class GithubService implements OnModuleInit, PrPublisher {
     const thread: GithubReviewComment[] = [];
     for (let page = 1; page <= 5; page++) {
       const res = await fetch(
-        `${GITHUB_API}/repos/${owner}/${repo}/pulls/${pullNumber}/comments?per_page=100&page=${page}`,
+        `${GITHUB_API}/repos/${repoApiPath(owner, repo)}/pulls/${pullNumber}/comments?per_page=100&page=${page}`,
         { headers: this.authHeaders(token) },
       );
       if (!res.ok) throw gitHostRequestFailed('GitHub', res.status);
@@ -815,11 +835,14 @@ export class GithubService implements OnModuleInit, PrPublisher {
     body: string,
   ): Promise<void> {
     const token = await this.requireToken(auth);
-    const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${pullNumber}/comments/${rootId}/replies`, {
-      method: 'POST',
-      headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ body }),
-    });
+    const res = await fetch(
+      `${GITHUB_API}/repos/${repoApiPath(owner, repo)}/pulls/${pullNumber}/comments/${rootId}/replies`,
+      {
+        method: 'POST',
+        headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ body }),
+      },
+    );
     if (!res.ok) throw gitHostRequestFailed('GitHub', res.status);
   }
 
@@ -895,7 +918,7 @@ export class GithubService implements OnModuleInit, PrPublisher {
     body: string,
   ): Promise<void> {
     const token = await this.requireToken(auth);
-    await fetch(`${GITHUB_API}/repos/${owner}/${repo}/issues/${issueNumber}/comments`, {
+    await fetch(`${GITHUB_API}/repos/${repoApiPath(owner, repo)}/issues/${issueNumber}/comments`, {
       method: 'POST',
       headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
       body: JSON.stringify({ body }),

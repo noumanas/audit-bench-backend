@@ -18,7 +18,7 @@ import { RepositoryService } from '../repository/repository.service';
 import { aggregateRisk } from '../repository/risk-aggregation';
 import { mapGithubContributorStats } from '../github/github.service';
 import { WorkspaceActor, canViewResource } from '../common/workspace-scope';
-import { parseGithubPrUrl, parseGithubRepoUrl } from '../common/github-url';
+import { repoApiPath, parseGithubPrUrl, parseGithubRepoUrl } from '../common/github-url';
 import { parseChangedRanges } from '../common/diff-ranges';
 import { ANALYZABLE_EXTENSIONS } from '../common/language';
 import { ScannedFile } from '../analysis/types';
@@ -98,17 +98,25 @@ export class PublicScanService {
     }
     let { owner, repo } = parsed;
 
-    const metaRes = await fetch(`${GITHUB_API}/repos/${owner}/${repo}`, { headers: this.githubHeaders() });
+    const metaRes = await fetch(`${GITHUB_API}/repos/${repoApiPath(owner, repo)}`, { headers: this.githubHeaders() });
     if (metaRes.status === 404) {
       throw new NotFoundException(
         `We couldn't find ${owner}/${repo}. It may be private. Sign up free to scan private repositories.`,
       );
     }
     if (metaRes.status === 403 || metaRes.status === 429) {
-      throw new HttpException('GitHub is rate-limiting us right now. Please try again in a few minutes.', HttpStatus.SERVICE_UNAVAILABLE);
+      throw new HttpException(
+        'GitHub is rate-limiting us right now. Please try again in a few minutes.',
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
     }
     if (!metaRes.ok) throw new BadRequestException(`GitHub rejected the request (${metaRes.status})`);
-    const meta = (await metaRes.json()) as { private: boolean; default_branch: string; size: number; full_name: string };
+    const meta = (await metaRes.json()) as {
+      private: boolean;
+      default_branch: string;
+      size: number;
+      full_name: string;
+    };
     if (meta.private) {
       throw new ForbiddenException('That repository is private. Sign up free to scan private repositories.');
     }
@@ -137,7 +145,7 @@ export class PublicScanService {
 
     const ipHash = await this.assertWithinLimits(ip);
 
-    const zipRes = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/zipball/${encodeURIComponent(ref)}`, {
+    const zipRes = await fetch(`${GITHUB_API}/repos/${repoApiPath(owner, repo)}/zipball/${encodeURIComponent(ref)}`, {
       headers: this.githubHeaders(),
     });
     if (zipRes.status === 404) throw new NotFoundException(`Branch "${ref}" wasn't found in ${sourceName}.`);
@@ -178,12 +186,19 @@ export class PublicScanService {
     if (job.status !== 'completed') throw new BadRequestException('Wait for the review to finish before posting it.');
     if (job.prPublishedAt) throw new ConflictException('This review is already posted on the pull request.');
     const recentPost = await this.prisma.scanJob.findFirst({
-      where: { sourceName: job.sourceName, sourceType: 'github_pr', prPublishedAt: { gte: new Date(Date.now() - DAY_MS) } },
+      where: {
+        sourceName: job.sourceName,
+        sourceType: 'github_pr',
+        prPublishedAt: { gte: new Date(Date.now() - DAY_MS) },
+      },
       select: { id: true },
     });
     if (recentPost) throw new ConflictException('Audit Bench Ai already posted a review on this pull request today.');
 
-    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: actor.id }, select: { githubUsername: true } });
+    const user = await this.prisma.user.findUniqueOrThrow({
+      where: { id: actor.id },
+      select: { githubUsername: true },
+    });
     if (!user.githubUsername) {
       throw new ForbiddenException(
         'Connect GitHub (or sign in with GitHub) first, so we can check that you wrote or maintain this pull request.',
@@ -191,13 +206,15 @@ export class PublicScanService {
     }
 
     const snap = job.prSnapshot as unknown as PrSnapshot;
-    const prRes = await fetch(`${GITHUB_API}/repos/${snap.owner}/${snap.repo}/pulls/${snap.number}`, {
+    const prRes = await fetch(`${GITHUB_API}/repos/${repoApiPath(snap.owner, snap.repo)}/pulls/${snap.number}`, {
       headers: this.githubHeaders(),
     });
     if (!prRes.ok) throw new BadRequestException(`GitHub rejected the request (${prRes.status})`);
     const pr = (await prRes.json()) as GithubPull & { user: { login: string } | null };
     if (pr.state !== 'open') {
-      throw new BadRequestException(`This pull request is already ${pr.merged ? 'merged' : 'closed'}, so a review wouldn't help.`);
+      throw new BadRequestException(
+        `This pull request is already ${pr.merged ? 'merged' : 'closed'}, so a review wouldn't help.`,
+      );
     }
     const isAuthor = pr.user?.login.toLowerCase() === user.githubUsername.toLowerCase();
     if (!isAuthor && !(await this.github.canPushTo(actor.id, snap.owner, snap.repo))) {
@@ -228,8 +245,12 @@ export class PublicScanService {
     const perVisitor = this.config.get<number>('PUBLIC_SCAN_PER_HOUR') || 3;
     const perDay = this.config.get<number>('PUBLIC_SCAN_DAILY_LIMIT') || 100;
     const [mine, total] = await Promise.all([
-      this.prisma.scanJob.count({ where: { requesterIpHash: ipHash, createdAt: { gte: new Date(Date.now() - HOUR_MS) } } }),
-      this.prisma.scanJob.count({ where: { requesterIpHash: { not: null }, createdAt: { gte: new Date(Date.now() - DAY_MS) } } }),
+      this.prisma.scanJob.count({
+        where: { requesterIpHash: ipHash, createdAt: { gte: new Date(Date.now() - HOUR_MS) } },
+      }),
+      this.prisma.scanJob.count({
+        where: { requesterIpHash: { not: null }, createdAt: { gte: new Date(Date.now() - DAY_MS) } },
+      }),
     ]);
     if (mine >= perVisitor) {
       throw new HttpException(
@@ -254,15 +275,25 @@ export class PublicScanService {
    * someone else's repository. The share page offers the review as a comment
    * the visitor can post themselves.
    */
-  async startPrReview(owner: string, repo: string, number: number, ip: string): Promise<{ shareId: string; reused: boolean }> {
-    const prRes = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${number}`, { headers: this.githubHeaders() });
+  async startPrReview(
+    owner: string,
+    repo: string,
+    number: number,
+    ip: string,
+  ): Promise<{ shareId: string; reused: boolean }> {
+    const prRes = await fetch(`${GITHUB_API}/repos/${repoApiPath(owner, repo)}/pulls/${number}`, {
+      headers: this.githubHeaders(),
+    });
     if (prRes.status === 404) {
       throw new NotFoundException(
         `We couldn't find pull request #${number} in ${owner}/${repo}. It may be private. Sign up free to review private PRs.`,
       );
     }
     if (prRes.status === 403 || prRes.status === 429) {
-      throw new HttpException('GitHub is rate-limiting us right now. Please try again in a few minutes.', HttpStatus.SERVICE_UNAVAILABLE);
+      throw new HttpException(
+        'GitHub is rate-limiting us right now. Please try again in a few minutes.',
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
     }
     if (!prRes.ok) throw new BadRequestException(`GitHub rejected the request (${prRes.status})`);
     let pr = (await prRes.json()) as GithubPull;
@@ -292,13 +323,18 @@ export class PublicScanService {
 
     pr = await refetchIfMergeabilityPending(pr, this.githubHeaders(), owner, repo, number);
 
-    const filesRes = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${number}/files?per_page=100`, {
+    const filesRes = await fetch(`${GITHUB_API}/repos/${repoApiPath(owner, repo)}/pulls/${number}/files?per_page=100`, {
       headers: this.githubHeaders(),
     });
     if (!filesRes.ok) throw new BadRequestException(`GitHub rejected the request (${filesRes.status})`);
     const changed = (await filesRes.json()) as Array<{ filename: string; status: string; patch?: string }>;
     const reviewable = changed
-      .filter((f) => f.status !== 'removed' && f.patch && ANALYZABLE_EXTENSIONS.has(f.filename.split('.').pop()?.toLowerCase() ?? ''))
+      .filter(
+        (f) =>
+          f.status !== 'removed' &&
+          f.patch &&
+          ANALYZABLE_EXTENSIONS.has(f.filename.split('.').pop()?.toLowerCase() ?? ''),
+      )
       .slice(0, MAX_PR_FILES);
 
     // raw.githubusercontent.com doesn't count against the API rate limit; the
@@ -307,7 +343,9 @@ export class PublicScanService {
     const files: ScannedFile[] = [];
     await Promise.all(
       reviewable.map(async (f) => {
-        const res = await fetch(`https://raw.githubusercontent.com/${headRepo}/${pr.head.sha}/${f.filename.split('/').map(encodeURIComponent).join('/')}`);
+        const res = await fetch(
+          `https://raw.githubusercontent.com/${headRepo}/${pr.head.sha}/${f.filename.split('/').map(encodeURIComponent).join('/')}`,
+        );
         if (!res.ok) return;
         const content = await res.text();
         if (content.length > MAX_PR_FILE_BYTES) return;
@@ -339,7 +377,9 @@ export class PublicScanService {
 
   private async contributorStats(owner: string, repo: string) {
     for (let attempt = 0; attempt < 2; attempt++) {
-      const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/stats/contributors`, { headers: this.githubHeaders() });
+      const res = await fetch(`${GITHUB_API}/repos/${repoApiPath(owner, repo)}/stats/contributors`, {
+        headers: this.githubHeaders(),
+      });
       if (res.status === 202 && attempt === 0) {
         await new Promise((r) => setTimeout(r, 1500));
         continue;
@@ -400,7 +440,11 @@ export class PublicScanService {
         summary: anonymize(r.summary),
         // Rebuilt field by field: the talent category also carries the top
         // contributor's username, which must not reach a public page.
-        categories: r.categories.map((c) => ({ category: c.category, riskLevel: c.riskLevel, detail: anonymize(c.detail) })),
+        categories: r.categories.map((c) => ({
+          category: c.category,
+          riskLevel: c.riskLevel,
+          detail: anonymize(c.detail),
+        })),
         recommendations: r.recommendations.map(anonymize),
       };
     }
@@ -414,7 +458,9 @@ export class PublicScanService {
     if (prSnapshot) {
       pullRequest = {
         // Who a "Post on GitHub" would post as; null when this server can't.
-        postAs: this.config.get<string>('GITHUB_BOT_TOKEN') ? this.config.get<string>('GITHUB_BOT_LOGIN') || 'auditbenchai' : null,
+        postAs: this.config.get<string>('GITHUB_BOT_TOKEN')
+          ? this.config.get<string>('GITHUB_BOT_LOGIN') || 'auditbenchai'
+          : null,
         postedAt: job.prPublishedAt,
         number: prSnapshot.number,
         title: prSnapshot.title,
@@ -473,8 +519,10 @@ export class PublicScanService {
         : null,
       files: job.files
         .map((f) => ({ path: f.path, language: f.language, verdict: f.verdict, findings: f.findings }))
-        .sort((a, b) => (Array.isArray(b.findings) ? b.findings.length : 0) - (Array.isArray(a.findings) ? a.findings.length : 0)),
+        .sort(
+          (a, b) =>
+            (Array.isArray(b.findings) ? b.findings.length : 0) - (Array.isArray(a.findings) ? a.findings.length : 0),
+        ),
     };
   }
 }
-
