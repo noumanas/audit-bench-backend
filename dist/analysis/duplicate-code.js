@@ -7,15 +7,19 @@ const MIN_NON_BLANK_LINES = 5;
 function normalize(line) {
     return line.trim().replace(/\s+/g, ' ');
 }
+const BOILERPLATE = /^(using\s|import\s|from\s+\S+\s+import|#include|#region|#endregion|namespace\s|package\s|require\(|[{}()\[\];,]+$|\[[\w.]+(\(.*\))?\]$|\/\/|\*|\/\*|')/;
+const CODE_FILE = /\.(ts|tsx|js|jsx|mjs|cjs|py|go|java|kt|rb|php|cs|vb|fs|rs|swift|scala|c|cc|cpp|h)$/i;
 function findDuplicates(files) {
     const buckets = new Map();
     for (const file of files) {
+        if (!CODE_FILE.test(file.path))
+            continue;
         const lines = file.content.split('\n');
         for (let start = 0; start + CHUNK_LINES <= lines.length; start += CHUNK_LINES) {
             const chunk = lines.slice(start, start + CHUNK_LINES);
             const normalized = chunk.map(normalize);
-            const nonBlank = normalized.filter((l) => l.length > 0);
-            if (nonBlank.length < MIN_NON_BLANK_LINES)
+            const meaningful = normalized.filter((l) => l.length > 0 && !BOILERPLATE.test(l));
+            if (meaningful.length < MIN_NON_BLANK_LINES)
                 continue;
             const hash = (0, crypto_1.createHash)('sha1').update(normalized.join('\n')).digest('hex');
             const entry = { path: file.path, startLine: start + 1, endLine: start + CHUNK_LINES };

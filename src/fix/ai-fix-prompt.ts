@@ -54,6 +54,8 @@ ${opts.code}
 
 Treat "Root cause" as the thing that must actually stop being true — "Suggested fix" is a starting hint, not a literal recipe to copy verbatim. If this same root cause shows up more than once in the file (the same unsafe pattern repeated, or the same missing check needed in another branch), fix every occurrence, not just the line that happened to be cited.
 
+Two exceptions to "only this finding": if a line you rewrite also carries another serious problem (for example SQL built from strings, or a missing auth check), don't copy it unchanged into your new code — fix it on that line too and say so in "explanation". And when the fix involves input, validate it fully: reject bad or out-of-range values explicitly (for example return 400 Bad Request) instead of silently falling back to a default.
+
 ${VERIFICATION_STEP}
 
 Return ONLY a JSON object, no markdown fences, no preamble, with this exact shape:

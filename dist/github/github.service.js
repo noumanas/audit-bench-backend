@@ -83,7 +83,50 @@ let GithubService = GithubService_1 = class GithubService {
     }
     async status(userId) {
         const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
-        return { connected: Boolean(user.githubToken), username: user.githubUsername };
+        const installations = await this.linkedInstallations(userId);
+        return {
+            connected: Boolean(user.githubToken) || installations.length > 0,
+            username: user.githubUsername,
+            via: user.githubToken ? 'token' : installations.length ? 'app' : null,
+            appAccounts: installations.map((i) => i.accountLogin),
+        };
+    }
+    linkedInstallations(userId) {
+        return this.prisma.githubInstallation.findMany({
+            where: { userId, suspended: false },
+            select: { id: true, accountLogin: true },
+            orderBy: { createdAt: 'asc' },
+        });
+    }
+    async authFor(userId, owner) {
+        const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { githubToken: true } });
+        if (user.githubToken)
+            return userId;
+        const installations = await this.linkedInstallations(userId);
+        const match = installations.find((i) => i.accountLogin.toLowerCase() === owner.toLowerCase());
+        if (match)
+            return { installationId: match.id };
+        throw new common_1.BadRequestException(installations.length
+            ? `The Audit Bench Ai GitHub App isn't installed on ${owner}. Install it there and choose this repository, or connect a GitHub token.`
+            : 'Connect GitHub first: install the Audit Bench Ai GitHub App on just the repositories you want reviewed, or connect a token.');
+    }
+    async listReposFor(userId) {
+        const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { githubToken: true } });
+        if (user.githubToken)
+            return this.listRepos(userId);
+        const installations = await this.linkedInstallations(userId);
+        if (!installations.length)
+            throw new common_1.BadRequestException('Connect a GitHub account first');
+        const lists = await Promise.all(installations.map((i) => this.listInstallationRepos(i.id)));
+        return lists.flat();
+    }
+    async listInstallationRepos(installationId) {
+        const token = await this.requireToken({ installationId });
+        const res = await fetch(`${GITHUB_API}/installation/repositories?per_page=100`, { headers: this.authHeaders(token) });
+        if (!res.ok)
+            throw (0, git_host_errors_1.gitHostRequestFailed)('GitHub', res.status);
+        const body = (await res.json());
+        return body.repositories.map(toRepoSummary);
     }
     async listRepos(auth) {
         const token = await this.requireToken(auth);
@@ -94,17 +137,7 @@ let GithubService = GithubService_1 = class GithubService {
             throw (0, git_host_errors_1.gitHostRequestFailed)('GitHub', res.status);
         }
         const repos = await res.json();
-        return repos.map((r) => ({
-            id: r.id,
-            owner: r.owner.login,
-            name: r.name,
-            fullName: r.full_name,
-            private: r.private,
-            description: r.description,
-            defaultBranch: r.default_branch,
-            updatedAt: r.updated_at,
-            htmlUrl: r.html_url,
-        }));
+        return repos.map(toRepoSummary);
     }
     async listBranches(auth, owner, repo) {
         const token = await this.requireToken(auth);
@@ -320,6 +353,8 @@ let GithubService = GithubService_1 = class GithubService {
     }
     async publish(userId, context, feedback) {
         const token = await this.requireToken(context.installationId ? { installationId: context.installationId } : userId);
+        if (!context.installationId)
+            feedback = { ...feedback, viaUserAccount: { host: 'github' } };
         await this.postPrReview(token, context.owner, context.repo, context.pullNumber, context.headSha, feedback);
         if (!context.installationId) {
             await this.postCommitStatus(token, context.owner, context.repo, context.headSha, feedback);
@@ -401,7 +436,7 @@ let GithubService = GithubService_1 = class GithubService {
             ...(at.end > at.start ? { start_line: at.start, start_side: 'RIGHT' } : {}),
             line: at.end,
             side: 'RIGHT',
-            body: (0, inline_comment_1.inlineCommentBody)(f, { at }),
+            body: (0, inline_comment_1.inlineCommentBody)(f, { at, viaUserAccount: Boolean(feedback.viaUserAccount) }),
         }));
         const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${pullNumber}/reviews`, {
             method: 'POST',
@@ -663,5 +698,18 @@ function commitStatusFor(feedback) {
         return { state: 'success', description: 'Audit Bench Ai found issues worth reviewing' };
     }
     return { state: 'success', description: 'Audit Bench Ai found no issues' };
+}
+function toRepoSummary(r) {
+    return {
+        id: r.id,
+        owner: r.owner.login,
+        name: r.name,
+        fullName: r.full_name,
+        private: r.private,
+        description: r.description,
+        defaultBranch: r.default_branch,
+        updatedAt: r.updated_at,
+        htmlUrl: r.html_url,
+    };
 }
 //# sourceMappingURL=github.service.js.map

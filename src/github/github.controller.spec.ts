@@ -15,6 +15,7 @@ describe('GithubController.reviewPrByUrl', () => {
 
   const setup = (snap = snapshot()) => {
     const github = {
+      authFor: jest.fn().mockResolvedValue('u1'),
       fetchPrFiles: jest.fn().mockResolvedValue({
         files: [{ path: 'a.ts', content: 'x', changedRanges: [] }],
         url: 'https://github.com/Netflix/metaflow/pull/3414',
@@ -60,3 +61,25 @@ describe('GithubController.reviewPrByUrl', () => {
   });
 });
 
+describe('GithubController with only the GitHub App installed', () => {
+  const user = { id: 'u1', organizationId: null, email: 'a@b.c', role: 'user' } as never;
+
+  it('reviews through the installation, and the bot posts the review', async () => {
+    const github = {
+      authFor: jest.fn().mockResolvedValue({ installationId: 42 }),
+      fetchPrFiles: jest.fn().mockResolvedValue({
+        files: [],
+        url: 'u',
+        headSha: 'sha',
+        headRef: 'f',
+        baseRef: 'main',
+        snapshot: undefined,
+      }),
+    };
+    const repository = { createDiffReview: jest.fn().mockResolvedValue({ id: 'job1' }) };
+    const controller = new GithubController(github as never, repository as never);
+    await controller.reviewPr(user, { owner: 'acme', repo: 'api', pullNumber: 7 } as never);
+    expect(github.fetchPrFiles.mock.calls[0][0]).toEqual({ installationId: 42 });
+    expect(repository.createDiffReview.mock.calls[0][2].prContext).toMatchObject({ installationId: 42 });
+  });
+});

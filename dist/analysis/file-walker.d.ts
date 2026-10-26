@@ -1,2 +1,3 @@
 import { ScannedFile } from './types';
-export declare function extractZip(buffer: Buffer, maxFileSizeBytes: number): ScannedFile[];
+import { SkippedFile } from './generated-files';
+export declare function extractZip(buffer: Buffer, maxFileSizeBytes: number, skipped?: SkippedFile[]): ScannedFile[];

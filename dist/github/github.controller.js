@@ -40,25 +40,27 @@ let GithubController = class GithubController {
         return this.githubService.disconnect(user.id);
     }
     listRepos(user) {
-        return this.githubService.listRepos(user.id);
+        return this.githubService.listReposFor(user.id);
     }
-    listBranches(user, owner, repo) {
-        return this.githubService.listBranches(user.id, owner, repo);
+    async listBranches(user, owner, repo) {
+        return this.githubService.listBranches(await this.githubService.authFor(user.id, owner), owner, repo);
     }
-    listPullRequests(user, owner, repo) {
-        return this.githubService.listPullRequests(user.id, owner, repo);
+    async listPullRequests(user, owner, repo) {
+        return this.githubService.listPullRequests(await this.githubService.authFor(user.id, owner), owner, repo);
     }
     async scan(user, dto) {
-        const { defaultBranch } = await this.githubService.getRepoMeta(user.id, dto.owner, dto.repo);
+        const auth = await this.githubService.authFor(user.id, dto.owner);
+        const { defaultBranch } = await this.githubService.getRepoMeta(auth, dto.owner, dto.repo);
         const ref = dto.ref || defaultBranch;
         const [zipBuffer, contributorStats] = await Promise.all([
-            this.githubService.downloadRepoZip(user.id, dto.owner, dto.repo, dto.ref),
-            this.githubService.fetchContributorStats(user.id, dto.owner, dto.repo),
+            this.githubService.downloadRepoZip(auth, dto.owner, dto.repo, ref),
+            this.githubService.fetchContributorStats(auth, dto.owner, dto.repo),
         ]);
         return this.repositoryService.createScanJobFromBuffer(user, zipBuffer, `${dto.owner}/${dto.repo}`, dto.provider, 'github_repo', { kind: 'github', owner: dto.owner, repo: dto.repo, ref, defaultBranch }, contributorStats);
     }
     async reviewPr(user, dto) {
-        const { files, url, headSha, headRef, baseRef, snapshot, repoFiles } = await this.githubService.fetchPrFiles(user.id, dto.owner, dto.repo, dto.pullNumber, { withSnapshot: true, withRepoContext: true });
+        const auth = await this.githubService.authFor(user.id, dto.owner);
+        const { files, url, headSha, headRef, baseRef, snapshot, repoFiles } = await this.githubService.fetchPrFiles(auth, dto.owner, dto.repo, dto.pullNumber, { withSnapshot: true, withRepoContext: true });
         return this.repositoryService.createDiffReview(user, files, {
             sourceName: `${dto.owner}/${dto.repo}#${dto.pullNumber}`,
             sourceType: 'github_pr',
@@ -72,6 +74,7 @@ let GithubController = class GithubController {
                 headSha,
                 headRef,
                 baseRef,
+                ...(typeof auth === 'string' ? {} : { installationId: auth.installationId }),
             },
         }, { prSnapshot: snapshot, repoFiles });
     }
@@ -81,7 +84,8 @@ let GithubController = class GithubController {
             throw new common_1.BadRequestException('Paste a GitHub pull request link, like https://github.com/owner/repo/pull/123');
         }
         const { owner, repo, number } = parsed;
-        const { files, url, headSha, headRef, baseRef, snapshot, repoFiles } = await this.githubService.fetchPrFiles(user.id, owner, repo, number, { withSnapshot: true, withRepoContext: true });
+        const auth = await this.githubService.authFor(user.id, owner);
+        const { files, url, headSha, headRef, baseRef, snapshot, repoFiles } = await this.githubService.fetchPrFiles(auth, owner, repo, number, { withSnapshot: true, withRepoContext: true });
         if (dto.postToGithub && snapshot && snapshot.state !== 'open') {
             throw new common_1.BadRequestException(`${owner}/${repo}#${number} is already ${snapshot.merged ? 'merged' : 'closed'}, so a review comment wouldn't help. Turn off "Post on GitHub" to review it in the app.`);
         }
@@ -99,6 +103,7 @@ let GithubController = class GithubController {
                     headSha,
                     headRef,
                     baseRef,
+                    ...(typeof auth === 'string' ? {} : { installationId: auth.installationId }),
                 }
                 : undefined,
         }, { prSnapshot: snapshot, repoFiles });
@@ -141,7 +146,7 @@ __decorate([
     __param(2, (0, common_1.Param)('repo')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object, String, String]),
-    __metadata("design:returntype", void 0)
+    __metadata("design:returntype", Promise)
 ], GithubController.prototype, "listBranches", null);
 __decorate([
     (0, common_1.Get)('repos/:owner/:repo/pulls'),
@@ -150,7 +155,7 @@ __decorate([
     __param(2, (0, common_1.Param)('repo')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object, String, String]),
-    __metadata("design:returntype", void 0)
+    __metadata("design:returntype", Promise)
 ], GithubController.prototype, "listPullRequests", null);
 __decorate([
     (0, common_1.Post)('scan'),

@@ -87,7 +87,59 @@ export class GithubService implements OnModuleInit, PrPublisher {
 
   async status(userId: string) {
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
-    return { connected: Boolean(user.githubToken), username: user.githubUsername };
+    const installations = await this.linkedInstallations(userId);
+    return {
+      connected: Boolean(user.githubToken) || installations.length > 0,
+      username: user.githubUsername,
+      // 'app': only the repositories picked when installing the GitHub App are reachable.
+      via: user.githubToken ? ('token' as const) : installations.length ? ('app' as const) : null,
+      appAccounts: installations.map((i) => i.accountLogin),
+    };
+  }
+
+  private linkedInstallations(userId: string) {
+    return this.prisma.githubInstallation.findMany({
+      where: { userId, suspended: false },
+      select: { id: true, accountLogin: true },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  /**
+   * How to reach a repository for this user: their own token when they've
+   * connected one, otherwise the GitHub App installation on the repository's
+   * account — which only sees the repositories they chose when installing,
+   * for people who won't grant access to their whole account.
+   */
+  async authFor(userId: string, owner: string): Promise<GithubAuth> {
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { githubToken: true } });
+    if (user.githubToken) return userId;
+    const installations = await this.linkedInstallations(userId);
+    const match = installations.find((i) => i.accountLogin.toLowerCase() === owner.toLowerCase());
+    if (match) return { installationId: match.id };
+    throw new BadRequestException(
+      installations.length
+        ? `The Audit Bench Ai GitHub App isn't installed on ${owner}. Install it there and choose this repository, or connect a GitHub token.`
+        : 'Connect GitHub first: install the Audit Bench Ai GitHub App on just the repositories you want reviewed, or connect a token.',
+    );
+  }
+
+  /** Repositories the user can scan: through their token, or every App installation they've linked. */
+  async listReposFor(userId: string): Promise<GithubRepoSummary[]> {
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { githubToken: true } });
+    if (user.githubToken) return this.listRepos(userId);
+    const installations = await this.linkedInstallations(userId);
+    if (!installations.length) throw new BadRequestException('Connect a GitHub account first');
+    const lists = await Promise.all(installations.map((i) => this.listInstallationRepos(i.id)));
+    return lists.flat();
+  }
+
+  private async listInstallationRepos(installationId: number): Promise<GithubRepoSummary[]> {
+    const token = await this.requireToken({ installationId });
+    const res = await fetch(`${GITHUB_API}/installation/repositories?per_page=100`, { headers: this.authHeaders(token) });
+    if (!res.ok) throw gitHostRequestFailed('GitHub', res.status);
+    const body = (await res.json()) as { repositories: any[] };
+    return body.repositories.map(toRepoSummary);
   }
 
   async listRepos(auth: GithubAuth): Promise<GithubRepoSummary[]> {
@@ -104,17 +156,7 @@ export class GithubService implements OnModuleInit, PrPublisher {
     }
 
     const repos = await res.json();
-    return repos.map((r: any): GithubRepoSummary => ({
-      id: r.id,
-      owner: r.owner.login,
-      name: r.name,
-      fullName: r.full_name,
-      private: r.private,
-      description: r.description,
-      defaultBranch: r.default_branch,
-      updatedAt: r.updated_at,
-      htmlUrl: r.html_url,
-    }));
+    return repos.map(toRepoSummary);
   }
 
   async listBranches(auth: GithubAuth, owner: string, repo: string): Promise<string[]> {
@@ -429,6 +471,7 @@ export class GithubService implements OnModuleInit, PrPublisher {
   async publish(userId: string, context: Extract<PrContext, { kind: 'github' }>, feedback: PrFeedback): Promise<void> {
     // Reviews started by the GitHub App post as its bot; the rest as the user.
     const token = await this.requireToken(context.installationId ? { installationId: context.installationId } : userId);
+    if (!context.installationId) feedback = { ...feedback, viaUserAccount: { host: 'github' } };
     await this.postPrReview(token, context.owner, context.repo, context.pullNumber, context.headSha, feedback);
     // Only a GitHub App can create check runs; a personal token gets the older commit status.
     if (!context.installationId) {
@@ -572,7 +615,7 @@ export class GithubService implements OnModuleInit, PrPublisher {
         ...(at.end > at.start ? { start_line: at.start, start_side: 'RIGHT' } : {}),
         line: at.end,
         side: 'RIGHT',
-        body: inlineCommentBody(f, { at }),
+        body: inlineCommentBody(f, { at, viaUserAccount: Boolean(feedback.viaUserAccount) }),
       }));
 
     const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${pullNumber}/reviews`, {
@@ -961,3 +1004,17 @@ export interface GithubReviewComment {
 }
 
 export { buildSummaryBody };
+
+function toRepoSummary(r: any): GithubRepoSummary {
+  return {
+    id: r.id,
+    owner: r.owner.login,
+    name: r.name,
+    fullName: r.full_name,
+    private: r.private,
+    description: r.description,
+    defaultBranch: r.default_branch,
+    updatedAt: r.updated_at,
+    htmlUrl: r.html_url,
+  };
+}

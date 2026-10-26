@@ -48,6 +48,27 @@ export function commentLines(f: PrFeedbackFinding, ranges?: LineRange[]): { star
 }
 
 /**
+ * Drops the one-click replacement from findings whose lines overlap another
+ * finding in the same file. Each suggestion replaces its lines wholesale, so
+ * two of them over the same code conflict: accepting one would undo, or keep,
+ * the other's problem. The text and example patch still explain the fix.
+ */
+export function withoutConflictingReplacements<
+  T extends { path: string; line: number | null; endLine?: number | null; replacement?: string | null },
+>(findings: T[]): T[] {
+  const span = (f: T) => (f.line == null ? null : { start: f.line, end: f.endLine && f.endLine > f.line ? f.endLine : f.line });
+  return findings.map((f, i) => {
+    const a = span(f);
+    if (f.replacement == null || !a) return f;
+    const clash = findings.some((g, j) => {
+      const b = span(g);
+      return j !== i && g.path === f.path && b !== null && b.start <= a.end && a.start <= b.end;
+    });
+    return clash ? { ...f, replacement: null } : f;
+  });
+}
+
+/**
  * One finding as a review comment, CodeRabbit-style: a category and
  * severity line, the issue as a bold headline, what's wrong, why, how to fix
  * it (with the example patch as a highlighted code block), and a footer
@@ -55,9 +76,18 @@ export function commentLines(f: PrFeedbackFinding, ranges?: LineRange[]): { star
  */
 export function inlineCommentBody(
   f: PrFeedbackFinding,
-  opts: { plain?: boolean; at?: { start: number; end: number } | null } = {},
+  opts: {
+    plain?: boolean;
+    at?: { start: number; end: number } | null;
+    /** Posted through a person's own account: say plainly it's an automated review, not theirs. */
+    viaUserAccount?: boolean;
+  } = {},
 ): string {
-  const header = [f.category ? (CATEGORY[f.category] ?? f.category) : null, SEVERITY[f.severity] ?? f.severity]
+  const header = [
+    opts.viaUserAccount ? '🤖 Audit Bench Ai (automated)' : null,
+    f.category ? (CATEGORY[f.category] ?? f.category) : null,
+    SEVERITY[f.severity] ?? f.severity,
+  ]
     .filter(Boolean)
     .join(' | ');
   // Plain Markdown (Bitbucket) shows HTML as text, so no hidden marker there.

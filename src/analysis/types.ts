@@ -25,6 +25,12 @@ export interface SecretFinding {
   line: number;
   rule: string;
   snippet: string;
+  /**
+   * Same value for the same secret within one scan (a keyed hash, never the
+   * secret), so a key repeated across files is counted and rotated once.
+   * Absent on scans made before grouping existed.
+   */
+  fingerprint?: string;
 }
 
 /**

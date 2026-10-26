@@ -6,7 +6,13 @@ import { PrismaService } from '../prisma/prisma.service';
 import { GitlabMrDetails, GitlabMrFile, GitlabMrSummary, GitlabProjectSummary } from './gitlab.types';
 import { parseChangedRanges } from '../common/diff-ranges';
 import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
-import { PrContext, PrFeedback, PrPublisher, REVIEW_FOOTER } from '../pr-feedback/pr-feedback.types';
+import {
+  PrContext,
+  PrFeedback,
+  PrPublisher,
+  REVIEW_FOOTER,
+  automatedReviewNotice,
+} from '../pr-feedback/pr-feedback.types';
 import { inlineCommentBody } from '../pr-feedback/inline-comment';
 import { gitlabInstanceUrl } from '../common/gitlab-url';
 import { TokenCryptoService } from '../common/token-crypto.service';
@@ -350,6 +356,7 @@ export class GitlabService implements OnModuleInit, PrPublisher {
   /** PrPublisher — posts inline discussions + a summary note, and the merge-blocking commit status. */
   async publish(userId: string, context: Extract<PrContext, { kind: 'gitlab' }>, feedback: PrFeedback): Promise<void> {
     const token = await this.requireToken(userId);
+    feedback = { ...feedback, viaUserAccount: { host: 'gitlab' } };
     await this.postMrDiscussions(token, context.projectId, context.mrIid, context.diffRefs, feedback);
     await this.postMrNoteWithToken(token, context.projectId, context.mrIid, buildSummaryBody(feedback));
     await this.postCommitStatus(token, context.projectId, context.headSha, feedback);
@@ -364,7 +371,7 @@ export class GitlabService implements OnModuleInit, PrPublisher {
   ): Promise<void> {
     const inline = feedback.findings.filter((f) => f.line !== null).slice(0, 50);
     for (const f of inline) {
-      const body = inlineCommentBody(f);
+      const body = inlineCommentBody(f, { viaUserAccount: true });
       const res = await fetch(`${this.baseUrl()}/projects/${projectId}/merge_requests/${mrIid}/discussions`, {
         method: 'POST',
         headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
@@ -460,6 +467,7 @@ function buildSummaryBody(feedback: PrFeedback): string {
   const lines = [
     `### Audit Bench Ai review — ${verdictLabel}`,
     '',
+    ...(feedback.viaUserAccount ? [automatedReviewNotice(feedback.viaUserAccount), ''] : []),
     feedback.summary,
     '',
     countLine ? `**Findings:** ${countLine}` : '_No findings — all clear._',

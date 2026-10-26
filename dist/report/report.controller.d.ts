@@ -17,9 +17,9 @@ export declare class ReportController {
         outputTokens: number;
         findings: import("@prisma/client/runtime/library").JsonValue;
         stage1: import("@prisma/client/runtime/library").JsonValue | null;
-        filename: string;
         language: string | null;
         findingStatuses: import("@prisma/client/runtime/library").JsonValue | null;
+        filename: string;
         codeSize: number;
         kind: string;
     } | {
@@ -70,6 +70,7 @@ export declare class ReportController {
         testCoverage: import("@prisma/client/runtime/library").JsonValue | null;
         architectureAssessment: import("@prisma/client/runtime/library").JsonValue | null;
         contributorStats: import("@prisma/client/runtime/library").JsonValue | null;
+        skippedFiles: import("@prisma/client/runtime/library").JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
         inputTokens: number;

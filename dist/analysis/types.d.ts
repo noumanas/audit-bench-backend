@@ -22,6 +22,7 @@ export interface SecretFinding {
     line: number;
     rule: string;
     snippet: string;
+    fingerprint?: string;
 }
 export interface ContributorStat {
     author: string;

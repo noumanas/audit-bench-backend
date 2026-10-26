@@ -474,12 +474,20 @@ const CHECKS: CheckDef[] = [
     title: 'No cloud or payment provider tokens',
     domainId: 'secrets',
     severity: 'critical',
-    businessImpact: 'Live AWS, Stripe, GitHub or Slack tokens give direct access to infrastructure, money movement or source code.',
+    businessImpact: 'Live AWS, Azure, Stripe, Shopify, GitHub or Slack tokens give direct access to infrastructure, money movement, store data or source code.',
     run: (ctx) => {
       if (ctx.input.secrets == null) return { status: 'not_assessed', detail: 'Secret scanning did not run on this scan.' };
-      const providerRules = ['AWS Access Key', 'Slack Token', 'Stripe Live Key', 'GitHub Token'];
+      const providerRules = [
+        'AWS Access Key',
+        'Slack Token',
+        'Stripe Live Key',
+        'GitHub Token',
+        'Shopify Access Token',
+        'Azure Storage Account Key',
+        'Azure Shared Access Key',
+      ];
       const hits = (asArray(ctx.input.secrets) as Array<Record<string, unknown>>).filter((s) => providerRules.includes(str(s.rule)));
-      return zeroOf(hits, (s) => s.map((x) => ({ path: str(x.path), line: num(x.line), note: str(x.rule) })), 'provider token', 'No AWS, Stripe, GitHub or Slack tokens found.');
+      return zeroOf(hits, (s) => s.map((x) => ({ path: str(x.path), line: num(x.line), note: str(x.rule) })), 'provider token', 'No AWS, Azure, Stripe, Shopify, GitHub or Slack tokens found.');
     },
   },
   {

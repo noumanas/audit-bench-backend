@@ -25,7 +25,13 @@ export declare class GithubService implements OnModuleInit, PrPublisher {
     status(userId: string): Promise<{
         connected: boolean;
         username: string | null;
+        via: "token" | "app" | null;
+        appAccounts: string[];
     }>;
+    private linkedInstallations;
+    authFor(userId: string, owner: string): Promise<GithubAuth>;
+    listReposFor(userId: string): Promise<GithubRepoSummary[]>;
+    private listInstallationRepos;
     listRepos(auth: GithubAuth): Promise<GithubRepoSummary[]>;
     listBranches(auth: GithubAuth, owner: string, repo: string): Promise<string[]>;
     listPullRequests(auth: GithubAuth, owner: string, repo: string): Promise<GithubPrSummary[]>;

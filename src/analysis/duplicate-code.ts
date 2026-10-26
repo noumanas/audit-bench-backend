@@ -8,6 +8,14 @@ function normalize(line: string): string {
   return line.trim().replace(/\s+/g, ' ');
 }
 
+// Lines every file in a language shares: imports, braces, attributes,
+// namespace/region markers. A chunk of these is boilerplate, not duplication.
+const BOILERPLATE =
+  /^(using\s|import\s|from\s+\S+\s+import|#include|#region|#endregion|namespace\s|package\s|require\(|[{}()\[\];,]+$|\[[\w.]+(\(.*\))?\]$|\/\/|\*|\/\*|')/;
+
+/** Source code only: config, markup and resource files repeat by design. */
+const CODE_FILE = /\.(ts|tsx|js|jsx|mjs|cjs|py|go|java|kt|rb|php|cs|vb|fs|rs|swift|scala|c|cc|cpp|h)$/i;
+
 export function findDuplicates(files: ScannedFile[]): DuplicateGroup[] {
   const buckets = new Map<
     string,
@@ -15,12 +23,13 @@ export function findDuplicates(files: ScannedFile[]): DuplicateGroup[] {
   >();
 
   for (const file of files) {
+    if (!CODE_FILE.test(file.path)) continue;
     const lines = file.content.split('\n');
     for (let start = 0; start + CHUNK_LINES <= lines.length; start += CHUNK_LINES) {
       const chunk = lines.slice(start, start + CHUNK_LINES);
       const normalized = chunk.map(normalize);
-      const nonBlank = normalized.filter((l) => l.length > 0);
-      if (nonBlank.length < MIN_NON_BLANK_LINES) continue;
+      const meaningful = normalized.filter((l) => l.length > 0 && !BOILERPLATE.test(l));
+      if (meaningful.length < MIN_NON_BLANK_LINES) continue;
 
       const hash = createHash('sha1').update(normalized.join('\n')).digest('hex');
       const entry = { path: file.path, startLine: start + 1, endLine: start + CHUNK_LINES };

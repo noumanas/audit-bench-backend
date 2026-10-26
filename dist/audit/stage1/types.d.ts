@@ -18,6 +18,13 @@ export interface PythonFinding {
     message: string;
     severity: 'warning' | 'error';
 }
+export interface PatternFinding {
+    line: number;
+    ruleId: string;
+    title: string;
+    message: string;
+    severity: 'warning' | 'error';
+}
 export interface TsDiagnostic {
     line: number;
     message: string;
@@ -35,6 +42,7 @@ export interface FunctionRisk {
 export interface Stage1Result {
     lint: LintFinding[];
     python: PythonFinding[];
+    patterns?: PatternFinding[];
     tsDiagnostics: TsDiagnostic[];
     formatted: boolean;
     formattingSkipped: boolean;

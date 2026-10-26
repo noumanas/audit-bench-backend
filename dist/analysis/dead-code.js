@@ -7,6 +7,8 @@ const ENTRY_PATTERNS = [
     /(^|\/)app\//,
     /\.(test|spec)\.(ts|tsx|js|jsx)$/i,
     /\.d\.ts$/i,
+    /(^|\/)(wwwroot|public|static|assets)\//i,
+    /(^|\/)(site|main|app|bundle)\.js$/i,
 ];
 function isEntryLike(filePath) {
     return ENTRY_PATTERNS.some((re) => re.test(filePath));

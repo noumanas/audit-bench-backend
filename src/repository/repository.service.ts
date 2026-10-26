@@ -15,7 +15,8 @@ import { detectFramework } from '../analysis/framework-detector';
 import { buildDependencyGraph } from '../analysis/dependency-graph';
 import { findDeadCode } from '../analysis/dead-code';
 import { findDuplicates } from '../analysis/duplicate-code';
-import { scanSecrets } from '../analysis/secrets-scanner';
+import { scanSecrets, uniqueSecretCount } from '../analysis/secrets-scanner';
+import { MAX_SKIPPED_LISTED, SkippedFile, SkipReason, classifyNonAuthored } from '../analysis/generated-files';
 import { auditDependencies } from '../analysis/dependency-audit';
 import { auditLicenses } from '../analysis/license-audit';
 import { estimateTestCoverage } from '../analysis/test-coverage';
@@ -26,6 +27,7 @@ import {
 } from '../audit/architecture-detector';
 import { assessTdd } from './tdd-assessment';
 import { aggregateRisk } from './risk-aggregation';
+import { reconcileVerdict } from './reconcile-verdict';
 import { ScannedFile, ContributorStat } from '../analysis/types';
 import { LlmProviderName, ZERO_USAGE, addUsage } from '../common/types';
 import { worstVerdict } from '../common/verdict';
@@ -49,23 +51,67 @@ import {
   deterministicChecks,
   prInsightsSchema,
   reconcileReadiness,
+  softenWordingChecks,
 } from '../pr-feedback/pr-insights';
 import { PrContext, PrFeedback } from '../pr-feedback/pr-feedback.types';
+import { withoutConflictingReplacements } from '../pr-feedback/inline-comment';
 import { Finding, FindingStatus, FindingStatuses, FINDING_STATUSES } from '../common/finding.schema';
 import { RepoRef } from '../common/repo-ref.types';
 import { deriveRepoKey } from '../common/repo-key';
 import { WorkspaceActor, workspaceWhere, canViewResource } from '../common/workspace-scope';
 
-function selectFilesToAnalyze(files: ScannedFile[], max: number): ScannedFile[] {
+// Files a senior reviewer opens first: accounts, money and data access.
+const RISKY_PATH =
+  /(auth|login|logon|signin|signup|password|passwd|pwd|reset|token|session|oauth|permission|admin|payment|billing|invoice|checkout|discount|credit|refund|wallet|order|connectionstring|connection_string|secret|crypto|controller|function|handler|endpoint|api)/i;
+const DATA_FILE = /\.(json|ya?ml|prisma|sql)$/i;
+
+/**
+ * The files the review reads, riskiest first, and why each other file was
+ * left out — so a report says "97 not reviewed: 60 not source code, 37 over
+ * the file limit" instead of skipping them silently.
+ */
+function selectFilesToAnalyze(
+  files: ScannedFile[],
+  max: number,
+): { selected: ScannedFile[]; skipped: SkippedFile[] } {
+  const skipped: SkippedFile[] = [];
   const analyzable = files.filter((f) => {
     const ext = f.path.split('.').pop()?.toLowerCase();
-    return ext && ANALYZABLE_EXTENSIONS.has(ext);
+    const ok = Boolean(ext && ANALYZABLE_EXTENSIONS.has(ext));
+    if (!ok) skipped.push({ path: f.path, reason: 'not_source' });
+    return ok;
   });
 
-  // Prioritize likely-important source directories over config/scripts.
-  const priority = (p: string) => (/(^|\/)(src|app|pages|api|lib)\//.test(p) ? 0 : 1);
+  // Code before config and data files; within code, risky paths, then source directories.
+  const priority = (p: string) =>
+    (DATA_FILE.test(p) ? 4 : 0) + (RISKY_PATH.test(p.split('/').slice(-2).join('/')) ? 0 : 1) +
+    (/(^|\/)(src|app|pages|api|lib)\//.test(p) ? 0 : 1);
 
-  return analyzable.sort((a, b) => priority(a.path) - priority(b.path) || a.path.localeCompare(b.path)).slice(0, max);
+  const sorted = analyzable.sort((a, b) => priority(a.path) - priority(b.path) || a.path.localeCompare(b.path));
+  for (const f of sorted.slice(max)) skipped.push({ path: f.path, reason: 'file_limit' });
+  return { selected: sorted.slice(0, max), skipped };
+}
+
+/** Skipped files as stored on the scan: every count, and the paths up to MAX_SKIPPED_LISTED. */
+function skippedSummary(skipped: SkippedFile[]): Prisma.InputJsonValue {
+  const counts: Partial<Record<SkipReason, number>> = {};
+  for (const s of skipped) counts[s.reason] = (counts[s.reason] ?? 0) + 1;
+  return { counts, files: skipped.slice(0, MAX_SKIPPED_LISTED) } as unknown as Prisma.InputJsonValue;
+}
+
+/** Splits out generated and vendored files, recording each as skipped. */
+function partitionAuthored(files: ScannedFile[], skipped: SkippedFile[]) {
+  const authored: ScannedFile[] = [];
+  const generated: ScannedFile[] = [];
+  for (const f of files) {
+    const kind = classifyNonAuthored(f.path, f.content);
+    if (!kind) authored.push(f);
+    else {
+      skipped.push({ path: f.path, reason: kind });
+      if (kind === 'generated') generated.push(f);
+    }
+  }
+  return { authored, generated };
 }
 
 /** Extra behaviour for a scan that doesn't come from a signed-in user's own quota — see PublicScanService. */
@@ -106,9 +152,11 @@ interface JobDataBase {
   licenseFindings?: Prisma.InputJsonValue;
   testCoverage?: Prisma.InputJsonValue;
   contributorStats?: Prisma.InputJsonValue;
+  skippedFiles?: Prisma.InputJsonValue;
 }
 
 const REPO_WIDE_SOURCE_TYPES = new Set<ScanSourceType>(['zip', 'github_repo', 'gitlab_repo', 'bitbucket_repo']);
+
 
 @Injectable()
 export class RepositoryService {
@@ -173,21 +221,28 @@ export class RepositoryService {
     const maxFileSize = this.config.get<number>('MAX_FILE_SIZE_BYTES') || 200_000;
     const maxScanFiles = this.config.get<number>('MAX_SCAN_FILES') || 40;
 
+    const skipped: SkippedFile[] = [];
     // Free public scans run under the anonymous system account, which has no rules.
-    const extracted = extractZip(zipBuffer, maxFileSize);
+    const extracted = extractZip(zipBuffer, maxFileSize, skipped);
     const { rules, files } = await this.applyRules(actor, sourceName, sourceType, extracted, repoRulesFile(extracted));
+    const kept = new Set(files.map((f) => f.path));
+    for (const f of extracted) if (!kept.has(f.path)) skipped.push({ path: f.path, reason: 'ignored_by_rule' });
+    // Generated and vendored code is left out of every check by default; generated files are still searched for secrets.
+    const { authored, generated } = partitionAuthored(files, skipped);
     const framework = detectFramework(files);
-    const { graph, circular } = buildDependencyGraph(files);
-    const deadCode = findDeadCode(files, graph);
-    const duplicates = findDuplicates(files);
-    const secrets = scanSecrets(files);
-    const testCoverage = estimateTestCoverage(files);
+    const { graph, circular } = buildDependencyGraph(authored);
+    const deadCode = findDeadCode(authored, graph);
+    const duplicates = findDuplicates(authored);
+    const secrets = scanSecrets([...authored, ...generated]);
+    const testCoverage = estimateTestCoverage(authored);
     const [dependencyVulnerabilities, licenseFindings] = await Promise.all([
       auditDependencies(files),
       auditLicenses(files),
     ]);
-    const filesToAnalyze = selectFilesToAnalyze(files, maxScanFiles);
-    const repoContext = `Detected framework: ${framework || 'unknown'}. Repository has ${files.length} files total; ${filesToAnalyze.length} selected for review.`;
+    const selection = selectFilesToAnalyze(authored, maxScanFiles);
+    skipped.push(...selection.skipped);
+    const filesToAnalyze = selection.selected;
+    const repoContext = `Detected framework: ${framework || 'unknown'}. Repository has ${files.length} files total; ${filesToAnalyze.length} selected for review, riskiest first.`;
 
     const job = await this.gateAndCreateJob(
       actor,
@@ -208,6 +263,7 @@ export class RepositoryService {
         licenseFindings: licenseFindings as unknown as Prisma.InputJsonValue,
         testCoverage: testCoverage as unknown as Prisma.InputJsonValue,
         ...(contributorStats ? { contributorStats: contributorStats as unknown as Prisma.InputJsonValue } : {}),
+        skippedFiles: skippedSummary(skipped),
         localOnly: opts.localOnly,
         isPublic: opts.isPublic,
         shareId: opts.shareId,
@@ -261,12 +317,19 @@ export class RepositoryService {
       repoRulesFile(files) ?? repoRulesFile(opts.repoFiles ?? []),
     );
     const rules = scoped.rules;
-    const analyzable = scoped.files
-      .filter((f) => {
-        const ext = f.path.split('.').pop()?.toLowerCase();
-        return Boolean(ext && ANALYZABLE_EXTENSIONS.has(ext) && f.content.length <= maxFileSize);
-      })
-      .slice(0, maxScanFiles);
+    const skipped: SkippedFile[] = [];
+    const kept = new Set(scoped.files.map((f) => f.path));
+    for (const f of files) if (!kept.has(f.path)) skipped.push({ path: f.path, reason: 'ignored_by_rule' });
+    const { authored } = partitionAuthored(scoped.files, skipped);
+    const analyzable = authored.filter((f) => {
+      const ext = f.path.split('.').pop()?.toLowerCase();
+      if (!ext || !ANALYZABLE_EXTENSIONS.has(ext)) skipped.push({ path: f.path, reason: 'not_source' });
+      else if (f.content.length > maxFileSize) skipped.push({ path: f.path, reason: 'too_large' });
+      else return true;
+      return false;
+    });
+    for (const f of analyzable.slice(maxScanFiles)) skipped.push({ path: f.path, reason: 'file_limit' });
+    analyzable.splice(maxScanFiles);
     // Only worth computing when the AI will read it.
     if (opts.repoFiles?.length && !opts.localOnly) {
       for (const f of analyzable) f.relatedContext = relatedContextFor(f, opts.repoFiles) || undefined;
@@ -289,6 +352,7 @@ export class RepositoryService {
         ) as unknown as Prisma.InputJsonValue,
         fileCount: analyzable.length,
         secrets: secrets as unknown as Prisma.InputJsonValue,
+        skippedFiles: skippedSummary(skipped),
         localOnly: opts.localOnly,
         isPublic: opts.isPublic,
         shareId: opts.shareId,
@@ -452,6 +516,7 @@ export class RepositoryService {
 
       const job = await this.prisma.scanJob.findUniqueOrThrow({ where: { id: jobId } });
       const secretsCount = Array.isArray(job.secrets) ? job.secrets.length : 0;
+      const uniqueSecrets = uniqueSecretCount(job.secrets);
 
       // A repo-level judgment, not a per-file one — can't ride the
       // per-file "only escalate risky code" free-tier logic above. Only
@@ -494,7 +559,7 @@ export class RepositoryService {
             }),
             prInsightsSchema,
           );
-          prInsights = result;
+          prInsights = softenWordingChecks(result);
           totalUsage = addUsage(totalUsage, usage);
         } catch (err) {
           this.logger.warn(`PR insights failed for scan ${jobId}: ${(err as Error).message}`);
@@ -521,13 +586,30 @@ export class RepositoryService {
             .map((f) => f.path)
             .join(', ')}${failures.length > 3 ? ', …' : ''}): ${failures[0].reason}`
         : '';
-      const summary = `Reviewed ${succeeded.length}/${files.length} files (of ${job.fileCount} total) — ${filesFromCache} from cache, ${filesAiSkipped} needed no AI review. Found ${totalFindings} finding(s),${crossFileNote} ${secretsCount} potential secret(s).${failureNote}`;
+      // The headline verdict must agree with the risk assessment shown under it:
+      // never "pass" with exposed secrets or a high overall risk rating.
+      const { verdict, reasons: verdictReasons } = reconcileVerdict(overallVerdict, {
+        uniqueSecrets,
+        risk: REPO_WIDE_SOURCE_TYPES.has(job.sourceType)
+          ? aggregateRisk({
+              ...job,
+              files: succeeded.map((r) => ({ findings: r.findings })),
+              architectureAssessment,
+            })
+          : null,
+      });
+      const aiReviewed = succeeded.length - filesFromCache - filesAiSkipped;
+      const secretNote =
+        secretsCount > 0
+          ? ` ${uniqueSecrets} distinct potential secret(s) in ${secretsCount} place(s).`
+          : ' No secrets found.';
+      const summary = `Reviewed ${succeeded.length}/${files.length} selected files (of ${job.fileCount} total): ${aiReviewed} reviewed by AI, ${filesFromCache} from cache, ${filesAiSkipped} passed local checks with nothing risky enough to send to AI. Found ${totalFindings} finding(s),${crossFileNote}${secretNote}${failureNote}${verdictReasons.length ? ` Verdict set by: ${verdictReasons.join('; ')}.` : ''}`;
 
       await this.prisma.scanJob.update({
         where: { id: jobId },
         data: {
           status: 'completed',
-          verdict: overallVerdict,
+          verdict,
           summary,
           filesFromCache,
           filesAiSkipped,
@@ -590,7 +672,7 @@ export class RepositoryService {
   async buildPrFeedback(jobId: string, scanUrl?: string): Promise<PrFeedback> {
     const job = await this.prisma.scanJob.findUniqueOrThrow({ where: { id: jobId }, include: { files: true } });
     const snapshot = job.sourceType === 'github_pr' ? (job.prSnapshot as unknown as PrSnapshot | null) : null;
-    const findings = job.files.flatMap((file) =>
+    const findings = withoutConflictingReplacements(job.files.flatMap((file) =>
       ((Array.isArray(file.findings) ? file.findings : []) as unknown as Finding[]).map((f) => ({
         path: file.path,
         line: f.line,
@@ -605,7 +687,7 @@ export class RepositoryService {
         replacement: f.replacement ?? null,
         confidence: f.confidence,
       })),
-    );
+    ));
     const insights = (job.prInsights ?? undefined) as PrInsights | undefined;
     const checks = snapshot
       ? deterministicChecks(snapshot, {

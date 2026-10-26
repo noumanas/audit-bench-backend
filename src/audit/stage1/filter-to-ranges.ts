@@ -14,6 +14,7 @@ export function filterStage1ToRanges(stage1: Stage1Result, ranges: LineRange[]):
   const tsDiagnostics = stage1.tsDiagnostics.filter((d) => overlapsAny(d.line, d.line, ranges));
   const lint = stage1.lint.filter((l) => overlapsAny(l.line, l.line, ranges));
   const python = stage1.python.filter((p) => overlapsAny(p.line, p.line, ranges));
+  const patterns = (stage1.patterns ?? []).filter((p) => overlapsAny(p.line, p.line, ranges));
   const semgrep = stage1.semgrep.skipped
     ? stage1.semgrep
     : { skipped: false as const, findings: stage1.semgrep.findings.filter((f) => overlapsAny(f.line, f.line, ranges)) };
@@ -24,9 +25,15 @@ export function filterStage1ToRanges(stage1: Stage1Result, ranges: LineRange[]):
     ...stage1,
     lint,
     python,
+    patterns,
     tsDiagnostics,
     semgrep,
     riskyFunctions,
-    clean: riskyFunctions.length === 0 && tsDiagnostics.length === 0 && python.length === 0 && !semgrepFlagged,
+    clean:
+      riskyFunctions.length === 0 &&
+      tsDiagnostics.length === 0 &&
+      python.length === 0 &&
+      !patterns.some((p) => p.severity === 'error') &&
+      !semgrepFlagged,
   };
 }

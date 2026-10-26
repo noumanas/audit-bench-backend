@@ -280,6 +280,7 @@ let GitlabService = class GitlabService {
     }
     async publish(userId, context, feedback) {
         const token = await this.requireToken(userId);
+        feedback = { ...feedback, viaUserAccount: { host: 'gitlab' } };
         await this.postMrDiscussions(token, context.projectId, context.mrIid, context.diffRefs, feedback);
         await this.postMrNoteWithToken(token, context.projectId, context.mrIid, buildSummaryBody(feedback));
         await this.postCommitStatus(token, context.projectId, context.headSha, feedback);
@@ -287,7 +288,7 @@ let GitlabService = class GitlabService {
     async postMrDiscussions(token, projectId, mrIid, diffRefs, feedback) {
         const inline = feedback.findings.filter((f) => f.line !== null).slice(0, 50);
         for (const f of inline) {
-            const body = (0, inline_comment_1.inlineCommentBody)(f);
+            const body = (0, inline_comment_1.inlineCommentBody)(f, { viaUserAccount: true });
             const res = await fetch(`${this.baseUrl()}/projects/${projectId}/merge_requests/${mrIid}/discussions`, {
                 method: 'POST',
                 headers: { ...this.authHeaders(token), 'Content-Type': 'application/json' },
@@ -369,6 +370,7 @@ function buildSummaryBody(feedback) {
     const lines = [
         `### Audit Bench Ai review — ${verdictLabel}`,
         '',
+        ...(feedback.viaUserAccount ? [(0, pr_feedback_types_1.automatedReviewNotice)(feedback.viaUserAccount), ''] : []),
         feedback.summary,
         '',
         countLine ? `**Findings:** ${countLine}` : '_No findings — all clear._',

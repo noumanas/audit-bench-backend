@@ -74,6 +74,22 @@ export interface PrFeedback {
   local?: boolean;
   /** GitHub PR reviews with a snapshot — conflicts, CI and blockers, rendered at the top of the summary. */
   readiness?: MergeReadiness;
+  /**
+   * Set by the publisher when the review posts through a person's own token
+   * rather than the Audit Bench Ai GitHub App's bot, so every comment says it
+   * is automated and not that person's own review.
+   */
+  viaUserAccount?: { host: 'github' | 'gitlab' | 'bitbucket' };
+}
+
+/** Where users install the GitHub App so reviews post as its bot instead of their account. */
+export const GITHUB_APP_SETUP_URL = 'https://auditbenchai.com/app/repository?source=github&utm_source=pr_review';
+
+/** The line under a review's heading when it was posted through someone's own account. */
+export function automatedReviewNotice(via: NonNullable<PrFeedback['viaUserAccount']>): string {
+  return via.host === 'github'
+    ? `> 🤖 **Automated review by Audit Bench Ai**, not a personal review. It was posted through the GitHub account connected to Audit Bench Ai. [Install the Audit Bench Ai GitHub App](${GITHUB_APP_SETUP_URL}) to have reviews posted by a separate bot account.`
+    : '> 🤖 **Automated review by Audit Bench Ai**, not a personal review. It was posted through the account connected to Audit Bench Ai.';
 }
 
 export interface PrPublisher {

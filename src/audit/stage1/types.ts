@@ -22,6 +22,15 @@ export interface PythonFinding {
   severity: 'warning' | 'error';
 }
 
+/** A line-level rule hit for languages without a linter in Stage 1 — see pattern-check.ts. */
+export interface PatternFinding {
+  line: number;
+  ruleId: string;
+  title: string;
+  message: string;
+  severity: 'warning' | 'error';
+}
+
 export interface TsDiagnostic {
   line: number;
   message: string;
@@ -42,6 +51,8 @@ export interface FunctionRisk {
 export interface Stage1Result {
   lint: LintFinding[];
   python: PythonFinding[];
+  /** Absent on results cached before pattern checks existed. */
+  patterns?: PatternFinding[];
   tsDiagnostics: TsDiagnostic[];
   formatted: boolean;
   formattingSkipped: boolean;

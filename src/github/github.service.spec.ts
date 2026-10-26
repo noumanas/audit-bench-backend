@@ -122,7 +122,9 @@ describe('GithubService.publish', () => {
     });
     expect(review.comments[1]).toMatchObject({ line: 240, side: 'RIGHT' });
     expect(review.comments[1].start_line).toBeUndefined();
-    expect(review.comments[0].body).toContain('**🟡 Medium**\n\n**Range**');
+    // Posted through the user's own token: every comment says it's an automated review, not theirs.
+    expect(review.comments[0].body).toContain('**🤖 Audit Bench Ai (automated) | 🟡 Medium**\n\n**Range**');
+    expect(review.body).toContain('Automated review by Audit Bench Ai');
   });
 });
 

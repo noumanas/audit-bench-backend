@@ -24,6 +24,7 @@ import { ANALYZABLE_EXTENSIONS } from '../common/language';
 import { ScannedFile } from '../analysis/types';
 import { PrSnapshot, readinessForScan } from '../common/merge-readiness';
 import { GithubPull, fetchCiChecks, refetchIfMergeabilityPending, toPrSnapshot } from '../common/github-pr-snapshot';
+import { uniqueSecretCount } from '../analysis/secrets-scanner';
 
 const GITHUB_API = 'https://api.github.com';
 const SYSTEM_EMAIL = 'public-scans@system.auditbenchai.local';
@@ -459,7 +460,8 @@ export class PublicScanService {
       createdAt: job.createdAt,
       completedAt: job.completedAt,
       riskAggregation,
-      secrets: secrets ? { count: secrets.length, types: secretTypes } : null,
+      // Distinct keys, not places: one key pasted in ten files is one key to rotate.
+      secrets: secrets ? { count: uniqueSecretCount(secrets), types: secretTypes } : null,
       dependencyVulnerabilities: job.dependencyVulnerabilities,
       licenseFindings: job.licenseFindings,
       testCoverage: job.testCoverage,

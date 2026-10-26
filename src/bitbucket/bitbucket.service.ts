@@ -225,6 +225,7 @@ export class BitbucketService implements OnModuleInit, PrPublisher {
     feedback: PrFeedback,
   ): Promise<void> {
     const token = await this.requireToken(userId);
+    feedback = { ...feedback, viaUserAccount: { host: 'bitbucket' } };
     const base = `${API}/repositories/${context.workspace}/${context.repoSlug}`;
     const post = (path: string, body: unknown) =>
       fetch(`${base}${path}`, {
@@ -239,7 +240,7 @@ export class BitbucketService implements OnModuleInit, PrPublisher {
       const at = commentLines(f, feedback.changedRanges?.[f.path]);
       if (!at) continue;
       const res = await post(`/pullrequests/${context.pullId}/comments`, {
-        content: { raw: inlineCommentBody(f, { plain: true }) },
+        content: { raw: inlineCommentBody(f, { plain: true, viaUserAccount: true }) },
         inline: { path: f.path, to: at.start },
       });
       if (res.ok) posted++;

@@ -1,5 +1,6 @@
 import AdmZip = require('adm-zip');
 import { ScannedFile } from './types';
+import { SkippedFile } from './generated-files';
 
 const IGNORED_DIR_SEGMENTS = new Set([
   'node_modules',
@@ -46,14 +47,16 @@ function declaredUncompressedSize(entry: AdmZip.IZipEntry): number {
   return Number.isFinite(size) ? size : Infinity; // fail closed if unparseable
 }
 
-function isIgnoredPath(relativePath: string): boolean {
+/** Why a path is dropped before reading it; null to keep it. Only reasons worth showing the user are named. */
+function ignoredReason(relativePath: string): SkippedFile['reason'] | 'silent' | null {
   const segments = relativePath.split('/');
-  if (segments.some((s) => IGNORED_DIR_SEGMENTS.has(s))) return true;
+  if (segments.includes('vendor')) return 'vendor';
+  if (segments.some((s) => IGNORED_DIR_SEGMENTS.has(s))) return 'silent';
   const filename = segments[segments.length - 1];
-  if (IGNORED_FILENAMES.has(filename)) return true;
+  if (IGNORED_FILENAMES.has(filename)) return 'generated';
   const ext = filename.split('.').pop()?.toLowerCase();
-  if (ext && BINARY_EXTENSIONS.has(ext)) return true;
-  return false;
+  if (ext && BINARY_EXTENSIONS.has(ext)) return 'binary';
+  return null;
 }
 
 /** Strips the single top-level directory zip tools add (e.g. "my-repo-main/"). */
@@ -62,7 +65,12 @@ function stripRootPrefix(entries: { entryName: string }[]): string | null {
   return tops.size === 1 ? [...tops][0] : null;
 }
 
-export function extractZip(buffer: Buffer, maxFileSizeBytes: number): ScannedFile[] {
+/**
+ * Text files in the archive, minus dependencies, build output and binaries.
+ * Pass `skipped` to collect what was left out and why (build output such
+ * as node_modules and dist is left out without a note).
+ */
+export function extractZip(buffer: Buffer, maxFileSizeBytes: number, skipped?: SkippedFile[]): ScannedFile[] {
   const zip = new AdmZip(buffer);
   const entries = zip.getEntries().filter((e) => !e.isDirectory);
   const rootPrefix = stripRootPrefix(entries);
@@ -77,18 +85,34 @@ export function extractZip(buffer: Buffer, maxFileSizeBytes: number): ScannedFil
     if (rootPrefix && relativePath.startsWith(`${rootPrefix}/`)) {
       relativePath = relativePath.slice(rootPrefix.length + 1);
     }
-    if (!relativePath || isIgnoredPath(relativePath)) continue;
+    if (!relativePath) continue;
+    const ignored = ignoredReason(relativePath);
+    if (ignored) {
+      if (ignored !== 'silent') skipped?.push({ path: relativePath, reason: ignored });
+      continue;
+    }
 
     const declaredSize = declaredUncompressedSize(entry);
-    if (declaredSize === 0 || declaredSize > maxFileSizeBytes) continue;
+    if (declaredSize === 0) continue;
+    if (declaredSize > maxFileSizeBytes) {
+      skipped?.push({ path: relativePath, reason: 'too_large' });
+      continue;
+    }
     if (totalDecompressedBytes + declaredSize > MAX_TOTAL_DECOMPRESSED_BYTES) break;
 
     const data = entry.getData(); // safe now — declaredSize already bounded above
     totalDecompressedBytes += data.length;
-    if (data.length === 0 || data.length > maxFileSizeBytes) continue;
+    if (data.length === 0) continue;
+    if (data.length > maxFileSizeBytes) {
+      skipped?.push({ path: relativePath, reason: 'too_large' });
+      continue;
+    }
 
     // Skip files that don't look like text (contain a NUL byte in the first 1KB).
-    if (data.subarray(0, 1024).includes(0)) continue;
+    if (data.subarray(0, 1024).includes(0)) {
+      skipped?.push({ path: relativePath, reason: 'binary' });
+      continue;
+    }
 
     files.push({ path: relativePath, content: data.toString('utf8') });
   }

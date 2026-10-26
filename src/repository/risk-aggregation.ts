@@ -1,3 +1,5 @@
+import { uniqueSecretCount } from '../analysis/secrets-scanner';
+
 export type RiskLevel = 'high' | 'medium' | 'low';
 
 export interface RiskCategoryScore {
@@ -10,6 +12,8 @@ export interface RemediationItem {
   category: string;
   description: string;
   estimatedDays: number;
+  /** How estimatedDays was worked out, e.g. "3 critical × 1.5 days + 2 high × 0.75 days", so a reader can check it. */
+  basis: string;
 }
 
 export interface RiskAggregation {
@@ -22,6 +26,8 @@ export interface RiskAggregation {
     totalEstimatedDays: number;
     estimatedCostLowUsd: number;
     estimatedCostHighUsd: number;
+    /** How days become dollars, and what the estimate leaves out. */
+    rateBasis: string;
   };
   /** Qualitative follow-ups that aren't naturally an engineer-day estimate (e.g. talent retention, legal review). */
   recommendations: string[];
@@ -84,7 +90,8 @@ function asArray(value: unknown): unknown[] {
 function scoreSecurity(input: ScanJobRiskInput): RiskCategoryScore {
   const allFindings = input.files.flatMap((f) => asArray(f.findings));
   const counts = severityCounts(allFindings as Array<{ severity?: unknown }>);
-  const secretsCount = asArray(input.secrets).length;
+  const secretsCount = uniqueSecretCount(input.secrets);
+  const secretPlaces = asArray(input.secrets).length;
 
   let riskLevel: RiskLevel;
   if (counts.critical > 0 || secretsCount > 0 || counts.high >= 3) riskLevel = 'high';
@@ -94,7 +101,7 @@ function scoreSecurity(input: ScanJobRiskInput): RiskCategoryScore {
   return {
     category: 'Security',
     riskLevel,
-    detail: `${counts.critical} critical, ${counts.high} high, ${counts.medium} medium finding(s); ${secretsCount} potential secret(s).`,
+    detail: `${counts.critical} critical, ${counts.high} high, ${counts.medium} medium finding(s); ${secretsCount} distinct potential secret(s)${secretPlaces > secretsCount ? ` in ${secretPlaces} places` : ''}.`,
   };
 }
 
@@ -172,10 +179,14 @@ function scoreTalentConcentration(input: ScanJobRiskInput): RiskCategoryScore & 
   const top = stats.reduce((a, b) => ((a.commits ?? 0) >= (b.commits ?? 0) ? a : b));
   const topShare = (top.commits ?? 0) / total;
   const riskLevel: RiskLevel = topShare >= 0.5 ? 'high' : topShare >= 0.3 ? 'medium' : 'low';
+  const contributors = stats.filter((s) => (s.commits ?? 0) > 0).length;
   return {
     category: 'Talent concentration',
     riskLevel,
-    detail: `${top.author ?? 'unknown'} authored ${Math.round(topShare * 100)}% of commits.`,
+    detail:
+      contributors === 1
+        ? `${top.author ?? 'One person'} wrote every commit. Expected for a solo project; it only matters if the code changes hands or the team grows.`
+        : `${top.author ?? 'unknown'} authored ${Math.round(topShare * 100)}% of commits.`,
     topContributor: top.author,
     topShare,
   };
@@ -262,19 +273,21 @@ function estimateRemediation(
 
   const allFindings = input.files.flatMap((f) => asArray(f.findings)) as Array<{ severity?: unknown }>;
   const secCounts = severityCounts(allFindings);
-  const secretsCount = asArray(input.secrets).length;
+  const secretsCount = uniqueSecretCount(input.secrets);
   if (security.riskLevel && (secCounts.critical || secCounts.high || secCounts.medium)) {
     items.push({
       category: 'Security findings',
       description: `${secCounts.critical} critical, ${secCounts.high} high, ${secCounts.medium} medium finding(s) to fix.`,
       estimatedDays: clamp(secCounts.critical * 1.5 + secCounts.high * 0.75 + secCounts.medium * 0.25, 0, 90),
+      basis: `${secCounts.critical} critical × 1.5 days + ${secCounts.high} high × 0.75 days + ${secCounts.medium} medium × 0.25 days (max 90)`,
     });
   }
   if (secretsCount > 0) {
     items.push({
       category: 'Exposed secrets',
-      description: `Rotate credentials and scrub ${secretsCount} potential secret(s) from history.`,
-      estimatedDays: clamp(secretsCount * 0.1, 0.25, 5),
+      description: `Rotate ${secretsCount} distinct credential(s), move them to configuration or a secrets vault, and scrub them from git history.`,
+      estimatedDays: clamp(secretsCount * 0.25, 0.25, 5),
+      basis: `${secretsCount} distinct secret(s) × 0.25 days each to rotate, move and scrub (min 0.25, max 5)`,
     });
   }
 
@@ -284,6 +297,7 @@ function estimateRemediation(
       category: 'Dependency vulnerabilities',
       description: `${depCounts.critical + depCounts.high} critical/high, ${depCounts.medium} medium vulnerable dependency version(s) to bump.`,
       estimatedDays: clamp((depCounts.critical + depCounts.high) * 0.25 + depCounts.medium * 0.1, 0, 30),
+      basis: `${depCounts.critical + depCounts.high} critical/high × 0.25 days + ${depCounts.medium} medium × 0.1 days per version bump (max 30)`,
     });
   }
 
@@ -296,6 +310,7 @@ function estimateRemediation(
       category: 'License compliance',
       description: `Replace or get legal sign-off on ${high} high-risk, ${medium} medium-risk dependency license(s).`,
       estimatedDays: clamp(high * 1 + medium * 0.5 + low * 0.1, 0, 20),
+      basis: `${high} high × 1 day + ${medium} medium × 0.5 days + ${low} low × 0.1 days (max 20)`,
     });
   }
 
@@ -307,6 +322,7 @@ function estimateRemediation(
       category: 'Structural debt',
       description: `Break ${circularCount} circular import chain(s), remove ${deadCodeCount} dead file(s), consolidate ${duplicatesCount} duplicate block(s).`,
       estimatedDays: clamp(circularCount * 0.5 + deadCodeCount * 0.1 + duplicatesCount * 0.3, 0, 20),
+      basis: `${circularCount} circular chain(s) × 0.5 days + ${deadCodeCount} dead file(s) × 0.1 days + ${duplicatesCount} duplicate block(s) × 0.3 days (max 20)`,
     });
   }
 
@@ -316,6 +332,7 @@ function estimateRemediation(
       category: 'Test coverage',
       description: `Bring untested modules up to a baseline coverage standard (test-coverage risk: ${testCoverage.riskLevel}).`,
       estimatedDays: testCoverage.riskLevel === 'high' ? 15 : 6,
+      basis: `Flat estimate for a ${testCoverage.riskLevel} test-coverage risk: 15 days if high, 6 if medium`,
     });
   }
 
@@ -327,6 +344,7 @@ function estimateRemediation(
       category: 'Architecture inconsistencies',
       description: `Reconcile ${inconsistencyCount} identified architectural inconsistency/inconsistencies.`,
       estimatedDays: clamp(inconsistencyCount * 2, 0, 20),
+      basis: `${inconsistencyCount} inconsistency/inconsistencies × 2 days (max 20)`,
     });
   }
 
@@ -340,6 +358,7 @@ function estimateRemediation(
     totalEstimatedDays,
     estimatedCostLowUsd: Math.round(totalEstimatedDays * DAY_RATE_LOW_USD),
     estimatedCostHighUsd: Math.round(totalEstimatedDays * DAY_RATE_HIGH_USD),
+    rateBasis: `Engineer-days × a blended rate of $${DAY_RATE_LOW_USD}–$${DAY_RATE_HIGH_USD} per day. A planning range from fixed per-finding allowances, not a quote: it doesn't include review, QA or deployment time.`,
   };
 }
 
@@ -350,10 +369,12 @@ function buildRecommendations(
   talentConcentration: RiskCategoryScore & { topContributor?: string; topShare?: number },
 ): string[] {
   const recommendations: string[] = [];
-  const secretsCount = asArray(input.secrets).length;
+  const secretsCount = uniqueSecretCount(input.secrets);
 
   if (secretsCount > 0) {
-    recommendations.push(`Rotate exposed credentials immediately — do not wait for the full remediation pass (${secretsCount} potential secret(s) found).`);
+    recommendations.push(
+      `Rotate exposed credentials immediately — do not wait for the full remediation pass (${secretsCount} distinct potential secret(s) found). Even keys that look expired should be revoked at the provider and removed from git history.`,
+    );
   }
   if (talentConcentration.riskLevel === 'high' && talentConcentration.topContributor) {
     recommendations.push(

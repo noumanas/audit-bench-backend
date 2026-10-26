@@ -7,6 +7,7 @@ function filterStage1ToRanges(stage1, ranges) {
     const tsDiagnostics = stage1.tsDiagnostics.filter((d) => (0, diff_ranges_1.overlapsAny)(d.line, d.line, ranges));
     const lint = stage1.lint.filter((l) => (0, diff_ranges_1.overlapsAny)(l.line, l.line, ranges));
     const python = stage1.python.filter((p) => (0, diff_ranges_1.overlapsAny)(p.line, p.line, ranges));
+    const patterns = (stage1.patterns ?? []).filter((p) => (0, diff_ranges_1.overlapsAny)(p.line, p.line, ranges));
     const semgrep = stage1.semgrep.skipped
         ? stage1.semgrep
         : { skipped: false, findings: stage1.semgrep.findings.filter((f) => (0, diff_ranges_1.overlapsAny)(f.line, f.line, ranges)) };
@@ -15,10 +16,15 @@ function filterStage1ToRanges(stage1, ranges) {
         ...stage1,
         lint,
         python,
+        patterns,
         tsDiagnostics,
         semgrep,
         riskyFunctions,
-        clean: riskyFunctions.length === 0 && tsDiagnostics.length === 0 && python.length === 0 && !semgrepFlagged,
+        clean: riskyFunctions.length === 0 &&
+            tsDiagnostics.length === 0 &&
+            python.length === 0 &&
+            !patterns.some((p) => p.severity === 'error') &&
+            !semgrepFlagged,
     };
 }
 //# sourceMappingURL=filter-to-ranges.js.map

@@ -37,6 +37,20 @@ export function stage1ToFindings(stage1: Stage1Result): Finding[] {
     });
   }
 
+  for (const p of stage1.patterns ?? []) {
+    findings.push({
+      severity: p.severity === 'error' ? 'high' : 'medium',
+      category: p.ruleId.startsWith('errors/') ? 'Logic' : 'Security',
+      title: p.title,
+      line: p.line || null,
+      description: p.message,
+      rootCause: `Matched the local rule ${p.ruleId}.`,
+      suggestedFix: p.message,
+      examplePatch: null,
+      confidence: p.severity === 'error' ? 0.85 : 0.7,
+    });
+  }
+
   for (const l of stage1.lint) {
     if (l.severity !== 'error') continue;
     findings.push({

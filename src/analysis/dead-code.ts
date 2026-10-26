@@ -6,6 +6,9 @@ const ENTRY_PATTERNS = [
   /(^|\/)app\//, // Next.js app router
   /\.(test|spec)\.(ts|tsx|js|jsx)$/i,
   /\.d\.ts$/i,
+  // Loaded by a <script> tag or the framework, never imported: not dead because nothing imports them.
+  /(^|\/)(wwwroot|public|static|assets)\//i,
+  /(^|\/)(site|main|app|bundle)\.js$/i,
 ];
 
 function isEntryLike(filePath: string): boolean {

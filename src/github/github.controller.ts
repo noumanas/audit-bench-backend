@@ -35,26 +35,28 @@ export class GithubController {
 
   @Get('repos')
   listRepos(@CurrentUser() user: RequestUser) {
-    return this.githubService.listRepos(user.id);
+    return this.githubService.listReposFor(user.id);
   }
 
   @Get('repos/:owner/:repo/branches')
-  listBranches(@CurrentUser() user: RequestUser, @Param('owner') owner: string, @Param('repo') repo: string) {
-    return this.githubService.listBranches(user.id, owner, repo);
+  async listBranches(@CurrentUser() user: RequestUser, @Param('owner') owner: string, @Param('repo') repo: string) {
+    return this.githubService.listBranches(await this.githubService.authFor(user.id, owner), owner, repo);
   }
 
   @Get('repos/:owner/:repo/pulls')
-  listPullRequests(@CurrentUser() user: RequestUser, @Param('owner') owner: string, @Param('repo') repo: string) {
-    return this.githubService.listPullRequests(user.id, owner, repo);
+  async listPullRequests(@CurrentUser() user: RequestUser, @Param('owner') owner: string, @Param('repo') repo: string) {
+    return this.githubService.listPullRequests(await this.githubService.authFor(user.id, owner), owner, repo);
   }
 
   @Post('scan')
   async scan(@CurrentUser() user: RequestUser, @Body() dto: ScanRepoDto) {
-    const { defaultBranch } = await this.githubService.getRepoMeta(user.id, dto.owner, dto.repo);
+    // A token, or the GitHub App installation that only sees the repositories the user picked.
+    const auth = await this.githubService.authFor(user.id, dto.owner);
+    const { defaultBranch } = await this.githubService.getRepoMeta(auth, dto.owner, dto.repo);
     const ref = dto.ref || defaultBranch;
     const [zipBuffer, contributorStats] = await Promise.all([
-      this.githubService.downloadRepoZip(user.id, dto.owner, dto.repo, dto.ref),
-      this.githubService.fetchContributorStats(user.id, dto.owner, dto.repo),
+      this.githubService.downloadRepoZip(auth, dto.owner, dto.repo, ref),
+      this.githubService.fetchContributorStats(auth, dto.owner, dto.repo),
     ]);
     return this.repositoryService.createScanJobFromBuffer(
       user,
@@ -69,8 +71,9 @@ export class GithubController {
 
   @Post('pr')
   async reviewPr(@CurrentUser() user: RequestUser, @Body() dto: ReviewPrDto) {
+    const auth = await this.githubService.authFor(user.id, dto.owner);
     const { files, url, headSha, headRef, baseRef, snapshot, repoFiles } = await this.githubService.fetchPrFiles(
-      user.id,
+      auth,
       dto.owner,
       dto.repo,
       dto.pullNumber,
@@ -92,6 +95,8 @@ export class GithubController {
           headSha,
           headRef,
           baseRef,
+          // Reached through the App: its bot posts the review, not the user.
+          ...(typeof auth === 'string' ? {} : { installationId: auth.installationId }),
         },
       },
       { prSnapshot: snapshot, repoFiles },
@@ -111,8 +116,9 @@ export class GithubController {
       throw new BadRequestException('Paste a GitHub pull request link, like https://github.com/owner/repo/pull/123');
     }
     const { owner, repo, number } = parsed;
+    const auth = await this.githubService.authFor(user.id, owner);
     const { files, url, headSha, headRef, baseRef, snapshot, repoFiles } = await this.githubService.fetchPrFiles(
-      user.id,
+      auth,
       owner,
       repo,
       number,
@@ -141,6 +147,7 @@ export class GithubController {
               headSha,
               headRef,
               baseRef,
+              ...(typeof auth === 'string' ? {} : { installationId: auth.installationId }),
             }
           : undefined,
       },

@@ -37,6 +37,16 @@ export const prInsightsSchema = z.object({
 });
 export type PrInsights = z.infer<typeof prInsightsSchema>;
 
+/** Wording checks are advisory: never let a title or description block the merge, whatever the AI said. */
+export function softenWordingChecks(insights: PrInsights): PrInsights {
+  return {
+    ...insights,
+    checks: insights.checks.map((c) =>
+      (c.name === 'Title check' || c.name === 'Description check') && c.status === 'fail' ? { ...c, status: 'warning' } : c,
+    ),
+  };
+}
+
 /** Lines of changed code the walkthrough prompt shows in total, across all files. */
 const MAX_PROMPT_CODE_LINES = 400;
 
@@ -93,13 +103,13 @@ Return ONLY a JSON object with this shape:
   "files": [{ "path": "<changed file path>", "summary": "one short sentence on what changed in it" }],
   "mergeRisk": { "level": "minimal" | "low" | "medium" | "high", "explanation": "1-2 sentences on what could break if merged, weighing the findings above" },
   "checks": [
-    { "name": "Title check", "status": "pass" | "warning" | "fail", "explanation": "...", "resolution": "what to change, or null" },
-    { "name": "Description check", ... does the description explain what, why and how it was tested? },
+    { "name": "Title check", "status": "pass" | "warning" | "fail", "explanation": "...", "resolution": "what to change, or null" } — "warning" only when the title doesn't say what the change is about. Words like "WIP", "draft" or "do not merge" are the author's own signal about the merge, not a problem with the title: don't flag them,
+    { "name": "Description check", ... } — "warning" only when the description is empty or doesn't say what the change does. Don't ask for a testing section, a template, screenshots or a particular format,
     { "name": "Linked issues check", ... if the description references issues (#123 or links), does the code address them? If none are referenced, "pass" and say none are linked },
     { "name": "Out of scope changes check", ... are there changes unrelated to the PR's stated purpose? }
   ]
 }
-Keep every explanation under 40 words, in plain language. Use "warning" for something worth fixing that shouldn't block the merge, "fail" only for something that should.`;
+Keep every explanation under 40 words, in plain language. Use "warning" for something worth fixing that shouldn't block the merge, "fail" only for something that should. The title and description checks are never "fail".`;
 }
 
 /**

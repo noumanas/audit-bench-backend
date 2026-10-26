@@ -29,12 +29,14 @@ const dependency_graph_1 = require("../analysis/dependency-graph");
 const dead_code_1 = require("../analysis/dead-code");
 const duplicate_code_1 = require("../analysis/duplicate-code");
 const secrets_scanner_1 = require("../analysis/secrets-scanner");
+const generated_files_1 = require("../analysis/generated-files");
 const dependency_audit_1 = require("../analysis/dependency-audit");
 const license_audit_1 = require("../analysis/license-audit");
 const test_coverage_1 = require("../analysis/test-coverage");
 const architecture_detector_1 = require("../audit/architecture-detector");
 const tdd_assessment_1 = require("./tdd-assessment");
 const risk_aggregation_1 = require("./risk-aggregation");
+const reconcile_verdict_1 = require("./reconcile-verdict");
 const types_1 = require("../common/types");
 const verdict_1 = require("../common/verdict");
 const pr_feedback_service_1 = require("../pr-feedback/pr-feedback.service");
@@ -43,16 +45,48 @@ const finding_fingerprint_1 = require("../common/finding-fingerprint");
 const related_context_1 = require("../analysis/related-context");
 const review_rules_service_1 = require("../review-rules/review-rules.service");
 const pr_insights_1 = require("../pr-feedback/pr-insights");
+const inline_comment_1 = require("../pr-feedback/inline-comment");
 const finding_schema_1 = require("../common/finding.schema");
 const repo_key_1 = require("../common/repo-key");
 const workspace_scope_1 = require("../common/workspace-scope");
+const RISKY_PATH = /(auth|login|logon|signin|signup|password|passwd|pwd|reset|token|session|oauth|permission|admin|payment|billing|invoice|checkout|discount|credit|refund|wallet|order|connectionstring|connection_string|secret|crypto|controller|function|handler|endpoint|api)/i;
+const DATA_FILE = /\.(json|ya?ml|prisma|sql)$/i;
 function selectFilesToAnalyze(files, max) {
+    const skipped = [];
     const analyzable = files.filter((f) => {
         const ext = f.path.split('.').pop()?.toLowerCase();
-        return ext && language_1.ANALYZABLE_EXTENSIONS.has(ext);
+        const ok = Boolean(ext && language_1.ANALYZABLE_EXTENSIONS.has(ext));
+        if (!ok)
+            skipped.push({ path: f.path, reason: 'not_source' });
+        return ok;
     });
-    const priority = (p) => (/(^|\/)(src|app|pages|api|lib)\//.test(p) ? 0 : 1);
-    return analyzable.sort((a, b) => priority(a.path) - priority(b.path) || a.path.localeCompare(b.path)).slice(0, max);
+    const priority = (p) => (DATA_FILE.test(p) ? 4 : 0) + (RISKY_PATH.test(p.split('/').slice(-2).join('/')) ? 0 : 1) +
+        (/(^|\/)(src|app|pages|api|lib)\//.test(p) ? 0 : 1);
+    const sorted = analyzable.sort((a, b) => priority(a.path) - priority(b.path) || a.path.localeCompare(b.path));
+    for (const f of sorted.slice(max))
+        skipped.push({ path: f.path, reason: 'file_limit' });
+    return { selected: sorted.slice(0, max), skipped };
+}
+function skippedSummary(skipped) {
+    const counts = {};
+    for (const s of skipped)
+        counts[s.reason] = (counts[s.reason] ?? 0) + 1;
+    return { counts, files: skipped.slice(0, generated_files_1.MAX_SKIPPED_LISTED) };
+}
+function partitionAuthored(files, skipped) {
+    const authored = [];
+    const generated = [];
+    for (const f of files) {
+        const kind = (0, generated_files_1.classifyNonAuthored)(f.path, f.content);
+        if (!kind)
+            authored.push(f);
+        else {
+            skipped.push({ path: f.path, reason: kind });
+            if (kind === 'generated')
+                generated.push(f);
+        }
+    }
+    return { authored, generated };
 }
 const REPO_WIDE_SOURCE_TYPES = new Set(['zip', 'github_repo', 'gitlab_repo', 'bitbucket_repo']);
 let RepositoryService = RepositoryService_1 = class RepositoryService {
@@ -91,20 +125,28 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
         const providerName = this.llm.resolveProvider(provider);
         const maxFileSize = this.config.get('MAX_FILE_SIZE_BYTES') || 200_000;
         const maxScanFiles = this.config.get('MAX_SCAN_FILES') || 40;
-        const extracted = (0, file_walker_1.extractZip)(zipBuffer, maxFileSize);
+        const skipped = [];
+        const extracted = (0, file_walker_1.extractZip)(zipBuffer, maxFileSize, skipped);
         const { rules, files } = await this.applyRules(actor, sourceName, sourceType, extracted, (0, review_rules_service_1.repoRulesFile)(extracted));
+        const kept = new Set(files.map((f) => f.path));
+        for (const f of extracted)
+            if (!kept.has(f.path))
+                skipped.push({ path: f.path, reason: 'ignored_by_rule' });
+        const { authored, generated } = partitionAuthored(files, skipped);
         const framework = (0, framework_detector_1.detectFramework)(files);
-        const { graph, circular } = (0, dependency_graph_1.buildDependencyGraph)(files);
-        const deadCode = (0, dead_code_1.findDeadCode)(files, graph);
-        const duplicates = (0, duplicate_code_1.findDuplicates)(files);
-        const secrets = (0, secrets_scanner_1.scanSecrets)(files);
-        const testCoverage = (0, test_coverage_1.estimateTestCoverage)(files);
+        const { graph, circular } = (0, dependency_graph_1.buildDependencyGraph)(authored);
+        const deadCode = (0, dead_code_1.findDeadCode)(authored, graph);
+        const duplicates = (0, duplicate_code_1.findDuplicates)(authored);
+        const secrets = (0, secrets_scanner_1.scanSecrets)([...authored, ...generated]);
+        const testCoverage = (0, test_coverage_1.estimateTestCoverage)(authored);
         const [dependencyVulnerabilities, licenseFindings] = await Promise.all([
             (0, dependency_audit_1.auditDependencies)(files),
             (0, license_audit_1.auditLicenses)(files),
         ]);
-        const filesToAnalyze = selectFilesToAnalyze(files, maxScanFiles);
-        const repoContext = `Detected framework: ${framework || 'unknown'}. Repository has ${files.length} files total; ${filesToAnalyze.length} selected for review.`;
+        const selection = selectFilesToAnalyze(authored, maxScanFiles);
+        skipped.push(...selection.skipped);
+        const filesToAnalyze = selection.selected;
+        const repoContext = `Detected framework: ${framework || 'unknown'}. Repository has ${files.length} files total; ${filesToAnalyze.length} selected for review, riskiest first.`;
         const job = await this.gateAndCreateJob(actor, filesToAnalyze, providerName, {
             sourceName,
             sourceType,
@@ -120,6 +162,7 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
             licenseFindings: licenseFindings,
             testCoverage: testCoverage,
             ...(contributorStats ? { contributorStats: contributorStats } : {}),
+            skippedFiles: skippedSummary(skipped),
             localOnly: opts.localOnly,
             isPublic: opts.isPublic,
             shareId: opts.shareId,
@@ -137,12 +180,25 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
         const maxScanFiles = this.config.get('MAX_SCAN_FILES') || 40;
         const scoped = await this.applyRules(actor, meta.sourceName, meta.sourceType, files, (0, review_rules_service_1.repoRulesFile)(files) ?? (0, review_rules_service_1.repoRulesFile)(opts.repoFiles ?? []));
         const rules = scoped.rules;
-        const analyzable = scoped.files
-            .filter((f) => {
+        const skipped = [];
+        const kept = new Set(scoped.files.map((f) => f.path));
+        for (const f of files)
+            if (!kept.has(f.path))
+                skipped.push({ path: f.path, reason: 'ignored_by_rule' });
+        const { authored } = partitionAuthored(scoped.files, skipped);
+        const analyzable = authored.filter((f) => {
             const ext = f.path.split('.').pop()?.toLowerCase();
-            return Boolean(ext && language_1.ANALYZABLE_EXTENSIONS.has(ext) && f.content.length <= maxFileSize);
-        })
-            .slice(0, maxScanFiles);
+            if (!ext || !language_1.ANALYZABLE_EXTENSIONS.has(ext))
+                skipped.push({ path: f.path, reason: 'not_source' });
+            else if (f.content.length > maxFileSize)
+                skipped.push({ path: f.path, reason: 'too_large' });
+            else
+                return true;
+            return false;
+        });
+        for (const f of analyzable.slice(maxScanFiles))
+            skipped.push({ path: f.path, reason: 'file_limit' });
+        analyzable.splice(maxScanFiles);
         if (opts.repoFiles?.length && !opts.localOnly) {
             for (const f of analyzable)
                 f.relatedContext = (0, related_context_1.relatedContextFor)(f, opts.repoFiles) || undefined;
@@ -157,6 +213,7 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
             changedRanges: Object.fromEntries(analyzable.filter((f) => f.changedRanges).map((f) => [f.path, f.changedRanges])),
             fileCount: analyzable.length,
             secrets: secrets,
+            skippedFiles: skippedSummary(skipped),
             localOnly: opts.localOnly,
             isPublic: opts.isPublic,
             shareId: opts.shareId,
@@ -271,6 +328,7 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
             let totalUsage = succeededByFile.reduce((sum, r) => (0, types_1.addUsage)(sum, r.usage), types_1.ZERO_USAGE);
             const job = await this.prisma.scanJob.findUniqueOrThrow({ where: { id: jobId } });
             const secretsCount = Array.isArray(job.secrets) ? job.secrets.length : 0;
+            const uniqueSecrets = (0, secrets_scanner_1.uniqueSecretCount)(job.secrets);
             let architectureAssessment = null;
             if (REPO_WIDE_SOURCE_TYPES.has(job.sourceType) && anyFreshAiInvoked) {
                 const architecturePrompt = (0, architecture_detector_1.buildArchitecturePrompt)(files);
@@ -293,7 +351,7 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
                         files,
                         findings: succeededByFile.flatMap(({ path, result: r }) => r.findings.map((f) => ({ path, severity: f.severity, title: f.title }))),
                     }), pr_insights_1.prInsightsSchema);
-                    prInsights = result;
+                    prInsights = (0, pr_insights_1.softenWordingChecks)(result);
                     totalUsage = (0, types_1.addUsage)(totalUsage, usage);
                 }
                 catch (err) {
@@ -318,12 +376,26 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
                     .map((f) => f.path)
                     .join(', ')}${failures.length > 3 ? ', …' : ''}): ${failures[0].reason}`
                 : '';
-            const summary = `Reviewed ${succeeded.length}/${files.length} files (of ${job.fileCount} total) — ${filesFromCache} from cache, ${filesAiSkipped} needed no AI review. Found ${totalFindings} finding(s),${crossFileNote} ${secretsCount} potential secret(s).${failureNote}`;
+            const { verdict, reasons: verdictReasons } = (0, reconcile_verdict_1.reconcileVerdict)(overallVerdict, {
+                uniqueSecrets,
+                risk: REPO_WIDE_SOURCE_TYPES.has(job.sourceType)
+                    ? (0, risk_aggregation_1.aggregateRisk)({
+                        ...job,
+                        files: succeeded.map((r) => ({ findings: r.findings })),
+                        architectureAssessment,
+                    })
+                    : null,
+            });
+            const aiReviewed = succeeded.length - filesFromCache - filesAiSkipped;
+            const secretNote = secretsCount > 0
+                ? ` ${uniqueSecrets} distinct potential secret(s) in ${secretsCount} place(s).`
+                : ' No secrets found.';
+            const summary = `Reviewed ${succeeded.length}/${files.length} selected files (of ${job.fileCount} total): ${aiReviewed} reviewed by AI, ${filesFromCache} from cache, ${filesAiSkipped} passed local checks with nothing risky enough to send to AI. Found ${totalFindings} finding(s),${crossFileNote}${secretNote}${failureNote}${verdictReasons.length ? ` Verdict set by: ${verdictReasons.join('; ')}.` : ''}`;
             await this.prisma.scanJob.update({
                 where: { id: jobId },
                 data: {
                     status: 'completed',
-                    verdict: overallVerdict,
+                    verdict,
                     summary,
                     filesFromCache,
                     filesAiSkipped,
@@ -375,7 +447,7 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
     async buildPrFeedback(jobId, scanUrl) {
         const job = await this.prisma.scanJob.findUniqueOrThrow({ where: { id: jobId }, include: { files: true } });
         const snapshot = job.sourceType === 'github_pr' ? job.prSnapshot : null;
-        const findings = job.files.flatMap((file) => (Array.isArray(file.findings) ? file.findings : []).map((f) => ({
+        const findings = (0, inline_comment_1.withoutConflictingReplacements)(job.files.flatMap((file) => (Array.isArray(file.findings) ? file.findings : []).map((f) => ({
             path: file.path,
             line: f.line,
             endLine: f.endLine ?? null,
@@ -388,7 +460,7 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
             examplePatch: f.examplePatch,
             replacement: f.replacement ?? null,
             confidence: f.confidence,
-        })));
+        }))));
         const insights = (job.prInsights ?? undefined);
         const checks = snapshot
             ? (0, pr_insights_1.deterministicChecks)(snapshot, {

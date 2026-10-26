@@ -1,5 +1,5 @@
 import { MergeReadiness } from '../common/merge-readiness';
-import { PrFeedback, REVIEW_FOOTER } from './pr-feedback.types';
+import { PrFeedback, REVIEW_FOOTER, automatedReviewNotice } from './pr-feedback.types';
 import { PreMergeCheck } from './pr-insights';
 
 /** Hidden marker on the summary, so Audit Bench Ai can tell its own summaries apart. */
@@ -54,6 +54,7 @@ export function buildSummaryBody(feedback: PrFeedback, opts: { posted?: number; 
   const lines: string[] = [SUMMARY_MARKER];
 
   if (feedback.scanUrl) lines.push(`[![Open in Audit Bench Ai](${OPEN_BADGE})](${feedback.scanUrl})`, '');
+  if (feedback.viaUserAccount) lines.push(automatedReviewNotice(feedback.viaUserAccount), '');
   if (feedback.requestedBy) lines.push(`_Review requested by @${feedback.requestedBy}._`, '');
 
   if (opts.posted === undefined) lines.push(`### Audit Bench Ai review: ${VERDICT_LABEL[feedback.verdict]}`);
@@ -205,6 +206,7 @@ export function buildPlainSummary(feedback: PrFeedback, opts: { posted?: number;
     .map((s) => [s, feedback.findings.filter((f) => f.severity === s).length] as const)
     .filter(([, n]) => n);
   const lines = [`### Audit Bench Ai review: ${VERDICT_LABEL[feedback.verdict]}`, ''];
+  if (feedback.viaUserAccount) lines.push(automatedReviewNotice(feedback.viaUserAccount).replace(/^> /, ''), '');
   if (opts.posted !== undefined) {
     lines.push(
       opts.posted > 0

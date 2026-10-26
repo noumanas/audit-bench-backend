@@ -35,23 +35,25 @@ function declaredUncompressedSize(entry) {
     const size = entry.header.size;
     return Number.isFinite(size) ? size : Infinity;
 }
-function isIgnoredPath(relativePath) {
+function ignoredReason(relativePath) {
     const segments = relativePath.split('/');
+    if (segments.includes('vendor'))
+        return 'vendor';
     if (segments.some((s) => IGNORED_DIR_SEGMENTS.has(s)))
-        return true;
+        return 'silent';
     const filename = segments[segments.length - 1];
     if (IGNORED_FILENAMES.has(filename))
-        return true;
+        return 'generated';
     const ext = filename.split('.').pop()?.toLowerCase();
     if (ext && BINARY_EXTENSIONS.has(ext))
-        return true;
-    return false;
+        return 'binary';
+    return null;
 }
 function stripRootPrefix(entries) {
     const tops = new Set(entries.map((e) => e.entryName.split('/')[0]));
     return tops.size === 1 ? [...tops][0] : null;
 }
-function extractZip(buffer, maxFileSizeBytes) {
+function extractZip(buffer, maxFileSizeBytes, skipped) {
     const zip = new AdmZip(buffer);
     const entries = zip.getEntries().filter((e) => !e.isDirectory);
     const rootPrefix = stripRootPrefix(entries);
@@ -64,19 +66,35 @@ function extractZip(buffer, maxFileSizeBytes) {
         if (rootPrefix && relativePath.startsWith(`${rootPrefix}/`)) {
             relativePath = relativePath.slice(rootPrefix.length + 1);
         }
-        if (!relativePath || isIgnoredPath(relativePath))
+        if (!relativePath)
             continue;
+        const ignored = ignoredReason(relativePath);
+        if (ignored) {
+            if (ignored !== 'silent')
+                skipped?.push({ path: relativePath, reason: ignored });
+            continue;
+        }
         const declaredSize = declaredUncompressedSize(entry);
-        if (declaredSize === 0 || declaredSize > maxFileSizeBytes)
+        if (declaredSize === 0)
             continue;
+        if (declaredSize > maxFileSizeBytes) {
+            skipped?.push({ path: relativePath, reason: 'too_large' });
+            continue;
+        }
         if (totalDecompressedBytes + declaredSize > MAX_TOTAL_DECOMPRESSED_BYTES)
             break;
         const data = entry.getData();
         totalDecompressedBytes += data.length;
-        if (data.length === 0 || data.length > maxFileSizeBytes)
+        if (data.length === 0)
             continue;
-        if (data.subarray(0, 1024).includes(0))
+        if (data.length > maxFileSizeBytes) {
+            skipped?.push({ path: relativePath, reason: 'too_large' });
             continue;
+        }
+        if (data.subarray(0, 1024).includes(0)) {
+            skipped?.push({ path: relativePath, reason: 'binary' });
+            continue;
+        }
         files.push({ path: relativePath, content: data.toString('utf8') });
     }
     return files;
