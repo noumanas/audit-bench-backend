@@ -25,8 +25,9 @@ export class OrdersController {
 
   // Bug 1 (Security): SQL built from user input.
   async getOrder(req: Request, res: Response) {
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
     const id = req.query.id as string;
-    const rows = await this.db.query<Order>('SELECT * FROM orders WHERE id = $1', [id]);
+    const rows = await this.db.query<Order>('SELECT * FROM orders WHERE id = $1 AND user_id = $2', [id, req.user.id]);
     if (!rows[0]) return res.status(404).json({ error: 'Order not found' });
     res.json(rows[0]);
   }
