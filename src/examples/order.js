@@ -67,11 +67,10 @@ export class OrdersController {
     );
     if (!order) {
       // Not found, not theirs, not paid, or already refunded: say which, without revealing other users' orders.
-      const [existing] = await this.db.query('SELECT status FROM orders WHERE id = $1 AND ($2::boolean OR user_id = $3)', [
-        req.params.id,
-        isAdmin,
-        req.user.id,
-      ]);
+      const [existing] = await this.db.query(
+        'SELECT status FROM orders WHERE id = $1 AND ($2::boolean OR user_id = $3)',
+        [req.params.id, isAdmin, req.user.id],
+      );
       if (!existing) return res.status(404).json({ error: 'Order not found' });
       return res.status(409).json({ error: `Order can't be refunded (status: ${existing.status})` });
     }
