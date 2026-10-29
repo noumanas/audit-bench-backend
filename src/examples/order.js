@@ -40,7 +40,9 @@ export class OrdersController {
   // Bug 3 (Logic): refund isn't awaited, and a refunded order can be refunded again.
   async refund(req: Request, res: Response) {
     const [order] = await this.db.query<Order>('SELECT * FROM orders WHERE id = $1', [req.params.id]);
-    this.payments.refund(order.id, order.amountCents);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    if (order.status === 'refunded') return res.status(400).json({ error: 'Order already refunded' });
+    await this.payments.refund(order.id, order.amountCents);
     await this.db.query('UPDATE orders SET status = $1 WHERE id = $2', ['refunded', order.id]);
     res.json({ ok: true });
   }
