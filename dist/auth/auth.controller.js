@@ -19,6 +19,7 @@ const auth_service_1 = require("./auth.service");
 const signup_dto_1 = require("./dto/signup.dto");
 const login_dto_1 = require("./dto/login.dto");
 const AUTH_THROTTLE = { default: { limit: 5, ttl: 60_000 } };
+const SIGNUP_THROTTLE = { default: { limit: 5, ttl: 60 * 60_000 } };
 let AuthController = class AuthController {
     authService;
     constructor(authService) {
@@ -33,7 +34,7 @@ let AuthController = class AuthController {
 };
 exports.AuthController = AuthController;
 __decorate([
-    (0, throttler_1.Throttle)(AUTH_THROTTLE),
+    (0, throttler_1.Throttle)(SIGNUP_THROTTLE),
     (0, common_1.Post)('signup'),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),

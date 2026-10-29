@@ -24,6 +24,7 @@ export interface PipelineOutput {
     fromCache: boolean;
     usage: TokenUsage;
 }
+export declare function pipelineRulesKey(input: Pick<PipelineInput, 'rulesKey' | 'teamRules' | 'suppressFingerprints'>): string | undefined;
 export declare class PipelineService {
     private readonly llm;
     private readonly cache;

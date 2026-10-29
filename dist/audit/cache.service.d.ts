@@ -6,12 +6,15 @@ export interface CachedAuditResult extends AuditResult {
     stage1: Stage1Result | null;
     aiInvoked: boolean;
 }
-export declare function cacheExtraKey(rulesKey?: string, relatedContext?: string): string | undefined;
+export declare function cacheExtraKey(rulesKey?: string, relatedContext?: string, mode?: 'local'): string | undefined;
 export declare class AuditCacheService {
     private readonly prisma;
     constructor(prisma: PrismaService);
     hashFor(content: string, provider: string, focusAreas?: string[], changedRanges?: LineRange[], rulesKey?: string): string;
     exists(contentHash: string): Promise<boolean>;
+    peek(contentHash: string): Promise<{
+        aiInvoked: boolean;
+    } | null>;
     lookup(contentHash: string): Promise<CachedAuditResult | null>;
     store(contentHash: string, result: CachedAuditResult): Promise<void>;
 }

@@ -1,4 +1,7 @@
 import { AuthService } from './auth.service';
+
+// No real DNS in unit tests: the email check has its own spec.
+jest.mock('./email-domain', () => ({ unusableEmailReason: jest.fn().mockResolvedValue(null) }));
 import { OAuthService } from './oauth/oauth.service';
 
 const ADMIN = 'owner@acme.com';

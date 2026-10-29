@@ -1,3 +1,4 @@
+import { SYSTEM_EMAIL } from '../common/system-account';
 import {
   BadRequestException,
   ConflictException,
@@ -27,7 +28,6 @@ import { GithubPull, fetchCiChecks, refetchIfMergeabilityPending, toPrSnapshot }
 import { uniqueSecretCount } from '../analysis/secrets-scanner';
 
 const GITHUB_API = 'https://api.github.com';
-const SYSTEM_EMAIL = 'public-scans@system.auditbenchai.local';
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 /** GitHub reports repo size in KB. Bigger repos take too long for a free scan. */

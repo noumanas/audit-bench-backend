@@ -60,7 +60,8 @@ function selectFilesToAnalyze(files, max) {
             skipped.push({ path: f.path, reason: 'not_source' });
         return ok;
     });
-    const priority = (p) => (DATA_FILE.test(p) ? 4 : 0) + (RISKY_PATH.test(p.split('/').slice(-2).join('/')) ? 0 : 1) +
+    const priority = (p) => (DATA_FILE.test(p) ? 4 : 0) +
+        (RISKY_PATH.test(p.split('/').slice(-2).join('/')) ? 0 : 1) +
         (/(^|\/)(src|app|pages|api|lib)\//.test(p) ? 0 : 1);
     const sorted = analyzable.sort((a, b) => priority(a.path) - priority(b.path) || a.path.localeCompare(b.path));
     for (const f of sorted.slice(max))
@@ -252,7 +253,8 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
     async anyFileNeedsFreshAiCall(files, providerName, rulesKey) {
         for (const file of files) {
             const hash = this.cache.hashFor(file.content, providerName, [], file.changedRanges, (0, cache_service_1.cacheExtraKey)(rulesKey, file.relatedContext));
-            if (await this.cache.exists(hash))
+            const cached = await this.cache.peek(hash);
+            if (cached && (cached.aiInvoked || !file.changedRanges?.length))
                 continue;
             if (file.changedRanges?.length)
                 return true;

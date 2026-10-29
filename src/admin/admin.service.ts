@@ -10,6 +10,8 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
+import { assertNotOwnerOfOthers, deleteUserRecords } from '../users/delete-user';
+import { SYSTEM_EMAIL } from '../common/system-account';
 import { EmailService } from '../email/email.service';
 import { planApprovedEmail, planRejectedEmail, RenderedEmail } from '../email/templates';
 import { PlanRequestStatus, Role } from '@prisma/client';
@@ -170,6 +172,40 @@ export class AdminService {
       data: { isActive },
       select: SAFE_USER_SELECT,
     });
+  }
+
+  /**
+   * Permanently deletes another user's account and data. Typing their email
+   * guards against deleting the wrong row. Super admins are protected (demote
+   * first) so the site always keeps one, and so is your own account (use
+   * Delete account in Plan & usage).
+   */
+  async deleteUser(actingAdminId: string, targetUserId: string, confirmEmail: string) {
+    if (actingAdminId === targetUserId) {
+      throw new ForbiddenException('You can’t delete your own account here. Use Delete account in Plan & usage.');
+    }
+    const target = await this.prisma.user.findUnique({
+      where: { id: targetUserId },
+      select: { id: true, email: true, role: true, organizationId: true, orgRole: true },
+    });
+    if (!target) throw new NotFoundException('User not found');
+    if (confirmEmail.trim().toLowerCase() !== target.email.toLowerCase()) {
+      throw new BadRequestException('Type the user’s email exactly to confirm.');
+    }
+    if (target.role === 'super_admin') {
+      throw new ForbiddenException('Super admins can’t be deleted. Change their role first.');
+    }
+    if (target.email.toLowerCase() === SYSTEM_EMAIL) {
+      throw new ForbiddenException('This is the built-in account that owns free public scans. It can’t be deleted.');
+    }
+    await assertNotOwnerOfOthers(
+      this.prisma,
+      target,
+      'This user owns a team with other members. Remove the members or transfer ownership first.',
+    );
+    await deleteUserRecords(this.prisma, target);
+    this.logger.log(`User ${target.email} (${target.id}) deleted by admin ${actingAdminId}`);
+    return { deleted: true };
   }
 
   async updateUserProfile(targetUserId: string, data: { name?: string; planId?: string }, actorId?: string) {

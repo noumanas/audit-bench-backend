@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuthService = void 0;
 const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
+const email_domain_1 = require("./email-domain");
 const jwt_1 = require("@nestjs/jwt");
 const bcrypt = require("bcryptjs");
 const prisma_service_1 = require("../prisma/prisma.service");
@@ -30,6 +31,9 @@ let AuthService = class AuthService {
         this.welcomeEmail = welcomeEmail;
     }
     async signup(dto) {
+        const unusable = await (0, email_domain_1.unusableEmailReason)(dto.email);
+        if (unusable)
+            throw new common_1.BadRequestException(unusable);
         const existing = await this.prisma.user.findUnique({
             where: { email: dto.email },
         });
@@ -41,11 +45,7 @@ let AuthService = class AuthService {
         if (!plan)
             throw new Error(`Default plan "${DEFAULT_PLAN_SLUG}" is not seeded`);
         const passwordHash = await bcrypt.hash(dto.password, SALT_ROUNDS);
-        const superAdminEmail = this.config.get("SUPER_ADMIN_EMAIL");
-        const role = superAdminEmail &&
-            superAdminEmail.toLowerCase() === dto.email.toLowerCase()
-            ? "super_admin"
-            : "user";
+        const role = "user";
         const user = await this.prisma.user.create({
             data: {
                 email: dto.email,

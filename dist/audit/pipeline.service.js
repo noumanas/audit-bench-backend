@@ -11,6 +11,8 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 var PipelineService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PipelineService = void 0;
+exports.pipelineRulesKey = pipelineRulesKey;
+const crypto_1 = require("crypto");
 const common_1 = require("@nestjs/common");
 const llm_service_1 = require("../llm/llm.service");
 const cache_service_1 = require("./cache.service");
@@ -24,6 +26,17 @@ const filter_to_ranges_1 = require("./stage1/filter-to-ranges");
 const finding_fingerprint_1 = require("../common/finding-fingerprint");
 const focused_prompt_1 = require("./stage2/focused-prompt");
 const LOW_CONFIDENCE_THRESHOLD = 0.6;
+function pipelineRulesKey(input) {
+    if (input.rulesKey)
+        return input.rulesKey;
+    const suppress = [...(input.suppressFingerprints ?? [])].sort();
+    if (!input.teamRules && !suppress.length)
+        return undefined;
+    return (0, crypto_1.createHash)('sha256')
+        .update(JSON.stringify({ teamRules: input.teamRules ?? '', suppress }))
+        .digest('hex')
+        .slice(0, 16);
+}
 let PipelineService = PipelineService_1 = class PipelineService {
     llm;
     cache;
@@ -33,11 +46,12 @@ let PipelineService = PipelineService_1 = class PipelineService {
         this.cache = cache;
     }
     async run(input, opts = {}) {
-        const hash = this.cache.hashFor(input.code, input.provider, input.focusAreas, input.changedLineRanges, (0, cache_service_1.cacheExtraKey)(input.rulesKey, input.relatedContext));
+        const diffReview = !input.localOnly && Boolean(input.changedLineRanges?.length);
+        const hash = this.cache.hashFor(input.code, input.provider, input.focusAreas, input.changedLineRanges, (0, cache_service_1.cacheExtraKey)(pipelineRulesKey(input), input.relatedContext, input.localOnly && input.changedLineRanges?.length ? 'local' : undefined));
         const suppressed = new Set(input.suppressFingerprints ?? []);
         const keep = (findings) => suppressed.size ? findings.filter((f) => !suppressed.has((0, finding_fingerprint_1.findingFingerprint)(f))) : findings;
         const cached = await this.cache.lookup(hash);
-        if (cached) {
+        if (cached && !(diffReview && !cached.aiInvoked)) {
             return { result: cached, fromCache: true, usage: types_1.ZERO_USAGE };
         }
         const fullStage1 = await (0, run_stage1_1.runStage1)(input.code, input.filename);
@@ -45,7 +59,6 @@ let PipelineService = PipelineService_1 = class PipelineService {
         const baseFindings = keep((0, to_findings_1.stage1ToFindings)(stage1));
         let result;
         let usage = types_1.ZERO_USAGE;
-        const diffReview = !input.localOnly && Boolean(input.changedLineRanges?.length);
         if (!stage1.clean && input.localOnly) {
             return {
                 result: {

@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { assertNotOwnerOfOthers, deleteUserRecords } from './delete-user';
 import { generateApiKey } from '../auth/api-key.util';
 
 // Explicit allow-list — never spread a raw User row to a client. That row
@@ -191,25 +192,12 @@ export class UsersService {
     if (user.role === 'super_admin') {
       throw new ForbiddenException("A super admin account can't be deleted here, so the site always keeps an admin.");
     }
-    if (user.organizationId && user.orgRole === 'owner') {
-      const others = await this.prisma.user.count({
-        where: { organizationId: user.organizationId, id: { not: userId } },
-      });
-      if (others > 0) {
-        throw new ForbiddenException('You own a team with other members. Remove them or hand over ownership first.');
-      }
-    }
-    await this.prisma.$transaction(async (db) => {
-      // References that would otherwise block the delete.
-      await db.organizationInvite.deleteMany({ where: { invitedById: userId } });
-      await db.planRequest.updateMany({ where: { reviewedById: userId }, data: { reviewedById: null } });
-      if (user.organizationId && user.orgRole === 'owner') {
-        await db.organizationInvite.deleteMany({ where: { organizationId: user.organizationId } });
-        await db.user.update({ where: { id: userId }, data: { organizationId: null, orgRole: null } });
-        await db.organization.delete({ where: { id: user.organizationId } });
-      }
-      await db.user.delete({ where: { id: userId } });
-    });
+    await assertNotOwnerOfOthers(
+      this.prisma,
+      user,
+      'You own a team with other members. Remove them or hand over ownership first.',
+    );
+    await deleteUserRecords(this.prisma, user);
     return { deleted: true };
   }
 }

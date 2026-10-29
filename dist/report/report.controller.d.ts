@@ -17,9 +17,9 @@ export declare class ReportController {
         outputTokens: number;
         findings: import("@prisma/client/runtime/library").JsonValue;
         stage1: import("@prisma/client/runtime/library").JsonValue | null;
+        filename: string;
         language: string | null;
         findingStatuses: import("@prisma/client/runtime/library").JsonValue | null;
-        filename: string;
         codeSize: number;
         kind: string;
     } | {
@@ -32,8 +32,8 @@ export declare class ReportController {
             verdict: import(".prisma/client").$Enums.Verdict | null;
             findings: import("@prisma/client/runtime/library").JsonValue;
             stage1: import("@prisma/client/runtime/library").JsonValue | null;
-            scanJobId: string;
             language: string | null;
+            scanJobId: string;
             findingStatuses: import("@prisma/client/runtime/library").JsonValue | null;
         }[];
         error: string | null;

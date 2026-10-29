@@ -1,9 +1,11 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   UnauthorizedException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { unusableEmailReason } from "./email-domain";
 import { JwtService } from "@nestjs/jwt";
 import * as bcrypt from "bcryptjs";
 import { OrgRole, Role } from "@prisma/client";
@@ -29,6 +31,9 @@ export class AuthService {
   ) {}
 
   async signup(dto: SignupDto) {
+    const unusable = await unusableEmailReason(dto.email);
+    if (unusable) throw new BadRequestException(unusable);
+
     const existing = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });

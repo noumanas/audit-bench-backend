@@ -30,64 +30,70 @@ function detectDotnet(files) {
         kinds.add('ASP.NET');
     return kinds.size ? `.NET (${[...kinds].join(', ')})` : '.NET';
 }
+function jsFramework(content) {
+    let pkg = null;
+    try {
+        pkg = JSON.parse(content);
+    }
+    catch {
+        return undefined;
+    }
+    if (!pkg || typeof pkg !== 'object')
+        return undefined;
+    const deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
+    if (deps['next'])
+        return 'Next.js';
+    if (deps['@nestjs/core'])
+        return 'NestJS';
+    if (deps['@angular/core'])
+        return 'Angular';
+    if (deps['vue'])
+        return 'Vue';
+    if (deps['@supabase/supabase-js'])
+        return 'Supabase';
+    if (deps['firebase'] || deps['firebase-admin'])
+        return 'Firebase';
+    if (deps['express'])
+        return 'Node.js (Express)';
+    if (deps['react'])
+        return 'React';
+    return undefined;
+}
 function detectFramework(files) {
-    const byPath = new Map(files.map((f) => [f.path, f]));
     const dotnet = detectDotnet(files);
     if (dotnet)
         return dotnet;
-    const packageJson = byPath.get('package.json');
-    if (packageJson) {
-        let pkg = null;
-        try {
-            pkg = JSON.parse(packageJson.content);
-        }
-        catch {
-            pkg = null;
-        }
-        if (pkg) {
-            const deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
-            if (deps['next'])
-                return 'Next.js';
-            if (deps['@nestjs/core'])
-                return 'NestJS';
-            if (deps['@angular/core'])
-                return 'Angular';
-            if (deps['vue'])
-                return 'Vue';
-            if (deps['@supabase/supabase-js'])
-                return 'Supabase';
-            if (deps['firebase'] || deps['firebase-admin'])
-                return 'Firebase';
-            if (deps['express'])
-                return 'Node.js (Express)';
-            if (deps['react'])
-                return 'React';
-        }
+    const entries = files.map((f) => ({ path: f.path.replace(/\\/g, '/'), content: f.content }));
+    const has = (re, contentRe) => entries.some((e) => re.test(e.path) && (!contentRe || contentRe.test(e.content)));
+    const packageJsons = entries
+        .filter((e) => /(^|\/)package\.json$/.test(e.path))
+        .sort((a, b) => a.path.split('/').length - b.path.split('/').length);
+    for (const pkg of packageJsons) {
+        const framework = jsFramework(pkg.content);
+        if (framework)
+            return framework;
     }
-    if (files.some((f) => /(^|\/)deno\.jsonc?$/.test(f.path.replace(/\\/g, '/'))))
+    if (has(/(^|\/)deno\.jsonc?$/))
         return 'Deno';
-    if (files.some((f) => /(^|\/)supabase\/config\.toml$/.test(f.path.replace(/\\/g, '/'))))
+    if (has(/(^|\/)supabase\/config\.toml$/))
         return 'Supabase';
-    if (files.some((f) => /(^|\/)firebase\.json$/.test(f.path.replace(/\\/g, '/'))))
+    if (has(/(^|\/)firebase\.json$/))
         return 'Firebase';
-    if (files.some((f) => /(^|\/)go\.mod$/.test(f.path)))
+    if (has(/(^|\/)go\.mod$/))
         return 'Go';
-    if (files.some((f) => /(^|\/)Cargo\.toml$/.test(f.path)))
+    if (has(/(^|\/)Cargo\.toml$/))
         return 'Rust';
-    if (files.some((f) => /(^|\/)Gemfile$/.test(f.path) && /\brails\b/.test(f.content)))
+    if (has(/(^|\/)Gemfile$/, /\brails\b/))
         return 'Ruby on Rails';
-    if (files.some((f) => /(^|\/)composer\.json$/.test(f.path.replace(/\\/g, '/'))))
+    if (has(/(^|\/)composer\.json$/))
         return 'Laravel';
-    if (files.some((f) => /(^|\/)(pom\.xml|build\.gradle)$/.test(f.path.replace(/\\/g, '/'))))
+    if (has(/(^|\/)(pom\.xml|build\.gradle)$/))
         return 'Spring Boot';
-    if (files.some((f) => /(^|\/)manage\.py$/.test(f.path.replace(/\\/g, '/'))))
+    if (has(/(^|\/)manage\.py$/))
         return 'Django';
-    if (files.some((f) => /(^|\/)pyproject\.toml$/.test(f.path.replace(/\\/g, '/'))))
-        return 'Python';
-    if (files.some((f) => /(^|\/)(requirements\.txt|pyproject\.toml)$/.test(f.path.replace(/\\/g, '/')) &&
-        /fastapi/i.test(f.content)))
+    if (has(/(^|\/)(requirements\.txt|pyproject\.toml)$/, /fastapi/i))
         return 'FastAPI';
-    if (files.some((f) => /(^|\/)(requirements\.txt|pyproject\.toml)$/.test(f.path.replace(/\\/g, '/'))))
+    if (has(/(^|\/)(requirements\.txt|pyproject\.toml)$/))
         return 'Python';
     return undefined;
 }
