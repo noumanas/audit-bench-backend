@@ -32,7 +32,15 @@ export class PrFeedbackService {
       return { ok: true };
     } catch (err) {
       this.logger.error(`Failed to publish PR/MR feedback for ${context.kind}`, err as Error);
-      return { ok: false, error: (err as Error).message || 'Posting the review failed.' };
+      const error = (err as Error).message || 'Posting the review failed.';
+      // The review is done but couldn't be posted: close its "Reviewing…"
+      // check anyway, or it spins on the pull request forever.
+      await this.fail(
+        userId,
+        context,
+        `Audit Bench Ai finished the review but couldn’t post it: ${error}`.slice(0, 1000),
+      );
+      return { ok: false, error };
     }
   }
 
