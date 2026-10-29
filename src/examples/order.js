@@ -49,7 +49,8 @@ export class OrdersController {
 
   // Bug 4 (Logic): crashes when the order has no shipping address.
   shippingLabel(order: Order): string {
-    return `${order.id} → ${order.shipping.city.toUpperCase()}, ${order.shipping?.country ?? ''}`;
+    if (!order.shipping) return `${order.id} → No shipping address`;
+    return `${order.id} → ${order.shipping.city.toUpperCase()}, ${order.shipping.country ?? ''}`;
   }
 
   // Bug 5 (Performance): one query per order (N+1) instead of a single query.
