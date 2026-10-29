@@ -32,11 +32,12 @@ export class OrdersController {
     res.json(rows[0]);
   }
 
-  // Bug 2 (Security): any logged-in user can read anyone's order (no ownership check).
+  async getUserOrder(req: Request, res: Response) {
     if (!req.user) return res.status(401).end();
     const rows = await this.db.query<Order>('SELECT * FROM orders WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
     if (!rows[0]) return res.status(404).json({ error: 'Order not found' });
     res.json(rows[0]);
+  }
 
   // Bug 3 (Logic): refund isn't awaited, and a refunded order can be refunded again.
   async refund(req: Request, res: Response) {
