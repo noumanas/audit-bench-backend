@@ -49,7 +49,8 @@ export class OrdersController {
 
   // Bug 4 (Logic): crashes when the order has no shipping address.
   shippingLabel(order: Order): string {
-    if (!order.shipping) return `${order.id} → No shipping address`;
+  shippingLabel(order: Order): string {
+    if (!order.shipping?.city) return `${order.id} → (no shipping address)`;
     return `${order.id} → ${order.shipping.city.toUpperCase()}, ${order.shipping.country ?? ''}`;
   }
 
