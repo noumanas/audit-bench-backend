@@ -14,6 +14,7 @@ const subscription_service_1 = require("../revenue/subscription.service");
 const common_1 = require("@nestjs/common");
 const crypto = require("crypto");
 const prisma_service_1 = require("../prisma/prisma.service");
+const delete_user_1 = require("./delete-user");
 const api_key_util_1 = require("../auth/api-key.util");
 const SAFE_USER_SELECT = {
     id: true,
@@ -150,24 +151,8 @@ let UsersService = class UsersService {
         if (user.role === 'super_admin') {
             throw new common_1.ForbiddenException("A super admin account can't be deleted here, so the site always keeps an admin.");
         }
-        if (user.organizationId && user.orgRole === 'owner') {
-            const others = await this.prisma.user.count({
-                where: { organizationId: user.organizationId, id: { not: userId } },
-            });
-            if (others > 0) {
-                throw new common_1.ForbiddenException('You own a team with other members. Remove them or hand over ownership first.');
-            }
-        }
-        await this.prisma.$transaction(async (db) => {
-            await db.organizationInvite.deleteMany({ where: { invitedById: userId } });
-            await db.planRequest.updateMany({ where: { reviewedById: userId }, data: { reviewedById: null } });
-            if (user.organizationId && user.orgRole === 'owner') {
-                await db.organizationInvite.deleteMany({ where: { organizationId: user.organizationId } });
-                await db.user.update({ where: { id: userId }, data: { organizationId: null, orgRole: null } });
-                await db.organization.delete({ where: { id: user.organizationId } });
-            }
-            await db.user.delete({ where: { id: userId } });
-        });
+        await (0, delete_user_1.assertNotOwnerOfOthers)(this.prisma, user, 'You own a team with other members. Remove them or hand over ownership first.');
+        await (0, delete_user_1.deleteUserRecords)(this.prisma, user);
         return { deleted: true };
     }
 };

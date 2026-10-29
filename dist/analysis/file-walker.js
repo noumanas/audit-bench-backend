@@ -1,5 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.unsafeArchivePath = unsafeArchivePath;
 exports.extractZip = extractZip;
 const AdmZip = require("adm-zip");
 const IGNORED_DIR_SEGMENTS = new Set([
@@ -17,17 +18,38 @@ const IGNORED_DIR_SEGMENTS = new Set([
     '.turbo',
     '.cache',
 ]);
-const IGNORED_FILENAMES = new Set([
-    'package-lock.json',
-    'yarn.lock',
-    'pnpm-lock.yaml',
-]);
+const IGNORED_FILENAMES = new Set(['package-lock.json', 'yarn.lock', 'pnpm-lock.yaml']);
 const BINARY_EXTENSIONS = new Set([
-    'png', 'jpg', 'jpeg', 'gif', 'ico', 'svg', 'webp', 'bmp',
-    'woff', 'woff2', 'ttf', 'eot', 'otf',
-    'zip', 'gz', 'tar', 'rar', '7z',
-    'pdf', 'exe', 'dll', 'so', 'dylib', 'bin', 'wasm',
-    'mp3', 'mp4', 'mov', 'avi', 'webm',
+    'png',
+    'jpg',
+    'jpeg',
+    'gif',
+    'ico',
+    'svg',
+    'webp',
+    'bmp',
+    'woff',
+    'woff2',
+    'ttf',
+    'eot',
+    'otf',
+    'zip',
+    'gz',
+    'tar',
+    'rar',
+    '7z',
+    'pdf',
+    'exe',
+    'dll',
+    'so',
+    'dylib',
+    'bin',
+    'wasm',
+    'mp3',
+    'mp4',
+    'mov',
+    'avi',
+    'webm',
 ]);
 const MAX_TOTAL_FILES = 3000;
 const MAX_TOTAL_DECOMPRESSED_BYTES = 500 * 1024 * 1024;
@@ -49,6 +71,10 @@ function ignoredReason(relativePath) {
         return 'binary';
     return null;
 }
+function unsafeArchivePath(p) {
+    const normalized = p.replace(/\\/g, '/');
+    return normalized.startsWith('/') || /^[A-Za-z]:/.test(normalized) || normalized.split('/').includes('..');
+}
 function stripRootPrefix(entries) {
     const tops = new Set(entries.map((e) => e.entryName.split('/')[0]));
     return tops.size === 1 ? [...tops][0] : null;
@@ -68,6 +94,8 @@ function extractZip(buffer, maxFileSizeBytes, skipped) {
         }
         if (!relativePath)
             continue;
+        if (unsafeArchivePath(relativePath))
+            continue;
         const ignored = ignoredReason(relativePath);
         if (ignored) {
             if (ignored !== 'silent')
@@ -83,7 +111,14 @@ function extractZip(buffer, maxFileSizeBytes, skipped) {
         }
         if (totalDecompressedBytes + declaredSize > MAX_TOTAL_DECOMPRESSED_BYTES)
             break;
-        const data = entry.getData();
+        let data;
+        try {
+            data = entry.getData();
+        }
+        catch {
+            skipped?.push({ path: relativePath, reason: 'too_large' });
+            continue;
+        }
         totalDecompressedBytes += data.length;
         if (data.length === 0)
             continue;

@@ -1,5 +1,5 @@
 import { ConfigService } from '@nestjs/config';
-import { CompleteOptions, CompleteResult, LlmProvider } from '../llm-provider.interface';
+import { CompleteOptions, CompleteResult, LlmProvider, LLM_REQUEST_TIMEOUT_MS } from '../llm-provider.interface';
 
 const DEFAULT_MAX_OUTPUT_TOKENS = 4000;
 
@@ -51,6 +51,7 @@ export abstract class OpenAiCompatibleProvider implements LlmProvider {
 
     const response = await fetch(this.settings.baseUrl, {
       method: 'POST',
+      signal: AbortSignal.timeout(LLM_REQUEST_TIMEOUT_MS),
       headers: {
         'content-type': 'application/json',
         authorization: `Bearer ${apiKey}`,

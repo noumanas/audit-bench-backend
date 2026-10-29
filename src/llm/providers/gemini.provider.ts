@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { CompleteOptions, CompleteResult, LlmProvider } from '../llm-provider.interface';
+import { CompleteOptions, CompleteResult, LlmProvider, LLM_REQUEST_TIMEOUT_MS } from '../llm-provider.interface';
 
 // Gemini models think before answering, and the thinking counts against this
 // limit: too low and a review comes back cut off or empty. The thinking
@@ -33,6 +33,7 @@ export class GeminiProvider implements LlmProvider {
 
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
       method: 'POST',
+      signal: AbortSignal.timeout(LLM_REQUEST_TIMEOUT_MS),
       // A header keeps the key out of URLs — query strings are far more
       // likely to end up in access logs, proxies, or error messages.
       headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },

@@ -22,8 +22,13 @@ export declare class GitlabController {
     scan(user: RequestUser, dto: ScanProjectDto): Promise<{
         error: string | null;
         id: string;
-        userId: string;
+        createdAt: Date;
         organizationId: string | null;
+        userId: string;
+        status: import(".prisma/client").$Enums.ScanStatus;
+        updatedAt: Date;
+        summary: string | null;
+        aiInvoked: boolean;
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
         pullRequestUrl: string | null;
@@ -34,13 +39,11 @@ export declare class GitlabController {
         prPublishedAt: Date | null;
         prPublishError: string | null;
         prInsights: import("@prisma/client/runtime/library").JsonValue | null;
-        status: import(".prisma/client").$Enums.ScanStatus;
         provider: string;
         framework: string | null;
         fileCount: number;
         filesScanned: number;
         verdict: import(".prisma/client").$Enums.Verdict | null;
-        summary: string | null;
         dependencyGraph: import("@prisma/client/runtime/library").JsonValue | null;
         circularImports: import("@prisma/client/runtime/library").JsonValue | null;
         deadCode: import("@prisma/client/runtime/library").JsonValue | null;
@@ -54,22 +57,24 @@ export declare class GitlabController {
         skippedFiles: import("@prisma/client/runtime/library").JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
-        aiInvoked: boolean;
         inputTokens: number;
         outputTokens: number;
         shareId: string | null;
         isPublic: boolean;
         localOnly: boolean;
         requesterIpHash: string | null;
-        createdAt: Date;
-        updatedAt: Date;
         completedAt: Date | null;
     }>;
     reviewMr(user: RequestUser, dto: ReviewMrDto): Promise<{
         error: string | null;
         id: string;
-        userId: string;
+        createdAt: Date;
         organizationId: string | null;
+        userId: string;
+        status: import(".prisma/client").$Enums.ScanStatus;
+        updatedAt: Date;
+        summary: string | null;
+        aiInvoked: boolean;
         sourceName: string;
         sourceType: import(".prisma/client").$Enums.ScanSourceType;
         pullRequestUrl: string | null;
@@ -80,13 +85,11 @@ export declare class GitlabController {
         prPublishedAt: Date | null;
         prPublishError: string | null;
         prInsights: import("@prisma/client/runtime/library").JsonValue | null;
-        status: import(".prisma/client").$Enums.ScanStatus;
         provider: string;
         framework: string | null;
         fileCount: number;
         filesScanned: number;
         verdict: import(".prisma/client").$Enums.Verdict | null;
-        summary: string | null;
         dependencyGraph: import("@prisma/client/runtime/library").JsonValue | null;
         circularImports: import("@prisma/client/runtime/library").JsonValue | null;
         deadCode: import("@prisma/client/runtime/library").JsonValue | null;
@@ -100,15 +103,12 @@ export declare class GitlabController {
         skippedFiles: import("@prisma/client/runtime/library").JsonValue | null;
         filesFromCache: number;
         filesAiSkipped: number;
-        aiInvoked: boolean;
         inputTokens: number;
         outputTokens: number;
         shareId: string | null;
         isPublic: boolean;
         localOnly: boolean;
         requesterIpHash: string | null;
-        createdAt: Date;
-        updatedAt: Date;
         completedAt: Date | null;
     }>;
 }

@@ -24,6 +24,7 @@ function average(values) {
 function startOfDayUtc(d) {
     return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())).toISOString().slice(0, 10);
 }
+const MAX_RESOURCES_PER_KIND = 1000;
 let AnalyticsService = class AnalyticsService {
     prisma;
     constructor(prisma) {
@@ -37,6 +38,8 @@ let AnalyticsService = class AnalyticsService {
                 : this.prisma.audit.findMany({
                     where: { ...scope, createdAt: { gte: since } },
                     select: { id: true, filename: true, verdict: true, findings: true, createdAt: true },
+                    orderBy: { createdAt: 'desc' },
+                    take: MAX_RESOURCES_PER_KIND,
                 }),
             this.prisma.scanJob.findMany({
                 where: {
@@ -58,6 +61,8 @@ let AnalyticsService = class AnalyticsService {
                     circularImports: true,
                     files: { select: { findings: true } },
                 },
+                orderBy: { createdAt: 'desc' },
+                take: MAX_RESOURCES_PER_KIND,
             }),
         ]);
         const auditScores = audits.map((a) => {

@@ -134,10 +134,10 @@ export declare class UsersController {
             organizationId: string | null;
             userId: string;
             status: import(".prisma/client").$Enums.PlanRequestStatus;
+            reviewedById: string | null;
             note: string | null;
             reviewedAt: Date | null;
             requestedPlanId: string;
-            reviewedById: string | null;
         };
         user?: undefined;
     }>;
@@ -172,10 +172,10 @@ export declare class UsersController {
         organizationId: string | null;
         userId: string;
         status: import(".prisma/client").$Enums.PlanRequestStatus;
+        reviewedById: string | null;
         note: string | null;
         reviewedAt: Date | null;
         requestedPlanId: string;
-        reviewedById: string | null;
     })[]>;
     getBadgeToken(user: RequestUser): Promise<{
         badgeToken: string;

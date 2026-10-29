@@ -28,3 +28,10 @@ export interface LlmProvider {
   readonly name: string;
   complete(prompt: string, opts?: CompleteOptions): Promise<CompleteResult>;
 }
+
+/**
+ * Longest one AI request may take. Without it a stalled provider holds a
+ * review open (and its "Reviewing…" check spinning) for minutes; with it the
+ * call fails, LLM_FALLBACK_PROVIDER takes over, or the review closes as failed.
+ */
+export const LLM_REQUEST_TIMEOUT_MS = 150_000;

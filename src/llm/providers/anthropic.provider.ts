@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { CompleteOptions, CompleteResult, LlmProvider } from '../llm-provider.interface';
+import { CompleteOptions, CompleteResult, LlmProvider, LLM_REQUEST_TIMEOUT_MS } from '../llm-provider.interface';
 
 const MAX_OUTPUT_TOKENS = 2000;
 
@@ -21,6 +21,7 @@ export class AnthropicProvider implements LlmProvider {
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
+      signal: AbortSignal.timeout(LLM_REQUEST_TIMEOUT_MS),
       headers: {
         'content-type': 'application/json',
         'x-api-key': apiKey,

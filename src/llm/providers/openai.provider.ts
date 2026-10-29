@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { CompleteOptions, CompleteResult, LlmProvider } from '../llm-provider.interface';
+import { CompleteOptions, CompleteResult, LlmProvider, LLM_REQUEST_TIMEOUT_MS } from '../llm-provider.interface';
 
 // Reasoning-capable models (o-series, gpt-5 family) spend part of this
 // budget on hidden reasoning tokens before writing visible output — how
@@ -60,6 +60,7 @@ export class OpenAiProvider implements LlmProvider {
   private request(apiKey: string, model: string, prompt: string, withReasoningEffort: boolean, jsonMode: boolean) {
     return fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
+      signal: AbortSignal.timeout(LLM_REQUEST_TIMEOUT_MS),
       headers: {
         'content-type': 'application/json',
         authorization: `Bearer ${apiKey}`,

@@ -14,10 +14,11 @@ exports.cacheExtraKey = cacheExtraKey;
 const common_1 = require("@nestjs/common");
 const crypto_1 = require("crypto");
 const prisma_service_1 = require("../prisma/prisma.service");
-function cacheExtraKey(rulesKey, relatedContext) {
+function cacheExtraKey(rulesKey, relatedContext, mode) {
     const parts = [
         rulesKey,
         relatedContext ? `ctx:${(0, crypto_1.createHash)('sha256').update(relatedContext).digest('hex').slice(0, 16)}` : undefined,
+        mode ? `mode:${mode}` : undefined,
     ].filter(Boolean);
     return parts.length ? parts.join('|') : undefined;
 }
@@ -32,8 +33,10 @@ let AuditCacheService = class AuditCacheService {
         return (0, crypto_1.createHash)('sha256').update(normalized).digest('hex');
     }
     async exists(contentHash) {
-        const hit = await this.prisma.auditCache.findUnique({ where: { contentHash }, select: { contentHash: true } });
-        return hit !== null;
+        return (await this.peek(contentHash)) !== null;
+    }
+    async peek(contentHash) {
+        return this.prisma.auditCache.findUnique({ where: { contentHash }, select: { aiInvoked: true } });
     }
     async lookup(contentHash) {
         const hit = await this.prisma.auditCache.findUnique({ where: { contentHash } });
