@@ -11,3 +11,4 @@ export interface LlmProvider {
     readonly name: string;
     complete(prompt: string, opts?: CompleteOptions): Promise<CompleteResult>;
 }
+export declare const LLM_REQUEST_TIMEOUT_MS = 150000;

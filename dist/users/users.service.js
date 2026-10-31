@@ -8,14 +8,18 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var UsersService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.UsersService = void 0;
 const subscription_service_1 = require("../revenue/subscription.service");
 const common_1 = require("@nestjs/common");
+const config_1 = require("@nestjs/config");
 const crypto = require("crypto");
 const prisma_service_1 = require("../prisma/prisma.service");
 const delete_user_1 = require("./delete-user");
 const api_key_util_1 = require("../auth/api-key.util");
+const email_service_1 = require("../email/email.service");
+const templates_1 = require("../email/templates");
 const SAFE_USER_SELECT = {
     id: true,
     email: true,
@@ -33,15 +37,39 @@ const PLAN_REQUEST_INCLUDE = {
     organization: { select: { id: true, name: true } },
     reviewedBy: { select: { id: true, email: true, name: true } },
 };
+const DEFAULT_PLAN_REQUEST_INBOX = 'hello@auditbenchai.com';
 function isSelfServicePlan(plan) {
     return plan.priceMonthlyCents === 0 && plan.slug !== 'enterprise';
 }
-let UsersService = class UsersService {
+let UsersService = UsersService_1 = class UsersService {
     prisma;
     subscriptions;
-    constructor(prisma, subscriptions) {
+    email;
+    config;
+    logger = new common_1.Logger(UsersService_1.name);
+    constructor(prisma, subscriptions, email, config) {
         this.prisma = prisma;
         this.subscriptions = subscriptions;
+        this.email = email;
+        this.config = config;
+    }
+    async notifyPlanRequest(user, request) {
+        const inbox = this.config.get('PLAN_REQUEST_INBOX') || DEFAULT_PLAN_REQUEST_INBOX;
+        const origin = (this.config.get('FRONTEND_ORIGIN') || 'http://localhost:3000').split(',')[0].trim();
+        const message = (0, templates_1.planRequestTeamEmail)({
+            requesterName: user.name,
+            requesterEmail: user.email,
+            planName: request.requestedPlan.name,
+            priceMonthlyCents: request.requestedPlan.priceMonthlyCents,
+            organizationName: request.organization?.name ?? null,
+            requestId: request.id,
+            requestedAt: request.createdAt,
+            adminUrl: `${origin}/app/admin`,
+        });
+        const replyTo = user.name ? `${user.name.replace(/["<>]/g, '')} <${user.email}>` : user.email;
+        await this.email
+            .send(inbox, message.subject, message.html, message.text, undefined, replyTo)
+            .catch((err) => this.logger.error(`Plan request email for ${request.id} failed: ${err.message}`));
     }
     async getProfile(userId) {
         const user = await this.prisma.user.findUnique({
@@ -87,6 +115,7 @@ let UsersService = class UsersService {
                 data: { userId, organizationId: org.id, requestedPlanId: plan.id },
                 include: PLAN_REQUEST_INCLUDE,
             });
+            await this.notifyPlanRequest(user, orgRequest);
             return { applied: false, request: orgRequest };
         }
         if (user.planId === plan.id) {
@@ -111,6 +140,7 @@ let UsersService = class UsersService {
             data: { userId, requestedPlanId: plan.id },
             include: PLAN_REQUEST_INCLUDE,
         });
+        await this.notifyPlanRequest(user, request);
         return { applied: false, request };
     }
     async listMyPlanRequests(userId) {
@@ -157,9 +187,11 @@ let UsersService = class UsersService {
     }
 };
 exports.UsersService = UsersService;
-exports.UsersService = UsersService = __decorate([
+exports.UsersService = UsersService = UsersService_1 = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
-        subscription_service_1.SubscriptionService])
+        subscription_service_1.SubscriptionService,
+        email_service_1.EmailService,
+        config_1.ConfigService])
 ], UsersService);
 //# sourceMappingURL=users.service.js.map

@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.GeminiProvider = void 0;
 const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
+const llm_provider_interface_1 = require("../llm-provider.interface");
 const MAX_OUTPUT_TOKENS = 8192;
 const DEFAULT_THINKING_BUDGET = 1024;
 const DEFAULT_THINKING_LEVEL = 'low';
@@ -32,6 +33,7 @@ let GeminiProvider = class GeminiProvider {
         const thinkingConfig = this.thinkingConfig(model);
         const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
             method: 'POST',
+            signal: AbortSignal.timeout(llm_provider_interface_1.LLM_REQUEST_TIMEOUT_MS),
             headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
             body: JSON.stringify({
                 contents: [{ parts: [{ text: prompt }] }],

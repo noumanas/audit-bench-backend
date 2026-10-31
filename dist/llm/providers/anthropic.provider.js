@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.AnthropicProvider = void 0;
 const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
+const llm_provider_interface_1 = require("../llm-provider.interface");
 const MAX_OUTPUT_TOKENS = 2000;
 let AnthropicProvider = class AnthropicProvider {
     config;
@@ -28,6 +29,7 @@ let AnthropicProvider = class AnthropicProvider {
         const model = opts?.escalate ? this.config.get('ANTHROPIC_ESCALATION_MODEL') || baseModel : baseModel;
         const response = await fetch('https://api.anthropic.com/v1/messages', {
             method: 'POST',
+            signal: AbortSignal.timeout(llm_provider_interface_1.LLM_REQUEST_TIMEOUT_MS),
             headers: {
                 'content-type': 'application/json',
                 'x-api-key': apiKey,

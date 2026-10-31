@@ -4,12 +4,16 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { assertNotOwnerOfOthers, deleteUserRecords } from './delete-user';
 import { generateApiKey } from '../auth/api-key.util';
+import { EmailService } from '../email/email.service';
+import { planRequestTeamEmail } from '../email/templates';
 
 // Explicit allow-list — never spread a raw User row to a client. That row
 // carries passwordHash and plaintext GitHub/GitLab PATs, neither of which
@@ -33,6 +37,10 @@ const PLAN_REQUEST_INCLUDE = {
   reviewedBy: { select: { id: true, email: true, name: true } },
 } as const;
 
+// Paid plans are paid off-site (Wise link in PlanPanel), so every new
+// request is emailed here for someone to match against the payment.
+const DEFAULT_PLAN_REQUEST_INBOX = 'hello@auditbenchai.com';
+
 function isSelfServicePlan(plan: { slug: string; priceMonthlyCents: number }): boolean {
   // Free is the only tier a user can switch into instantly. Everything else
   // needs admin approval — including Enterprise, which is priced at $0 as a
@@ -43,10 +51,41 @@ function isSelfServicePlan(plan: { slug: string; priceMonthlyCents: number }): b
 
 @Injectable()
 export class UsersService {
+  private readonly logger = new Logger(UsersService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly subscriptions: SubscriptionService,
+    private readonly email: EmailService,
+    private readonly config: ConfigService,
   ) {}
+
+  /**
+   * Tells the billing inbox a paid plan was requested. The request is
+   * already saved, so a mail failure is logged, never surfaced. Awaited by
+   * the caller because Cloud Run throttles CPU once the response is sent.
+   */
+  private async notifyPlanRequest(
+    user: { email: string; name: string | null },
+    request: { id: string; createdAt: Date; requestedPlan: { name: string; priceMonthlyCents: number }; organization: { name: string } | null },
+  ) {
+    const inbox = this.config.get<string>('PLAN_REQUEST_INBOX') || DEFAULT_PLAN_REQUEST_INBOX;
+    const origin = (this.config.get<string>('FRONTEND_ORIGIN') || 'http://localhost:3000').split(',')[0].trim();
+    const message = planRequestTeamEmail({
+      requesterName: user.name,
+      requesterEmail: user.email,
+      planName: request.requestedPlan.name,
+      priceMonthlyCents: request.requestedPlan.priceMonthlyCents,
+      organizationName: request.organization?.name ?? null,
+      requestId: request.id,
+      requestedAt: request.createdAt,
+      adminUrl: `${origin}/app/admin`,
+    });
+    const replyTo = user.name ? `${user.name.replace(/["<>]/g, '')} <${user.email}>` : user.email;
+    await this.email
+      .send(inbox, message.subject, message.html, message.text, undefined, replyTo)
+      .catch((err: Error) => this.logger.error(`Plan request email for ${request.id} failed: ${err.message}`));
+  }
 
   async getProfile(userId: string) {
     const user = await this.prisma.user.findUnique({
@@ -106,6 +145,7 @@ export class UsersService {
         data: { userId, organizationId: org.id, requestedPlanId: plan.id },
         include: PLAN_REQUEST_INCLUDE,
       });
+      await this.notifyPlanRequest(user, orgRequest);
       return { applied: false as const, request: orgRequest };
     }
 
@@ -135,6 +175,7 @@ export class UsersService {
       data: { userId, requestedPlanId: plan.id },
       include: PLAN_REQUEST_INCLUDE,
     });
+    await this.notifyPlanRequest(user, request);
     return { applied: false as const, request };
   }
 

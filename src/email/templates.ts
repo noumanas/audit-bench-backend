@@ -442,3 +442,56 @@ export function contactConfirmationEmail(input: { name: string; topicLabel: stri
     textFooter(footerNote);
   return { subject: 'We got your message — Audit Bench Ai', html, text };
 }
+
+export interface PlanRequestTeamEmailInput {
+  requesterName: string | null;
+  requesterEmail: string;
+  planName: string;
+  priceMonthlyCents: number;
+  /** Set when the request is for the requester's organization plan. */
+  organizationName: string | null;
+  requestId: string;
+  requestedAt: Date;
+  adminUrl: string;
+}
+
+/**
+ * Lands in the billing inbox (PLAN_REQUEST_INBOX) when someone files a paid
+ * plan request. Payment happens off-site via the Wise link in PlanPanel, so
+ * the reviewer checks Wise for the transfer before approving. Reply-To is
+ * the requester — see UsersService.notifyPlanRequest.
+ */
+export function planRequestTeamEmail(input: PlanRequestTeamEmailInput): RenderedEmail {
+  const who = input.requesterName ? `${input.requesterName} <${input.requesterEmail}>` : input.requesterEmail;
+  const price = input.priceMonthlyCents > 0 ? `$${(input.priceMonthlyCents / 100).toFixed(2)}/mo` : 'Custom pricing';
+  const when = input.requestedAt.toUTCString();
+  const row = (label: string, value: string) => `<tr>
+    <td valign="top" style="padding:6px 16px 6px 0;font-family:${FONT};font-size:13px;color:${C.muted};white-space:nowrap;">${label}</td>
+    <td style="padding:6px 0;font-family:${FONT};font-size:14px;color:${C.ink};">${value}</td>
+  </tr>`;
+  const html = layout({
+    preheader: `${who} requested ${input.planName} — check the payment, then approve.`,
+    heading: `Plan request · ${input.planName}`,
+    bodyHtml:
+      `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px;">
+        ${row('From', `${input.requesterName ? `${escapeHtml(input.requesterName)} ` : ''}&lt;<a href="mailto:${escapeHtml(input.requesterEmail)}" style="color:${C.cobalt};">${escapeHtml(input.requesterEmail)}</a>&gt;`)}
+        ${row('Plan', `<strong>${escapeHtml(input.planName)}</strong> · ${escapeHtml(price)}`)}
+        ${input.organizationName ? row('Organization', escapeHtml(input.organizationName)) : ''}
+        ${row('Requested', escapeHtml(when))}
+        ${row('Request ID', `<code>${escapeHtml(input.requestId)}</code>`)}
+      </table>` +
+      paragraph(
+        `Kindly check that the payment was received on Wise, then approve the request to activate the package. Until then the account stays on its current plan.`,
+      ) +
+      button('Review in admin panel', input.adminUrl) +
+      `<p style="margin:12px 0 0;font-family:${FONT};font-size:13px;color:${C.muted};">Reply to this email to contact the requester directly.</p>`,
+    footerNote: 'Sent when a user requests a paid plan on auditbenchai.com.',
+  });
+  const text =
+    `Plan request · ${input.planName}\n\nFrom: ${who}\nPlan: ${input.planName} · ${price}\n` +
+    (input.organizationName ? `Organization: ${input.organizationName}\n` : '') +
+    `Requested: ${when}\nRequest ID: ${input.requestId}\n\n` +
+    `Kindly check that the payment was received on Wise, then approve the request to activate the package.\n\n` +
+    `Review in admin panel: ${input.adminUrl}\n\nReply to this email to contact the requester directly.`;
+  return { subject: `[Plan request] ${input.planName} — ${input.requesterEmail}`, html, text };
+}

@@ -1,9 +1,15 @@
 import { SubscriptionService } from '../revenue/subscription.service';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
+import { EmailService } from '../email/email.service';
 export declare class UsersService {
     private readonly prisma;
     private readonly subscriptions;
-    constructor(prisma: PrismaService, subscriptions: SubscriptionService);
+    private readonly email;
+    private readonly config;
+    private readonly logger;
+    constructor(prisma: PrismaService, subscriptions: SubscriptionService, email: EmailService, config: ConfigService);
+    private notifyPlanRequest;
     getProfile(userId: string): Promise<{
         plan: {
             id: string;
