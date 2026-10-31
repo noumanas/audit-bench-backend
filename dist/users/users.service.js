@@ -20,6 +20,8 @@ const delete_user_1 = require("./delete-user");
 const api_key_util_1 = require("../auth/api-key.util");
 const email_service_1 = require("../email/email.service");
 const templates_1 = require("../email/templates");
+const team_inbox_1 = require("../common/team-inbox");
+const activity_service_1 = require("../activity/activity.service");
 const SAFE_USER_SELECT = {
     id: true,
     email: true,
@@ -37,7 +39,6 @@ const PLAN_REQUEST_INCLUDE = {
     organization: { select: { id: true, name: true } },
     reviewedBy: { select: { id: true, email: true, name: true } },
 };
-const DEFAULT_PLAN_REQUEST_INBOX = 'hello@auditbenchai.com';
 function isSelfServicePlan(plan) {
     return plan.priceMonthlyCents === 0 && plan.slug !== 'enterprise';
 }
@@ -46,15 +47,29 @@ let UsersService = UsersService_1 = class UsersService {
     subscriptions;
     email;
     config;
+    activity;
     logger = new common_1.Logger(UsersService_1.name);
-    constructor(prisma, subscriptions, email, config) {
+    constructor(prisma, subscriptions, email, config, activity) {
         this.prisma = prisma;
         this.subscriptions = subscriptions;
         this.email = email;
         this.config = config;
+        this.activity = activity;
     }
-    async notifyPlanRequest(user, request) {
-        const inbox = this.config.get('PLAN_REQUEST_INBOX') || DEFAULT_PLAN_REQUEST_INBOX;
+    async notifyPlanRequest(user, request, ctx) {
+        await this.activity.log({
+            type: 'plan_requested',
+            userId: user.id,
+            email: user.email,
+            ctx,
+            metadata: {
+                plan: request.requestedPlan.name,
+                priceMonthlyCents: request.requestedPlan.priceMonthlyCents,
+                organization: request.organization?.name ?? null,
+                requestId: request.id,
+            },
+        });
+        const inbox = (0, team_inbox_1.teamInbox)(this.config);
         const origin = (this.config.get('FRONTEND_ORIGIN') || 'http://localhost:3000').split(',')[0].trim();
         const message = (0, templates_1.planRequestTeamEmail)({
             requesterName: user.name,
@@ -80,7 +95,7 @@ let UsersService = UsersService_1 = class UsersService {
             throw new common_1.NotFoundException('User not found');
         return user;
     }
-    async changePlan(userId, slug) {
+    async changePlan(userId, slug, ctx) {
         const plan = await this.prisma.plan.findUnique({ where: { slug } });
         if (!plan)
             throw new common_1.BadRequestException(`Unknown plan "${slug}"`);
@@ -115,7 +130,7 @@ let UsersService = UsersService_1 = class UsersService {
                 data: { userId, organizationId: org.id, requestedPlanId: plan.id },
                 include: PLAN_REQUEST_INCLUDE,
             });
-            await this.notifyPlanRequest(user, orgRequest);
+            await this.notifyPlanRequest(user, orgRequest, ctx);
             return { applied: false, request: orgRequest };
         }
         if (user.planId === plan.id) {
@@ -140,7 +155,7 @@ let UsersService = UsersService_1 = class UsersService {
             data: { userId, requestedPlanId: plan.id },
             include: PLAN_REQUEST_INCLUDE,
         });
-        await this.notifyPlanRequest(user, request);
+        await this.notifyPlanRequest(user, request, ctx);
         return { applied: false, request };
     }
     async listMyPlanRequests(userId) {
@@ -192,6 +207,7 @@ exports.UsersService = UsersService = UsersService_1 = __decorate([
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         subscription_service_1.SubscriptionService,
         email_service_1.EmailService,
-        config_1.ConfigService])
+        config_1.ConfigService,
+        activity_service_1.ActivityService])
 ], UsersService);
 //# sourceMappingURL=users.service.js.map

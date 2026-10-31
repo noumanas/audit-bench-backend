@@ -18,18 +18,21 @@ const throttler_1 = require("@nestjs/throttler");
 const auth_service_1 = require("./auth.service");
 const signup_dto_1 = require("./dto/signup.dto");
 const login_dto_1 = require("./dto/login.dto");
+const activity_service_1 = require("../activity/activity.service");
 const AUTH_THROTTLE = { default: { limit: 5, ttl: 60_000 } };
 const SIGNUP_THROTTLE = { default: { limit: 5, ttl: 60 * 60_000 } };
 let AuthController = class AuthController {
     authService;
-    constructor(authService) {
+    activity;
+    constructor(authService, activity) {
         this.authService = authService;
+        this.activity = activity;
     }
-    signup(dto) {
-        return this.authService.signup(dto);
+    signup(dto, req) {
+        return this.authService.signup(dto, this.activity.context(req));
     }
-    login(dto) {
-        return this.authService.login(dto);
+    login(dto, req) {
+        return this.authService.login(dto, this.activity.context(req));
     }
 };
 exports.AuthController = AuthController;
@@ -37,20 +40,23 @@ __decorate([
     (0, throttler_1.Throttle)(SIGNUP_THROTTLE),
     (0, common_1.Post)('signup'),
     __param(0, (0, common_1.Body)()),
+    __param(1, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [signup_dto_1.SignupDto]),
+    __metadata("design:paramtypes", [signup_dto_1.SignupDto, Object]),
     __metadata("design:returntype", void 0)
 ], AuthController.prototype, "signup", null);
 __decorate([
     (0, throttler_1.Throttle)(AUTH_THROTTLE),
     (0, common_1.Post)('login'),
     __param(0, (0, common_1.Body)()),
+    __param(1, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [login_dto_1.LoginDto]),
+    __metadata("design:paramtypes", [login_dto_1.LoginDto, Object]),
     __metadata("design:returntype", void 0)
 ], AuthController.prototype, "login", null);
 exports.AuthController = AuthController = __decorate([
     (0, common_1.Controller)('auth'),
-    __metadata("design:paramtypes", [auth_service_1.AuthService])
+    __metadata("design:paramtypes", [auth_service_1.AuthService,
+        activity_service_1.ActivityService])
 ], AuthController);
 //# sourceMappingURL=auth.controller.js.map

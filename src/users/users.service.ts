@@ -14,6 +14,9 @@ import { assertNotOwnerOfOthers, deleteUserRecords } from './delete-user';
 import { generateApiKey } from '../auth/api-key.util';
 import { EmailService } from '../email/email.service';
 import { planRequestTeamEmail } from '../email/templates';
+import { teamInbox } from '../common/team-inbox';
+import { ActivityService } from '../activity/activity.service';
+import { RequestContext } from '../activity/request-context';
 
 // Explicit allow-list — never spread a raw User row to a client. That row
 // carries passwordHash and plaintext GitHub/GitLab PATs, neither of which
@@ -37,10 +40,6 @@ const PLAN_REQUEST_INCLUDE = {
   reviewedBy: { select: { id: true, email: true, name: true } },
 } as const;
 
-// Paid plans are paid off-site (Wise link in PlanPanel), so every new
-// request is emailed here for someone to match against the payment.
-const DEFAULT_PLAN_REQUEST_INBOX = 'hello@auditbenchai.com';
-
 function isSelfServicePlan(plan: { slug: string; priceMonthlyCents: number }): boolean {
   // Free is the only tier a user can switch into instantly. Everything else
   // needs admin approval — including Enterprise, which is priced at $0 as a
@@ -58,18 +57,34 @@ export class UsersService {
     private readonly subscriptions: SubscriptionService,
     private readonly email: EmailService,
     private readonly config: ConfigService,
+    private readonly activity: ActivityService,
   ) {}
 
   /**
-   * Tells the billing inbox a paid plan was requested. The request is
-   * already saved, so a mail failure is logged, never surfaced. Awaited by
-   * the caller because Cloud Run throttles CPU once the response is sent.
+   * Logs the request and tells the team inbox — paid plans are paid off-site
+   * (Wise link in PlanPanel), so someone has to match it to the payment. The
+   * request is already saved, so a mail failure is logged, never surfaced.
+   * Awaited by the caller because Cloud Run throttles CPU once the response
+   * is sent.
    */
   private async notifyPlanRequest(
-    user: { email: string; name: string | null },
+    user: { id: string; email: string; name: string | null },
     request: { id: string; createdAt: Date; requestedPlan: { name: string; priceMonthlyCents: number }; organization: { name: string } | null },
+    ctx: RequestContext,
   ) {
-    const inbox = this.config.get<string>('PLAN_REQUEST_INBOX') || DEFAULT_PLAN_REQUEST_INBOX;
+    await this.activity.log({
+      type: 'plan_requested',
+      userId: user.id,
+      email: user.email,
+      ctx,
+      metadata: {
+        plan: request.requestedPlan.name,
+        priceMonthlyCents: request.requestedPlan.priceMonthlyCents,
+        organization: request.organization?.name ?? null,
+        requestId: request.id,
+      },
+    });
+    const inbox = teamInbox(this.config);
     const origin = (this.config.get<string>('FRONTEND_ORIGIN') || 'http://localhost:3000').split(',')[0].trim();
     const message = planRequestTeamEmail({
       requesterName: user.name,
@@ -106,7 +121,7 @@ export class UsersService {
    * their own dormant personal one — same self-service/request split, just
    * targeting `organizationId` instead of `userId` (see PlanRequest.organizationId).
    */
-  async changePlan(userId: string, slug: string) {
+  async changePlan(userId: string, slug: string, ctx: RequestContext) {
     const plan = await this.prisma.plan.findUnique({ where: { slug } });
     if (!plan) throw new BadRequestException(`Unknown plan "${slug}"`);
 
@@ -145,7 +160,7 @@ export class UsersService {
         data: { userId, organizationId: org.id, requestedPlanId: plan.id },
         include: PLAN_REQUEST_INCLUDE,
       });
-      await this.notifyPlanRequest(user, orgRequest);
+      await this.notifyPlanRequest(user, orgRequest, ctx);
       return { applied: false as const, request: orgRequest };
     }
 
@@ -175,7 +190,7 @@ export class UsersService {
       data: { userId, requestedPlanId: plan.id },
       include: PLAN_REQUEST_INCLUDE,
     });
-    await this.notifyPlanRequest(user, request);
+    await this.notifyPlanRequest(user, request, ctx);
     return { applied: false as const, request };
   }
 

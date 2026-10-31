@@ -1,4 +1,6 @@
-import { IsEmail, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsEmail, IsOptional, IsString, MaxLength, MinLength, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
+import { AttributionDto } from '../../activity/attribution';
 
 export class SignupDto {
   @IsEmail()
@@ -13,4 +15,9 @@ export class SignupDto {
   @IsString()
   @MaxLength(200)
   name?: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AttributionDto)
+  attribution?: AttributionDto;
 }

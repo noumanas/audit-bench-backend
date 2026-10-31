@@ -13,6 +13,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { assertNotOwnerOfOthers, deleteUserRecords } from '../users/delete-user';
 import { SYSTEM_EMAIL } from '../common/system-account';
 import { EmailService } from '../email/email.service';
+import { ActivityService } from '../activity/activity.service';
 import { planApprovedEmail, planRejectedEmail, RenderedEmail } from '../email/templates';
 import { PlanRequestStatus, Role } from '@prisma/client';
 
@@ -51,7 +52,13 @@ export class AdminService {
     private readonly subscriptions: SubscriptionService,
     private readonly email: EmailService,
     private readonly config: ConfigService,
+    private readonly activity: ActivityService,
   ) {}
+
+  private async reviewerEmail(adminId: string): Promise<string | null> {
+    const admin = await this.prisma.user.findUnique({ where: { id: adminId }, select: { email: true } });
+    return admin?.email ?? null;
+  }
 
   private appUrl(path: string): string {
     return `${(this.config.get<string>('FRONTEND_ORIGIN') || 'http://localhost:3000').split(',')[0].trim()}${path}`;
@@ -119,6 +126,12 @@ export class AdminService {
         expiresAt: planData.planExpiresAt,
       }),
     );
+    await this.activity.log({
+      type: 'plan_approved',
+      userId: request.userId,
+      email: updatedRequest.user.email,
+      metadata: { plan: requestedPlan.name, requestId, reviewedBy: await this.reviewerEmail(adminId) },
+    });
     return updatedRequest;
   }
 
@@ -143,6 +156,17 @@ export class AdminService {
         note,
       }),
     );
+    await this.activity.log({
+      type: 'plan_rejected',
+      userId: request.userId,
+      email: updatedRequest.user.email,
+      metadata: {
+        plan: updatedRequest.requestedPlan.name,
+        requestId,
+        reviewedBy: await this.reviewerEmail(adminId),
+        note: note ?? null,
+      },
+    });
     return updatedRequest;
   }
 

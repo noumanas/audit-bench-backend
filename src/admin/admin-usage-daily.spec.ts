@@ -29,6 +29,7 @@ describe('AdminUsageService.userDetail daily series', () => {
       },
       scanJob: { findMany: jest.fn().mockResolvedValue([]), aggregate: jest.fn().mockResolvedValue(totals) },
       planRequest: { findMany: jest.fn().mockResolvedValue([]) },
+      activityLog: { findMany: jest.fn().mockResolvedValue([]) },
     };
     const service = new AdminUsageService(
       prisma as never,

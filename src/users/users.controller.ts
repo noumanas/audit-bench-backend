@@ -1,4 +1,5 @@
-import { Body, Controller, Delete, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Post, Req, UseGuards } from '@nestjs/common';
+import type { Request } from 'express';
 import { IsString, MaxLength } from 'class-validator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -6,6 +7,7 @@ import { RequestUser } from '../auth/types';
 import { UsersService } from './users.service';
 import { QuotaService } from '../quota/quota.service';
 import { ChangePlanDto } from './dto/change-plan.dto';
+import { ActivityService } from '../activity/activity.service';
 
 class DeleteAccountDto {
   @IsString()
@@ -19,6 +21,7 @@ export class UsersController {
   constructor(
     private readonly usersService: UsersService,
     private readonly quotaService: QuotaService,
+    private readonly activity: ActivityService,
   ) {}
 
   @Get()
@@ -32,10 +35,10 @@ export class UsersController {
   }
 
   @Post('plan')
-  changePlan(@CurrentUser() user: RequestUser, @Body() dto: ChangePlanDto) {
+  changePlan(@CurrentUser() user: RequestUser, @Body() dto: ChangePlanDto, @Req() req: Request) {
     // Free applies instantly; anything else files a PlanRequest for an
     // admin/super_admin to approve — see UsersService.changePlan.
-    return this.usersService.changePlan(user.id, dto.slug);
+    return this.usersService.changePlan(user.id, dto.slug, this.activity.context(req));
   }
 
   @Get('plan-requests')

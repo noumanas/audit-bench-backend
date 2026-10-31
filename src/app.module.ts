@@ -5,6 +5,7 @@ import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
 import { RevenueModule } from './revenue/revenue.module';
 import { ContactModule } from './contact/contact.module';
+import { ActivityModule } from './activity/activity.module';
 import { PublicScanModule } from './public-scan/public-scan.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -42,6 +43,7 @@ import { WebVitalsModule } from './web-vitals/web-vitals.module';
     PrismaModule,
     TokenCryptoModule,
     EmailModule,
+    ActivityModule,
     OrganizationModule,
     AuthModule,
     UsersModule,

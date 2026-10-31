@@ -5,13 +5,16 @@ import { PrismaService } from "../prisma/prisma.service";
 import { WelcomeEmailService } from "../email/welcome-email.service";
 import { SignupDto } from "./dto/signup.dto";
 import { LoginDto } from "./dto/login.dto";
+import { ActivityService } from "../activity/activity.service";
+import { RequestContext } from "../activity/request-context";
 export declare class AuthService {
     private readonly prisma;
     private readonly jwt;
     private readonly config;
     private readonly welcomeEmail;
-    constructor(prisma: PrismaService, jwt: JwtService, config: ConfigService, welcomeEmail: WelcomeEmailService);
-    signup(dto: SignupDto): Promise<{
+    private readonly activity;
+    constructor(prisma: PrismaService, jwt: JwtService, config: ConfigService, welcomeEmail: WelcomeEmailService, activity: ActivityService);
+    signup(dto: SignupDto, ctx: RequestContext): Promise<{
         accessToken: string;
         user: {
             id: string;
@@ -28,7 +31,7 @@ export declare class AuthService {
             orgRole: import(".prisma/client").$Enums.OrgRole | null;
         };
     }>;
-    login(dto: LoginDto): Promise<{
+    login(dto: LoginDto, ctx: RequestContext): Promise<{
         accessToken: string;
         user: {
             id: string;

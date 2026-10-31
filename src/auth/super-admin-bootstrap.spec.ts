@@ -21,9 +21,10 @@ describe('super_admin is never granted on an unverified email', () => {
       { sign: () => 'jwt' } as never,
       config as never,
       { send: jest.fn() } as never,
+      { recordSignup: jest.fn(), log: jest.fn() } as never,
     );
     jest.spyOn(auth, 'buildSession').mockReturnValue({} as never);
-    await auth.signup({ email: 'Owner@Acme.com', password: 'a-long-password-1', name: 'Mallory' } as never);
+    await auth.signup({ email: 'Owner@Acme.com', password: 'a-long-password-1', name: 'Mallory' } as never, {} as never);
     expect(create.mock.calls[0][0].data.role).toBe('user');
   });
 

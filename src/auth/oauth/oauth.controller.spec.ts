@@ -7,7 +7,7 @@ describe('OAuthController sign-in start', () => {
       redirectUri: (p: string) => `https://api.auditbenchai.com/auth/${p}/callback`,
       getAuthorizeUrl: (p: string, state: string) => `https://accounts.example/${p}?state=${state}`,
     };
-    const controller = new OAuthController(oauthService as never, {} as never, { get: () => undefined } as never);
+    const controller = new OAuthController(oauthService as never, {} as never, { get: () => undefined } as never, {} as never);
     const res = { cookie: jest.fn(), redirect: jest.fn() };
     return { controller, res };
   };
@@ -46,6 +46,7 @@ describe('OAuthController sign-in callback errors', () => {
       oauthService as never,
       {} as never,
       { get: () => 'https://app.example' } as never,
+      {} as never,
     );
     jest.spyOn((controller as any).logger, 'error').mockImplementation(() => undefined);
     const res = { clearCookie: jest.fn(), redirect: jest.fn() };

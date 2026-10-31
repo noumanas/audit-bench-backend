@@ -2,13 +2,16 @@ import { SubscriptionService } from '../revenue/subscription.service';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
+import { ActivityService } from '../activity/activity.service';
+import { RequestContext } from '../activity/request-context';
 export declare class UsersService {
     private readonly prisma;
     private readonly subscriptions;
     private readonly email;
     private readonly config;
+    private readonly activity;
     private readonly logger;
-    constructor(prisma: PrismaService, subscriptions: SubscriptionService, email: EmailService, config: ConfigService);
+    constructor(prisma: PrismaService, subscriptions: SubscriptionService, email: EmailService, config: ConfigService, activity: ActivityService);
     private notifyPlanRequest;
     getProfile(userId: string): Promise<{
         plan: {
@@ -40,7 +43,7 @@ export declare class UsersService {
         createdAt: Date;
         orgRole: import(".prisma/client").$Enums.OrgRole | null;
     }>;
-    changePlan(userId: string, slug: string): Promise<{
+    changePlan(userId: string, slug: string, ctx: RequestContext): Promise<{
         applied: true;
         user: {
             plan: {

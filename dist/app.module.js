@@ -14,6 +14,7 @@ const throttler_1 = require("@nestjs/throttler");
 const schedule_1 = require("@nestjs/schedule");
 const revenue_module_1 = require("./revenue/revenue.module");
 const contact_module_1 = require("./contact/contact.module");
+const activity_module_1 = require("./activity/activity.module");
 const public_scan_module_1 = require("./public-scan/public-scan.module");
 const app_controller_1 = require("./app.controller");
 const app_service_1 = require("./app.service");
@@ -52,6 +53,7 @@ exports.AppModule = AppModule = __decorate([
             prisma_module_1.PrismaModule,
             token_crypto_module_1.TokenCryptoModule,
             email_module_1.EmailModule,
+            activity_module_1.ActivityModule,
             organization_module_1.OrganizationModule,
             auth_module_1.AuthModule,
             users_module_1.UsersModule,

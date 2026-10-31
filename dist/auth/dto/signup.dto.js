@@ -11,10 +11,13 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SignupDto = void 0;
 const class_validator_1 = require("class-validator");
+const class_transformer_1 = require("class-transformer");
+const attribution_1 = require("../../activity/attribution");
 class SignupDto {
     email;
     password;
     name;
+    attribution;
 }
 exports.SignupDto = SignupDto;
 __decorate([
@@ -33,4 +36,10 @@ __decorate([
     (0, class_validator_1.MaxLength)(200),
     __metadata("design:type", String)
 ], SignupDto.prototype, "name", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.ValidateNested)(),
+    (0, class_transformer_1.Type)(() => attribution_1.AttributionDto),
+    __metadata("design:type", attribution_1.AttributionDto)
+], SignupDto.prototype, "attribution", void 0);
 //# sourceMappingURL=signup.dto.js.map

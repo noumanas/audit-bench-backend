@@ -20,6 +20,7 @@ const current_user_decorator_1 = require("../auth/current-user.decorator");
 const users_service_1 = require("./users.service");
 const quota_service_1 = require("../quota/quota.service");
 const change_plan_dto_1 = require("./dto/change-plan.dto");
+const activity_service_1 = require("../activity/activity.service");
 class DeleteAccountDto {
     confirmEmail;
 }
@@ -31,9 +32,11 @@ __decorate([
 let UsersController = class UsersController {
     usersService;
     quotaService;
-    constructor(usersService, quotaService) {
+    activity;
+    constructor(usersService, quotaService, activity) {
         this.usersService = usersService;
         this.quotaService = quotaService;
+        this.activity = activity;
     }
     getProfile(user) {
         return this.usersService.getProfile(user.id);
@@ -41,8 +44,8 @@ let UsersController = class UsersController {
     getUsage(user) {
         return this.quotaService.getUsage(user.id);
     }
-    changePlan(user, dto) {
-        return this.usersService.changePlan(user.id, dto.slug);
+    changePlan(user, dto, req) {
+        return this.usersService.changePlan(user.id, dto.slug, this.activity.context(req));
     }
     listMyPlanRequests(user) {
         return this.usersService.listMyPlanRequests(user.id);
@@ -82,8 +85,9 @@ __decorate([
     (0, common_1.Post)('plan'),
     __param(0, (0, current_user_decorator_1.CurrentUser)()),
     __param(1, (0, common_1.Body)()),
+    __param(2, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object, change_plan_dto_1.ChangePlanDto]),
+    __metadata("design:paramtypes", [Object, change_plan_dto_1.ChangePlanDto, Object]),
     __metadata("design:returntype", void 0)
 ], UsersController.prototype, "changePlan", null);
 __decorate([
@@ -133,6 +137,7 @@ exports.UsersController = UsersController = __decorate([
     (0, common_1.Controller)('me'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     __metadata("design:paramtypes", [users_service_1.UsersService,
-        quota_service_1.QuotaService])
+        quota_service_1.QuotaService,
+        activity_service_1.ActivityService])
 ], UsersController);
 //# sourceMappingURL=users.controller.js.map

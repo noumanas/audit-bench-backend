@@ -456,7 +456,7 @@ export interface PlanRequestTeamEmailInput {
 }
 
 /**
- * Lands in the billing inbox (PLAN_REQUEST_INBOX) when someone files a paid
+ * Lands in the team inbox (ADMIN_NOTIFY_INBOX) when someone files a paid
  * plan request. Payment happens off-site via the Wise link in PlanPanel, so
  * the reviewer checks Wise for the transfer before approving. Reply-To is
  * the requester — see UsersService.notifyPlanRequest.
@@ -494,4 +494,44 @@ export function planRequestTeamEmail(input: PlanRequestTeamEmailInput): Rendered
     `Kindly check that the payment was received on Wise, then approve the request to activate the package.\n\n` +
     `Review in admin panel: ${input.adminUrl}\n\nReply to this email to contact the requester directly.`;
   return { subject: `[Plan request] ${input.planName} — ${input.requesterEmail}`, html, text };
+}
+
+export interface NewSignupTeamEmailInput {
+  name: string | null;
+  email: string;
+  method: string;
+  source: string;
+  campaign: string | null;
+  /** "Lahore, Punjab, PK" — whatever parts are known, or null. */
+  location: string | null;
+  signedUpAt: Date;
+  adminUrl: string;
+}
+
+/** Lands in the team inbox (ADMIN_NOTIFY_INBOX) for every new account — see ActivityService.recordSignup. */
+export function newSignupTeamEmail(input: NewSignupTeamEmailInput): RenderedEmail {
+  const who = input.name ? `${input.name} <${input.email}>` : input.email;
+  const when = input.signedUpAt.toUTCString();
+  const row = (label: string, value: string) => `<tr>
+    <td valign="top" style="padding:6px 16px 6px 0;font-family:${FONT};font-size:13px;color:${C.muted};white-space:nowrap;">${label}</td>
+    <td style="padding:6px 0;font-family:${FONT};font-size:14px;color:${C.ink};">${value}</td>
+  </tr>`;
+  const html = layout({
+    preheader: `${who} signed up via ${input.method} from ${input.source}.`,
+    heading: 'New user signed up',
+    bodyHtml:
+      `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px;">
+        ${row('User', `${input.name ? `${escapeHtml(input.name)} ` : ''}&lt;<a href="mailto:${escapeHtml(input.email)}" style="color:${C.cobalt};">${escapeHtml(input.email)}</a>&gt;`)}
+        ${row('Signed up with', escapeHtml(input.method))}
+        ${row('Came from', escapeHtml(input.source) + (input.campaign ? ` · ${escapeHtml(input.campaign)}` : ''))}
+        ${row('Location', escapeHtml(input.location ?? 'Unknown'))}
+        ${row('When', escapeHtml(when))}
+      </table>` + button('Open admin panel', input.adminUrl),
+    footerNote: 'Sent for every new account on auditbenchai.com.',
+  });
+  const text =
+    `New user signed up\n\nUser: ${who}\nSigned up with: ${input.method}\nCame from: ${input.source}` +
+    (input.campaign ? ` · ${input.campaign}` : '') +
+    `\nLocation: ${input.location ?? 'Unknown'}\nWhen: ${when}\n\nOpen admin panel: ${input.adminUrl}`;
+  return { subject: `[New user] ${input.email} via ${input.method}`, html, text };
 }

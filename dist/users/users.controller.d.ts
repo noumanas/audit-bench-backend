@@ -1,14 +1,17 @@
+import type { Request } from 'express';
 import { RequestUser } from '../auth/types';
 import { UsersService } from './users.service';
 import { QuotaService } from '../quota/quota.service';
 import { ChangePlanDto } from './dto/change-plan.dto';
+import { ActivityService } from '../activity/activity.service';
 declare class DeleteAccountDto {
     confirmEmail: string;
 }
 export declare class UsersController {
     private readonly usersService;
     private readonly quotaService;
-    constructor(usersService: UsersService, quotaService: QuotaService);
+    private readonly activity;
+    constructor(usersService: UsersService, quotaService: QuotaService, activity: ActivityService);
     getProfile(user: RequestUser): Promise<{
         plan: {
             id: string;
@@ -68,7 +71,7 @@ export declare class UsersController {
         dailyResetsAt: Date;
         monthlyResetsAt: Date;
     }>;
-    changePlan(user: RequestUser, dto: ChangePlanDto): Promise<{
+    changePlan(user: RequestUser, dto: ChangePlanDto, req: Request): Promise<{
         applied: true;
         user: {
             plan: {

@@ -20,7 +20,7 @@ const setup = (user: ReturnType<typeof target> | null, teammates = 0) => {
     user: { findUnique: jest.fn().mockResolvedValue(user), count: jest.fn().mockResolvedValue(teammates) },
     $transaction: jest.fn((fn: (d: typeof db) => unknown) => fn(db)),
   };
-  const service = new AdminService(prisma as never, {} as never, {} as never, { get: () => undefined } as never);
+  const service = new AdminService(prisma as never, {} as never, {} as never, { get: () => undefined } as never, {} as never);
   return { service, db };
 };
 

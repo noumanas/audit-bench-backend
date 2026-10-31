@@ -11,6 +11,7 @@ import { RejectPlanRequestDto } from './dto/reject-plan-request.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { ActivityService } from '../activity/activity.service';
 
 class DeleteUserDto {
   @IsString()
@@ -25,7 +26,36 @@ export class AdminController {
   constructor(
     private readonly adminService: AdminService,
     private readonly usage: AdminUsageService,
+    private readonly activity: ActivityService,
   ) {}
+
+  // Sign-ups, sign-ins (and failures) and plan events with IP + location.
+  @Get('activity')
+  listActivity(
+    @Query('type') type?: string,
+    @Query('q') q?: string,
+    @Query('userId') userId?: string,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.activity.list({ type, q, userId, cursor, limit: limit ? Number(limit) || undefined : undefined });
+  }
+
+  @Get('activity/summary')
+  activitySummary() {
+    return this.activity.summary();
+  }
+
+  // The admin-panel bell: new sign-ups and plan requests since this admin last looked.
+  @Get('notifications')
+  notifications(@CurrentUser() user: RequestUser) {
+    return this.activity.notifications(user.id);
+  }
+
+  @Post('notifications/seen')
+  markNotificationsSeen(@CurrentUser() user: RequestUser) {
+    return this.activity.markNotificationsSeen(user.id);
+  }
 
   // Each user with their effective plan, quota meters (for the pool they
   // draw from) and this month's own AI usage — see AdminUsageService.

@@ -235,8 +235,8 @@ export class OAuthService {
         : provider === "gitlab"
           ? await this.fetchGitlabProfile(tokens.accessToken)
           : await this.fetchGoogleProfile(tokens.accessToken);
-    const user = await this.findOrCreateUser(provider, profile, tokens);
-    return this.mintLoginCode(user.id);
+    const { user, created } = await this.findOrCreateUser(provider, profile, tokens);
+    return this.mintLoginCode(user.id, provider, created);
   }
 
   async exchangeLoginCode(code: string) {
@@ -252,10 +252,11 @@ export class OAuthService {
       where: { id: record.id },
       data: { usedAt: new Date() },
     });
-    return this.prisma.user.findUniqueOrThrow({
+    const user = await this.prisma.user.findUniqueOrThrow({
       where: { id: record.userId },
       include: { plan: true, organization: true },
     });
+    return { user, provider: record.provider, isNewUser: record.isNewUser };
   }
 
   private requireClientId(provider: OAuthProvider): string {
@@ -282,12 +283,18 @@ export class OAuthService {
     return clientSecret;
   }
 
-  private async mintLoginCode(userId: string): Promise<string> {
+  private async mintLoginCode(
+    userId: string,
+    provider: OAuthProvider,
+    isNewUser: boolean,
+  ): Promise<string> {
     const code = crypto.randomBytes(24).toString("hex");
     await this.prisma.oAuthLoginCode.create({
       data: {
         code,
         userId,
+        provider,
+        isNewUser,
         expiresAt: new Date(Date.now() + LOGIN_CODE_TTL_MS),
       },
     });
@@ -412,7 +419,7 @@ export class OAuthService {
 
     // Only after the transaction commits — never welcome an account that rolled back.
     if (created) this.welcomeEmail.send(user);
-    return user;
+    return { user, created };
   }
 
   // ---------- GitHub ----------

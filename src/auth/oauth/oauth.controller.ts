@@ -23,6 +23,7 @@ import { JwtAuthGuard } from "../jwt-auth.guard";
 import { CurrentUser } from "../current-user.decorator";
 import { RequestUser } from "../types";
 import { AuthService } from "../auth.service";
+import { ActivityService } from "../../activity/activity.service";
 
 const STATE_COOKIE = "oauth_state";
 const CONNECT_PROVIDERS = new Set<string>(["github", "gitlab"]);
@@ -44,6 +45,7 @@ export class OAuthController {
     private readonly oauthService: OAuthService,
     private readonly authService: AuthService,
     private readonly config: ConfigService,
+    private readonly activity: ActivityService,
   ) {}
 
   @Get("github")
@@ -93,9 +95,19 @@ export class OAuthController {
 
   /** The frontend calls this with the one-time code from the redirect to get a real session — see OAuthService. */
   @Post("oauth/exchange")
-  async exchange(@Body() dto: ExchangeOAuthDto) {
-    const user = await this.oauthService.exchangeLoginCode(dto.code);
-    return this.authService.buildSession(user);
+  async exchange(@Body() dto: ExchangeOAuthDto, @Req() req: Request) {
+    const { user, provider, isNewUser } = await this.oauthService.exchangeLoginCode(dto.code);
+    const session = this.authService.buildSession(user);
+    // Logged here rather than in the provider callback: this request comes
+    // from the user's browser too, and only it carries their attribution.
+    const ctx = this.activity.context(req);
+    const method = provider ?? "oauth";
+    if (isNewUser) {
+      await this.activity.recordSignup(user, method, ctx, dto.attribution);
+    } else {
+      await this.activity.log({ type: "login", userId: user.id, email: user.email, method, ctx });
+    }
+    return session;
   }
 
   /**

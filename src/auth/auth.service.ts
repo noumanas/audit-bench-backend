@@ -14,6 +14,8 @@ import { WelcomeEmailService } from "../email/welcome-email.service";
 import { SignupDto } from "./dto/signup.dto";
 import { LoginDto } from "./dto/login.dto";
 import { JwtPayload } from "./types";
+import { ActivityService } from "../activity/activity.service";
+import { RequestContext } from "../activity/request-context";
 
 // Bumped from 10 → 12 per current OWASP guidance. Existing hashes at the old
 // cost remain valid (bcrypt encodes its own cost factor) — login() upgrades
@@ -28,9 +30,10 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly welcomeEmail: WelcomeEmailService,
+    private readonly activity: ActivityService,
   ) {}
 
-  async signup(dto: SignupDto) {
+  async signup(dto: SignupDto, ctx: RequestContext) {
     const unusable = await unusableEmailReason(dto.email);
     if (unusable) throw new BadRequestException(unusable);
 
@@ -65,24 +68,43 @@ export class AuthService {
     });
 
     this.welcomeEmail.send(user);
+    await this.activity.recordSignup(user, "password", ctx, dto.attribution);
     return this.buildSession(user);
   }
 
-  async login(dto: LoginDto) {
+  async login(dto: LoginDto, ctx: RequestContext) {
+    const failed = (reason: string, userId?: string) =>
+      this.activity.log({
+        type: "login_failed",
+        userId,
+        email: dto.email,
+        method: "password",
+        ctx,
+        metadata: { reason },
+      });
+
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
       include: { plan: true, organization: true },
     });
-    if (!user) throw new UnauthorizedException("Invalid email or password");
+    if (!user) {
+      await failed("unknown_email");
+      throw new UnauthorizedException("Invalid email or password");
+    }
 
     if (!user.passwordHash) {
+      await failed("oauth_only_account", user.id);
       throw new UnauthorizedException(
         "This account uses Google/GitHub/GitLab login — sign in that way instead of with a password.",
       );
     }
 
     const valid = await bcrypt.compare(dto.password, user.passwordHash);
-    if (!valid) throw new UnauthorizedException("Invalid email or password");
+    if (!valid) {
+      await failed("wrong_password", user.id);
+      throw new UnauthorizedException("Invalid email or password");
+    }
+    if (!user.isActive) await failed("suspended", user.id);
 
     if (bcrypt.getRounds(user.passwordHash) < SALT_ROUNDS) {
       const upgradedHash = await bcrypt.hash(dto.password, SALT_ROUNDS);
@@ -92,7 +114,9 @@ export class AuthService {
       });
     }
 
-    return this.buildSession(user);
+    const session = this.buildSession(user);
+    await this.activity.log({ type: "login", userId: user.id, email: user.email, method: "password", ctx });
+    return session;
   }
 
   /** Shared by password login/signup and the OAuth login-code exchange (see OAuthController). */

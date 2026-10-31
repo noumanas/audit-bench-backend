@@ -223,6 +223,21 @@ model User {
   // inactive stretch: it only goes again once the user has been active
   // since this and then gone quiet for another week.
   lastInactivityEmailAt DateTime?
+  // Onboarding attribution, set once at signup (see ActivityService.recordSignup).
+  // signupMethod: "password" | "google" | "github" | "gitlab". signupSource is
+  // utm_source, else the referring site's host, else "direct" — first touch,
+  // captured by the frontend's AttributionCapture before the user signed up.
+  signupMethod          String?
+  signupSource          String?
+  signupCampaign        String?
+  // Approximate, from the signup request's IP — country whenever the IP
+  // resolves, region/city only behind an edge that supplies them.
+  signupCountry         String?
+  signupRegion          String?
+  signupCity            String?
+  // Admins only: the admin-panel bell counts activity newer than this as unread.
+  notificationsSeenAt   DateTime?
+  activityLogs          ActivityLog[]
   audits                Audit[]
   scanJobs              ScanJob[]
   planRequests          PlanRequest[]        @relation("PlanRequestsByUser")
@@ -274,6 +289,10 @@ model OAuthLoginCode {
   userId    String
   expiresAt DateTime
   usedAt    DateTime?
+  // Carried to the exchange, where the session is logged (ActivityService):
+  // which provider signed them in, and whether this sign-in created the account.
+  provider  String?
+  isNewUser Boolean   @default(false)
   createdAt DateTime  @default(now())
 }
 
@@ -787,4 +806,41 @@ model ContactMessage {
   createdAt DateTime  @default(now())
 
   @@index([createdAt])
+}
+
+enum ActivityType {
+  signup
+  login
+  login_failed
+  plan_requested
+  plan_approved
+  plan_rejected
+}
+
+// Admin-visible activity trail (see ActivityService): sign-ups, sign-ins,
+// failed sign-ins and plan request decisions, with the request's IP and an
+// approximate location. Rows go with the account when it's deleted, and are
+// pruned after ACTIVITY_RETENTION_DAYS.
+model ActivityLog {
+  id          String       @id @default(uuid())
+  type        ActivityType
+  // Null for a failed sign-in to an email with no account.
+  user        User?        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String?
+  // Snapshot of the email involved — for login_failed, the address that was tried.
+  email       String?
+  // How they authenticated: "password" | "google" | "github" | "gitlab".
+  method      String?
+  ip          String?
+  countryCode String?
+  region      String?
+  city        String?
+  userAgent   String?
+  // Event-specific extras: plan name, reviewing admin, signup attribution.
+  metadata    Json?
+  createdAt   DateTime     @default(now())
+
+  @@index([createdAt])
+  @@index([userId, createdAt])
+  @@index([type, createdAt])
 }

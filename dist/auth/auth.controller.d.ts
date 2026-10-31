@@ -1,10 +1,13 @@
+import type { Request } from 'express';
 import { AuthService } from './auth.service';
 import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
+import { ActivityService } from '../activity/activity.service';
 export declare class AuthController {
     private readonly authService;
-    constructor(authService: AuthService);
-    signup(dto: SignupDto): Promise<{
+    private readonly activity;
+    constructor(authService: AuthService, activity: ActivityService);
+    signup(dto: SignupDto, req: Request): Promise<{
         accessToken: string;
         user: {
             id: string;
@@ -21,7 +24,7 @@ export declare class AuthController {
             orgRole: import(".prisma/client").$Enums.OrgRole | null;
         };
     }>;
-    login(dto: LoginDto): Promise<{
+    login(dto: LoginDto, req: Request): Promise<{
         accessToken: string;
         user: {
             id: string;

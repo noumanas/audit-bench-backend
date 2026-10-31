@@ -45,16 +45,16 @@ describe('AuthService.signup', () => {
       plan: { findUnique: jest.fn().mockResolvedValue(FREE) },
     };
     const welcome = { send: jest.fn() };
-    const auth = new AuthService(prisma as never, { sign: () => 'jwt' } as never, new ConfigService({}), welcome as never);
-    await auth.signup({ email: 'new@x.com', password: 'correct horse battery', name: 'New' });
+    const auth = new AuthService(prisma as never, { sign: () => 'jwt' } as never, new ConfigService({}), welcome as never, { recordSignup: jest.fn(), log: jest.fn() } as never);
+    await auth.signup({ email: 'new@x.com', password: 'correct horse battery', name: 'New' }, {} as never);
     expect(welcome.send).toHaveBeenCalledWith(user);
   });
 
   it('does not send when the email is already registered', async () => {
     const prisma = { user: { findUnique: jest.fn().mockResolvedValue({ id: 'existing' }) } };
     const welcome = { send: jest.fn() };
-    const auth = new AuthService(prisma as never, {} as never, new ConfigService({}), welcome as never);
-    await expect(auth.signup({ email: 'a@x.com', password: 'correct horse battery', name: 'A' })).rejects.toThrow();
+    const auth = new AuthService(prisma as never, {} as never, new ConfigService({}), welcome as never, { recordSignup: jest.fn(), log: jest.fn() } as never);
+    await expect(auth.signup({ email: 'a@x.com', password: 'correct horse battery', name: 'A' }, {} as never)).rejects.toThrow();
     expect(welcome.send).not.toHaveBeenCalled();
   });
 });

@@ -156,6 +156,10 @@ export class AdminUsageService {
           name: true,
           createdAt: true,
           lastLoginAt: true,
+          signupMethod: true,
+          signupSource: true,
+          signupCountry: true,
+          signupCity: true,
           plan: true,
           planExpiresAt: true,
           role: true,
@@ -268,6 +272,12 @@ export class AdminUsageService {
         name: true,
         createdAt: true,
         lastLoginAt: true,
+        signupMethod: true,
+        signupSource: true,
+        signupCampaign: true,
+        signupCountry: true,
+        signupRegion: true,
+        signupCity: true,
         planExpiresAt: true,
         role: true,
         isActive: true,
@@ -413,6 +423,12 @@ export class AdminUsageService {
         .sort((x, y) => y.createdAt.getTime() - x.createdAt.getTime())
         .slice(0, 10),
       planRequests,
+      // Sign-ins, failed sign-ins and plan events with IP + location — see ActivityService.
+      activity: await this.prisma.activityLog.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+        take: 15,
+      }),
     };
   }
 
