@@ -139,6 +139,7 @@ model Organization {
   investigations  Investigation[]
   subscriptions   Subscription[]       @relation("OrgSubscriptions")
   payments        Payment[]            @relation("OrgPayments")
+  reviewSettings  ReviewSettings?
 }
 
 // Invite by email — the only join path in this version (no public
@@ -260,6 +261,7 @@ model User {
   investigations        Investigation[]
   subscriptions         Subscription[]       @relation("UserSubscriptions")
   payments              Payment[]            @relation("UserPayments")
+  reviewSettings        ReviewSettings?
 
   @@index([organizationId])
 }
@@ -432,6 +434,9 @@ model ScanJob {
   changedRanges             Json?
   prPublishedAt             DateTime?
   prPublishError            String?
+  // Findings left out of a PR review because they were already raised on the
+  // pull request: { posted, open, dismissed } — see filterRepeatFindings.
+  prRepeatStats             Json?
   // AI read of a PR as a whole — walkthrough, merge risk and pre-merge
   // checks (title, description, linked issues, scope). PrInsights, see
   // src/pr-feedback/pr-insights.ts. One AI call per review; null for free
@@ -843,4 +848,26 @@ model ActivityLog {
   @@index([createdAt])
   @@index([userId, createdAt])
   @@index([type, createdAt])
+}
+
+// How strict reviews are, for one team (organizationId) or one personal
+// account (userId); absent means the defaults in common/review-thresholds.ts.
+// Read with the team's rules (ReviewRulesService.rulesFor), so changing it
+// changes the AI cache key and reviews rerun under the new settings.
+model ReviewSettings {
+  id                  String        @id @default(uuid())
+  organization        Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId      String?       @unique
+  user                User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId              String?       @unique
+  // Findings the model is less sure of than this aren't published.
+  minConfidence       Float         @default(0.4)
+  // Critical/high findings less certain than this are lowered to medium.
+  severeMinConfidence Float         @default(0.6)
+  // Stage 1 complexity findings: nesting depth, or path count, that earns one.
+  deepNesting         Int           @default(4)
+  veryHighComplexity  Int           @default(25)
+  // PR reviews: list optional ("info") suggestions in the summary.
+  optionalSuggestions Boolean       @default(true)
+  updatedAt           DateTime      @updatedAt
 }

@@ -1,12 +1,60 @@
 import { Finding } from '../../common/types';
-import { Stage1Result } from './types';
+import { FunctionUnit, Stage1Result } from './types';
+import { DEFAULT_THRESHOLDS, ReviewThresholds } from '../../common/review-thresholds';
+
+/** Below this, branch count alone never earns a finding. */
+const COMPLEXITY_FLOOR = 10;
+
+/**
+ * A maintainability finding for a complex function, only when there's
+ * evidence it's actually hard to maintain: deep nesting, or a very large
+ * number of branches. A flat function whose many branches each handle one
+ * case (a mapper normalizing optional fields) is left alone; splitting it
+ * would add indirection, not clarity. Functions sent to the AI review are
+ * judged there with the code in view instead.
+ */
+export function complexityFinding(fn: FunctionUnit, t: ReviewThresholds = DEFAULT_THRESHOLDS): Finding | null {
+  if (fn.complexity <= COMPLEXITY_FLOOR) return null;
+  const nesting = fn.maxNesting ?? 0;
+  const deep = nesting >= t.deepNesting;
+  if (!deep && fn.complexity < t.veryHighComplexity) return null;
+
+  const span = `lines ${fn.startLine}-${fn.endLine}`;
+  return deep
+    ? {
+        severity: 'low',
+        category: 'Maintainability',
+        title: `Deeply nested conditions in ${fn.name}()`,
+        line: fn.startLine,
+        endLine: fn.endLine,
+        description: `${fn.name}() (${span}) nests conditions ${nesting} levels deep, with ${fn.complexity} paths through it. At that depth it is hard to see which conditions hold at any line, which is where missed edge cases tend to hide.`,
+        rootCause: 'Conditions are handled by nesting further rather than exiting early.',
+        suggestedFix:
+          'Return early for the simple cases so the main path sits at one level, or move the innermost nested block into a named helper. Make sure each path has a test before restructuring.',
+        examplePatch: null,
+        confidence: 0.65,
+      }
+    : {
+        severity: 'low',
+        category: 'Maintainability',
+        title: `Very large number of branches in ${fn.name}()`,
+        line: fn.startLine,
+        endLine: fn.endLine,
+        description: `${fn.name}() (${span}) has ${fn.complexity} paths through it. The branches are not deeply nested, so this is only worth changing if they handle unrelated jobs or the function keeps growing.`,
+        rootCause: 'Many cases are handled in one function.',
+        suggestedFix:
+          'If the branches map inputs to outputs, a lookup table can replace them. If they do unrelated jobs, separate those jobs. Otherwise no change is needed.',
+        examplePatch: null,
+        confidence: 0.5,
+      };
+}
 
 /**
  * Turns Stage 1's raw signals into the same Finding shape an LLM produces,
  * so a purely-local (no AI, no cost) run still returns something useful —
  * not just a diagnostic dump.
  */
-export function stage1ToFindings(stage1: Stage1Result): Finding[] {
+export function stage1ToFindings(stage1: Stage1Result, thresholds: ReviewThresholds = DEFAULT_THRESHOLDS): Finding[] {
   const findings: Finding[] = [];
 
   for (const d of stage1.tsDiagnostics) {
@@ -87,19 +135,9 @@ export function stage1ToFindings(stage1: Stage1Result): Finding[] {
   }
 
   for (const fn of stage1.functions) {
-    if (fn.complexity > 10 && !stage1.riskyFunctions.some((r) => r.fn.name === fn.name)) {
-      findings.push({
-        severity: 'low',
-        category: 'Maintainability',
-        title: `High cyclomatic complexity: ${fn.name}()`,
-        line: fn.startLine,
-        description: `Complexity of ${fn.complexity} makes this function harder to test and reason about.`,
-        rootCause: 'Too many independent branches/conditions in one function.',
-        suggestedFix: 'Split into smaller functions with single responsibilities.',
-        examplePatch: null,
-        confidence: 0.7,
-      });
-    }
+    if (stage1.riskyFunctions.some((r) => r.fn.name === fn.name)) continue;
+    const finding = complexityFinding(fn, thresholds);
+    if (finding) findings.push(finding);
   }
 
   return findings;

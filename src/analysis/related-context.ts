@@ -184,3 +184,70 @@ export function relatedContextFor(changed: ScannedFile, repoFiles: ScannedFile[]
     ? `Unchanged code elsewhere in the repository that uses what this file's changes touch (check the change doesn't break these):\n${sections.join('\n\n')}`
     : '';
 }
+
+/** The most test lines one file's review is shown. */
+const MAX_TEST_CONTEXT_LINES = 40;
+const MAX_TEST_FILES_PER_SYMBOL = 3;
+/** Lines that name a test case or group, in the common frameworks. */
+const TEST_CASE =
+  /\b(?:it|test|describe|context)(?:\.\w+)?\s*\(\s*['"`]|^\s*(?:async\s+)?def\s+test_\w*|^\s*func\s+Test\w*|@Test\b|\[(?:Fact|Test|Theory)\]/;
+
+/**
+ * Evidence about tests for a PR's changed code: the test files that mention
+ * each changed function or class, with the test cases that do, so the review
+ * can judge coverage instead of guessing. When a text search finds no test
+ * mentioning anything that changed, it says so — the reviewer may still
+ * recommend coverage, but knows it isn't contradicting a test it can't see.
+ */
+export function testContextFor(changed: ScannedFile, repoFiles: ScannedFile[]): string {
+  if (!changed.changedRanges?.length || TEST_PATH.test(changed.path)) return '';
+  const symbols = changedSymbols(changed.content, changed.changedRanges, changed.path);
+  if (!symbols.length) return '';
+  const tests = repoFiles.filter((f) => f.path !== changed.path && TEST_PATH.test(f.path));
+
+  const sections: string[] = [];
+  const untested: string[] = [];
+  let budget = MAX_TEST_CONTEXT_LINES;
+  for (const symbol of symbols) {
+    const word = new RegExp(`(^|[^\\w$])${symbol.replace(/[$?!]/g, '\\$&')}(?![\\w$])`);
+    const files = tests.filter((f) => f.content.includes(symbol) && word.test(f.content)).slice(0, MAX_TEST_FILES_PER_SYMBOL);
+    if (!files.length) {
+      untested.push(symbol);
+      continue;
+    }
+    const hits: string[] = [];
+    for (const file of files) {
+      const lines = file.content.split('\n');
+      // The test cases that use the symbol: the nearest case title above each use.
+      const cases = new Set<number>();
+      for (let i = 0; i < lines.length; i++) {
+        if (!word.test(lines[i])) continue;
+        for (let j = i; j >= 0 && j >= i - 40; j--) {
+          if (TEST_CASE.test(lines[j])) {
+            cases.add(j);
+            break;
+          }
+        }
+      }
+      for (const n of [...cases].slice(0, 6)) {
+        if (budget <= 0) break;
+        hits.push(`${file.path}:${n + 1} | ${lines[n].trim().slice(0, 200)}`);
+        budget--;
+      }
+      if (!cases.size && budget > 0) {
+        hits.push(`${file.path} mentions it (no test case title found near the use)`);
+        budget--;
+      }
+    }
+    if (hits.length) sections.push(`\`${symbol}\` is exercised by:\n${hits.join('\n')}`);
+  }
+
+  const parts: string[] = [];
+  if (sections.length) parts.push(`Tests in the repository that exercise the changed code (test case titles):\n${sections.join('\n\n')}`);
+  if (untested.length) {
+    parts.push(
+      `A text search of the repository's test files found no test mentioning: ${untested.map((s) => `\`${s}\``).join(', ')}.`,
+    );
+  }
+  return parts.join('\n\n');
+}

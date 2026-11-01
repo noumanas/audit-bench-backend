@@ -47,7 +47,7 @@ describe('inlineCommentBody', () => {
     expect(body).toContain('**Suggested fix:** Add cases where /auth.md redirects');
     expect(body).toContain("```mjs\nif (req.url === '/auth.md') {");
     expect(body.trim().split('\n').pop()).toBe(
-      '<sub>82% confidence · 💬 Reply here and Audit Bench Ai will recheck the code · 👍/👎 teaches it what your team wants</sub>',
+      '<sub>82% confidence · 💬 Reply here and Audit Bench Ai will recheck the code · 👀 to acknowledge · 👍/👎 teaches it what your team wants</sub>',
     );
   });
 

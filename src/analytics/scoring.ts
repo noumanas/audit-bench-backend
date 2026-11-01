@@ -6,6 +6,7 @@ const SEVERITY_WEIGHT: Record<Finding['severity'], number> = {
   high: 15,
   medium: 6,
   low: 2,
+  info: 0,
 };
 
 const NPM_AUDIT_WEIGHT: Record<string, number> = {

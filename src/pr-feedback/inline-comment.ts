@@ -7,6 +7,7 @@ const SEVERITY: Record<string, string> = {
   high: '🟠 High',
   medium: '🟡 Medium',
   low: '🔵 Low',
+  info: '💡 Suggestion',
 };
 
 const CATEGORY: Record<string, string> = {
@@ -16,6 +17,12 @@ const CATEGORY: Record<string, string> = {
   Architecture: '🏗️ Architecture',
   Maintainability: '🧹 Maintainability',
   Testing: '🧪 Testing',
+  'Semantic Accuracy': '🗣️ Semantic accuracy',
+  Reliability: '🛟 Reliability',
+  'Data Integrity': '🗃️ Data integrity',
+  'API Design': '🔌 API design',
+  Concurrency: '🔀 Concurrency',
+  'Resource Management': '♻️ Resource management',
 };
 
 /**
@@ -25,6 +32,7 @@ const CATEGORY: Record<string, string> = {
  * user's own GitHub account, not a separate bot login.
  */
 export const FINDING_MARKER = '<!-- audit-bench:finding -->';
+const AUTOMATED_HEADER = '🤖 Audit Bench Ai (automated)';
 export const REPLY_MARKER = '<!-- audit-bench:reply -->';
 
 /** Longest range one comment covers; past this a finding points at its first line only. */
@@ -84,7 +92,7 @@ export function inlineCommentBody(
   } = {},
 ): string {
   const header = [
-    opts.viaUserAccount ? '🤖 Audit Bench Ai (automated)' : null,
+    opts.viaUserAccount ? AUTOMATED_HEADER : null,
     f.category ? (CATEGORY[f.category] ?? f.category) : null,
     SEVERITY[f.severity] ?? f.severity,
   ]
@@ -92,7 +100,11 @@ export function inlineCommentBody(
     .join(' | ');
   // Plain Markdown (Bitbucket) shows HTML as text, so no hidden marker there.
   const lines = [...(opts.plain ? [] : [FINDING_MARKER]), `**${header}**`, '', `**${f.title}**`, '', f.description];
+  if (f.repeat === 'reappeared') lines.splice(lines.length - 1, 0, '> ♻️ This was marked fixed earlier on this pull request and is back.', '');
+  if (f.repeat === 'still_present') lines.splice(lines.length - 1, 0, '> 🔁 These lines changed since this was first raised, and the issue is still there.', '');
   if (f.rootCause) lines.push('', `**Why it happens:** ${f.rootCause}`);
+  if (f.failureScenario) lines.push('', `**When it breaks:** ${f.failureScenario}`);
+  if (f.testEvidence) lines.push('', `**Tests:** ${f.testEvidence}`);
   if (f.suggestedFix) lines.push('', `**Suggested fix:** ${f.suggestedFix}`);
   // A GitHub suggestion replaces exactly the commented lines, so it's only
   // offered when the comment covers precisely the lines the fix rewrites.
@@ -124,7 +136,7 @@ export function inlineCommentBody(
     typeof f.confidence === 'number' ? `${Math.round(f.confidence * 100)}% confidence` : null,
     // Replies and reactions are only acted on for GitHub so far.
     opts.plain ? 'Audit Bench Ai' : '💬 Reply here and Audit Bench Ai will recheck the code',
-    opts.plain ? null : '👍/👎 teaches it what your team wants',
+    opts.plain ? null : '👀 to acknowledge · 👍/👎 teaches it what your team wants',
   ].filter(Boolean);
   lines.push('', opts.plain ? `_${meta.join(' · ')}_` : `<sub>${meta.join(' · ')}</sub>`);
   return lines.join('\n');
@@ -136,13 +148,17 @@ export function inlineCommentBody(
  * kind of finding it was about. Null for any other comment.
  */
 export function parseFindingComment(body: string): { category: string; title: string } | null {
-  if (!body.includes(FINDING_MARKER)) return null;
+  // Plain Markdown hosts (Bitbucket) get no hidden marker; their comments
+  // always open with the automated-review header instead.
+  const plainOurs = body.trimStart().startsWith(`**${AUTOMATED_HEADER} |`);
+  if (!body.includes(FINDING_MARKER) && !plainOurs) return null;
   const lines = body.split('\n').map((l) => l.trim());
   const headerAt = lines.findIndex(
     (l) => /^\*\*.*\|.*\*\*$/.test(l) || Object.keys(CATEGORY).some((c) => l.includes(c)),
   );
   const header = headerAt >= 0 ? lines[headerAt] : '';
-  const category = Object.keys(CATEGORY).find((c) => header.includes(c)) ?? 'Other';
+  // Match the rendered label ("🗣️ Semantic accuracy") as well as the bare key.
+  const category = Object.entries(CATEGORY).find(([key, label]) => header.includes(label) || header.includes(key))?.[0] ?? 'Other';
   const title = lines.slice(headerAt + 1).find((l) => /^\*\*.+\*\*$/.test(l) && !l.includes('|'));
   return title ? { category, title: title.slice(2, -2).trim() } : null;
 }

@@ -3,6 +3,8 @@ import { Prisma } from '@prisma/client';
 import { createHash } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { findingFingerprint } from '../common/finding-fingerprint';
+import { SignalCounts, reviewQuality } from './review-quality';
+import { DEFAULT_THRESHOLDS, ReviewThresholds, isDefaultThresholds } from '../common/review-thresholds';
 
 export const RULE_KINDS = ['instruction', 'ignore_path', 'suppress'] as const;
 export type RuleKind = (typeof RULE_KINDS)[number];
@@ -23,7 +25,14 @@ export type FeedbackSignal =
   // What happened to a finding by the time its PR closed (see WebhooksService.harvestReactions).
   | 'accepted'
   | 'dismissed'
-  | 'ignored';
+  | 'ignored'
+  // A recheck after the contributor replied kept the finding, or kept it at a
+  // lower severity. Recorded for review-quality metrics only: it's the
+  // reviewer's judgment, not the team's, so it never trains a rule.
+  | 'confirmed'
+  | 'downgraded'
+  // A person saw the finding (👀, or replied in its thread). Metrics only.
+  | 'acknowledged';
 
 export interface Owner {
   id: string;
@@ -35,11 +44,19 @@ export interface ReviewRules {
   instructions: string[];
   ignorePaths: string[];
   suppress: Array<{ fingerprint: string; text: string }>;
+  /** The team's review strictness (ReviewSettings), or the defaults. */
+  thresholds: ReviewThresholds;
   /** Stable hash of everything above: part of the AI cache key, so editing rules re-reviews instead of reusing. */
   key: string;
 }
 
-export const NO_RULES: ReviewRules = { instructions: [], ignorePaths: [], suppress: [], key: '' };
+export const NO_RULES: ReviewRules = {
+  instructions: [],
+  ignorePaths: [],
+  suppress: [],
+  thresholds: DEFAULT_THRESHOLDS,
+  key: '',
+};
 
 /** "owner/repo" from a scan's source name ("owner/repo#12", "group/project !3", "owner/repo"); null for a zip upload. */
 export function repoFromSourceName(sourceName: string, sourceType: string): string | null {
@@ -48,7 +65,7 @@ export function repoFromSourceName(sourceName: string, sourceType: string): stri
 }
 
 /** The rules as prompt text for the AI. Empty when there are none. */
-export function rulesPromptText(rules: ReviewRules): string {
+export function rulesPromptText(rules: Omit<ReviewRules, 'thresholds'>): string {
   const parts: string[] = [];
   if (rules.instructions.length) {
     parts.push(
@@ -161,11 +178,48 @@ export class ReviewRulesService {
         .filter((r) => r.kind === 'suppress')
         .map((r) => ({ fingerprint: r.fingerprint ?? '', text: r.text }))
         .slice(0, MAX_PROMPT_RULES),
+      thresholds: await this.thresholds(owner),
       key: '',
     };
-    const hasAny = rules.instructions.length || rules.ignorePaths.length || rules.suppress.length;
-    rules.key = hasAny ? createHash('sha256').update(JSON.stringify(rules)).digest('hex').slice(0, 16) : '';
+    const custom = !isDefaultThresholds(rules.thresholds);
+    const hasAny = rules.instructions.length || rules.ignorePaths.length || rules.suppress.length || custom;
+    // Default thresholds stay out of the hash, so teams that never change them keep their cache keys.
+    const hashed = custom ? rules : { ...rules, thresholds: undefined };
+    rules.key = hasAny ? createHash('sha256').update(JSON.stringify(hashed)).digest('hex').slice(0, 16) : '';
     return rules;
+  }
+
+  // ---------- review settings (strictness) ----------
+
+  private settingsWhere(owner: Owner) {
+    return owner.organizationId ? { organizationId: owner.organizationId } : { userId: owner.id };
+  }
+
+  /** The thresholds in force for this team or personal account. */
+  async thresholds(owner: Owner): Promise<ReviewThresholds> {
+    const row = await this.prisma.reviewSettings.findUnique({ where: this.settingsWhere(owner) });
+    if (!row) return DEFAULT_THRESHOLDS;
+    return {
+      minConfidence: row.minConfidence,
+      severeMinConfidence: row.severeMinConfidence,
+      deepNesting: row.deepNesting,
+      veryHighComplexity: row.veryHighComplexity,
+      optionalSuggestions: row.optionalSuggestions,
+    };
+  }
+
+  /** Changes this team's (owners/admins only) or personal account's thresholds. Returns what's now in force. */
+  async updateThresholds(owner: Owner, input: Partial<ReviewThresholds>): Promise<ReviewThresholds> {
+    if (owner.organizationId) await this.assertCanManageTeamRules(owner);
+    const next = { ...(await this.thresholds(owner)), ...input };
+    if (next.severeMinConfidence < next.minConfidence) {
+      throw new BadRequestException(
+        'The confidence a critical or high finding needs must be at least the minimum confidence to publish.',
+      );
+    }
+    const where = this.settingsWhere(owner);
+    await this.prisma.reviewSettings.upsert({ where, create: { ...where, ...next }, update: next });
+    return next;
   }
 
   /**
@@ -241,6 +295,67 @@ export class ReviewRulesService {
    * the team switched off stays off), and removes the rule once the
    * evidence no longer supports it.
    */
+  /**
+   * Review-quality metrics over the last `days` (see reviewQuality): for one
+   * team or user, or across everyone when `owner` is null (admin view).
+   */
+  async quality(owner: Owner | null, days = 90) {
+    const since = new Date(Date.now() - days * 86_400_000);
+    const feedbackScope = !owner
+      ? {}
+      : owner.organizationId
+        ? { organizationId: owner.organizationId }
+        : { userId: owner.id, organizationId: null };
+    const rows = await this.prisma.findingFeedback.groupBy({
+      by: ['source', 'signal'],
+      where: { createdAt: { gte: since }, ...feedbackScope },
+      _count: { _all: true },
+    });
+    const signals: SignalCounts = {};
+    for (const r of rows) (signals[r.source] ??= {})[r.signal] = r._count._all;
+
+    const jobScope = !owner
+      ? Prisma.empty
+      : owner.organizationId
+        ? Prisma.sql`AND j."organizationId" = ${owner.organizationId}`
+        : Prisma.sql`AND j."userId" = ${owner.id} AND j."organizationId" IS NULL`;
+    const [volume] = await this.prisma.$queryRaw<
+      {
+        reviews: bigint;
+        findings: bigint | null;
+        input: bigint | null;
+        output: bigint | null;
+        posted: bigint | null;
+        open: bigint | null;
+        dismissed: bigint | null;
+      }[]
+    >`
+      SELECT COUNT(*) AS reviews,
+             SUM((SELECT COALESCE(SUM(jsonb_array_length(f."findings")), 0) FROM "ScanFile" f WHERE f."scanJobId" = j."id")) AS findings,
+             SUM(j."inputTokens") AS input, SUM(j."outputTokens") AS output,
+             SUM((j."prRepeatStats"->>'posted')::int) AS posted,
+             SUM((j."prRepeatStats"->>'open')::int) AS open,
+             SUM((j."prRepeatStats"->>'dismissed')::int) AS dismissed
+      FROM "ScanJob" j
+      WHERE j."status" = 'completed' AND j."createdAt" >= ${since}
+        AND j."sourceType" IN ('github_pr', 'gitlab_mr', 'bitbucket_pr') ${jobScope}`;
+
+    return {
+      days,
+      ...reviewQuality(signals, {
+        reviews: Number(volume?.reviews ?? 0),
+        findings: Number(volume?.findings ?? 0),
+        inputTokens: Number(volume?.input ?? 0),
+        outputTokens: Number(volume?.output ?? 0),
+        repeats: {
+          posted: Number(volume?.posted ?? 0),
+          open: Number(volume?.open ?? 0),
+          dismissed: Number(volume?.dismissed ?? 0),
+        },
+      }),
+    };
+  }
+
   async learn(owner: Owner, repo: string, fingerprint: string, title: string, category: string) {
     const signals = await this.prisma.findingFeedback.groupBy({
       by: ['signal'],

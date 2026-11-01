@@ -4,6 +4,8 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { RequestUser } from '../auth/types';
 import { ReviewRulesService } from './review-rules.service';
 import { CreateReviewRuleDto, UpdateReviewRuleDto } from './dto/review-rule.dto';
+import { UpdateReviewSettingsDto } from './dto/review-settings.dto';
+import { DEFAULT_THRESHOLDS, THRESHOLD_LIMITS } from '../common/review-thresholds';
 
 @Controller('review-rules')
 @UseGuards(JwtAuthGuard)
@@ -19,6 +21,23 @@ export class ReviewRulesController {
   @Get('outcomes')
   outcomes(@CurrentUser() user: RequestUser) {
     return this.rules.outcomes(user);
+  }
+
+  /** Precision, acceptance, dismissal, discussion outcomes and token cost of PR reviews, last 90 days. */
+  @Get('quality')
+  quality(@CurrentUser() user: RequestUser) {
+    return this.rules.quality(user);
+  }
+
+  /** How strict reviews are for this team or account, with the defaults and allowed ranges for the form. */
+  @Get('settings')
+  async settings(@CurrentUser() user: RequestUser) {
+    return { thresholds: await this.rules.thresholds(user), defaults: DEFAULT_THRESHOLDS, limits: THRESHOLD_LIMITS };
+  }
+
+  @Patch('settings')
+  updateSettings(@CurrentUser() user: RequestUser, @Body() dto: UpdateReviewSettingsDto) {
+    return this.rules.updateThresholds(user, dto);
   }
 
   @Post()
