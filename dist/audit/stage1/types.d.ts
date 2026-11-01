@@ -4,6 +4,7 @@ export interface FunctionUnit {
     endLine: number;
     code: string;
     complexity: number;
+    maxNesting?: number;
     callsInFile: string[];
 }
 export interface LintFinding {

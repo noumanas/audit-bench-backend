@@ -12,6 +12,28 @@ export interface BenchmarkCase {
   changed: Array<{ start: number; end: number }>;
   /** Seeded bugs, located by a unique substring of the buggy line (no hints in the code itself). Empty for a clean change. */
   bugs: Array<{ at: string; what: string }>;
+  /** Extra context the review sees, as a PR review would (callers, tests that cover the change). */
+  context?: string;
+}
+
+/**
+ * A contributor's reply to one of our findings, and the recheck outcomes
+ * that would be correct. Scores whether the recheck judges the explanation
+ * by evidence: withdrawing when the contributor is right, holding when not.
+ */
+export interface RecheckCase {
+  id: string;
+  title: string;
+  path: string;
+  /** The file as it stands, numbered by the runner. */
+  code: string;
+  start: number;
+  end: number;
+  finding: string;
+  reply: string;
+  /** Test evidence shown to the recheck, as testContextFor would produce. */
+  tests?: string;
+  expect: Array<'resolved' | 'still_applies' | 'not_an_issue' | 'needs_info' | 'downgraded'>;
 }
 
 export interface ReportedFinding {
@@ -29,6 +51,8 @@ export interface CaseResult {
   missed: string[];
   /** Medium-or-worse findings that don't match a seeded bug (on a clean case, every one). */
   falsePositives: ReportedFinding[];
+  /** Everything the review reported, at any severity, so a miss can be diagnosed. */
+  findings?: ReportedFinding[];
 }
 
 /** A finding within this many lines of a seeded bug counts as catching it. */
@@ -53,7 +77,15 @@ export function scoreCase(c: BenchmarkCase, findings: ReportedFinding[]): CaseRe
   const caught = bugLines.filter((b) => serious.some((f) => near(f, b.line))).map((b) => b.what);
   const missed = bugLines.filter((b) => !caught.includes(b.what)).map((b) => b.what);
   const falsePositives = serious.filter((f) => !bugLines.some((b) => near(f, b.line)));
-  return { id: c.id, title: c.title, clean: c.bugs.length === 0, caught, missed, falsePositives };
+  return {
+    id: c.id,
+    title: c.title,
+    clean: c.bugs.length === 0,
+    caught,
+    missed,
+    falsePositives,
+    findings: findings.map(({ line, endLine, severity, title }) => ({ line, endLine, severity, title })),
+  };
 }
 
 export function summarize(results: CaseResult[]) {
@@ -72,4 +104,8 @@ export function summarize(results: CaseResult[]) {
     cleanFalseAlarmRate: cleanCases.length ? flaggedClean / cleanCases.length : 0,
     falsePositives,
   };
+}
+
+export function scoreRecheck(c: RecheckCase, status: string) {
+  return { id: c.id, title: c.title, status, passed: (c.expect as string[]).includes(status), expected: c.expect };
 }

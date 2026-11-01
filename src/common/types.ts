@@ -1,4 +1,5 @@
-export type Severity = 'critical' | 'high' | 'medium' | 'low';
+/** "info": an optional suggestion. Only PR reviews produce it, listed apart from the findings (see PipelineService). */
+export type Severity = 'critical' | 'high' | 'medium' | 'low' | 'info';
 
 export type Verdict = 'pass' | 'needs_work' | 'do_not_ship';
 
@@ -8,7 +9,13 @@ export type FindingCategory =
   | 'Performance'
   | 'Architecture'
   | 'Maintainability'
-  | 'Testing';
+  | 'Testing'
+  | 'Semantic Accuracy'
+  | 'Reliability'
+  | 'Data Integrity'
+  | 'API Design'
+  | 'Concurrency'
+  | 'Resource Management';
 
 export interface Finding {
   severity: Severity;
@@ -24,6 +31,12 @@ export interface Finding {
   /** PR reviews: exact new code for lines line..endLine, offered as a one-click GitHub suggestion. */
   replacement?: string | null;
   confidence: number; // 0-1
+  /** The code that shows the problem, with line numbers. Absent on results from before it existed. */
+  evidence?: string | null;
+  /** Concrete input or state, and the wrong result it produces. */
+  failureScenario?: string | null;
+  /** What the tests shown to the reviewer say about this case, or null when none were shown. */
+  testEvidence?: string | null;
 }
 
 export interface AuditResult {

@@ -4,6 +4,8 @@ export interface FunctionUnit {
   endLine: number;
   code: string;
   complexity: number;
+  /** Deepest nesting of control-flow blocks (see maxNestingDepth). Absent on results stored before it existed. */
+  maxNesting?: number;
   /** Names this function calls that are also declared elsewhere in the same file. */
   callsInFile: string[];
 }

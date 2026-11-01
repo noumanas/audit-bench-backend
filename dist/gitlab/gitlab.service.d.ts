@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { GitlabMrDetails, GitlabMrSummary, GitlabProjectSummary } from './gitlab.types';
 import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
-import { PrContext, PrFeedback, PrPublisher } from '../pr-feedback/pr-feedback.types';
+import { PrContext, PrFeedback, PrPublisher, RepeatStats } from '../pr-feedback/pr-feedback.types';
 import { TokenCryptoService } from '../common/token-crypto.service';
 import { ContributorStat } from '../analysis/types';
 export declare class GitlabService implements OnModuleInit, PrPublisher {
@@ -11,6 +11,7 @@ export declare class GitlabService implements OnModuleInit, PrPublisher {
     private readonly config;
     private readonly prFeedback;
     private readonly tokenCrypto;
+    private readonly logger;
     constructor(prisma: PrismaService, config: ConfigService, prFeedback: PrFeedbackService, tokenCrypto: TokenCryptoService);
     onModuleInit(): void;
     private baseUrl;
@@ -43,7 +44,10 @@ export declare class GitlabService implements OnModuleInit, PrPublisher {
     }>;
     publish(userId: string, context: Extract<PrContext, {
         kind: 'gitlab';
-    }>, feedback: PrFeedback): Promise<void>;
+    }>, feedback: PrFeedback): Promise<{
+        repeats?: RepeatStats;
+    }>;
+    private earlierThreads;
     private postMrDiscussions;
     postMrNote(userId: string, projectId: number, mrIid: number, body: string): Promise<void>;
     private postMrNoteWithToken;

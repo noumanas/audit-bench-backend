@@ -1,6 +1,6 @@
 import * as ts from 'typescript';
 import { FunctionUnit } from './types';
-import { cyclomaticComplexity } from './complexity';
+import { cyclomaticComplexity, maxNestingDepth } from './complexity';
 
 function scriptKindFor(filename: string): ts.ScriptKind {
   if (/\.tsx$/i.test(filename)) return ts.ScriptKind.TSX;
@@ -85,6 +85,7 @@ export function splitFunctions(code: string, filename: string): FunctionUnit[] {
       endLine: end,
       code: fnCode,
       complexity: cyclomaticComplexity(node),
+      maxNesting: maxNestingDepth(node),
       callsInFile: [...new Set(callsInFile)],
     };
   });

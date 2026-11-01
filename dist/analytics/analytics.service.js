@@ -14,7 +14,7 @@ const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../prisma/prisma.service");
 const scoring_1 = require("./scoring");
 const workspace_scope_1 = require("../common/workspace-scope");
-const SEVERITY_RANK = { critical: 4, high: 3, medium: 2, low: 1 };
+const SEVERITY_RANK = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
 const PR_REVIEW_SOURCE_TYPES = new Set(['github_pr', 'gitlab_mr', 'bitbucket_pr']);
 function average(values) {
     if (values.length === 0)

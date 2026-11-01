@@ -1,0 +1,43 @@
+{
+  "date": "2026-11-01",
+  "provider": "gemini",
+  "summary": {
+    "bugs": 1,
+    "caught": 1,
+    "catchRate": 1,
+    "cleanCases": 1,
+    "flaggedClean": 0,
+    "cleanFalseAlarmRate": 0,
+    "falsePositives": 0
+  },
+  "results": [
+    {
+      "id": "semantic-unattributed",
+      "title": "Narration states model sentiment labels as fact",
+      "clean": false,
+      "caught": [
+        "model judgment presented as fact"
+      ],
+      "missed": [],
+      "falsePositives": [],
+      "findings": [
+        {
+          "line": 7,
+          "endLine": 7,
+          "severity": "medium",
+          "title": "Automated sentiment classification is reported as an established fact"
+        }
+      ]
+    },
+    {
+      "id": "semantic-attributed",
+      "title": "Clean: narration attributes sentiment labels to the model",
+      "clean": true,
+      "caught": [],
+      "missed": [],
+      "falsePositives": [],
+      "findings": []
+    }
+  ],
+  "rechecks": []
+}

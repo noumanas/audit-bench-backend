@@ -1,4 +1,5 @@
 import { FunctionRisk, FunctionUnit, LintFinding } from './types';
+import { DEFAULT_THRESHOLDS, ReviewThresholds } from '../../common/review-thresholds';
 
 // Text patterns that correlate with the kinds of bugs an LLM pass is
 // actually worth paying for — not an exhaustive vulnerability list, just a
@@ -72,7 +73,7 @@ const MIN_ESCALATION_SCORE = 2;
 const COMPLEXITY_THRESHOLD = 10;
 const MAX_ESCALATED_FUNCTIONS = 5;
 
-function scoreFunction(fn: FunctionUnit, lint: LintFinding[], sensitiveFile: boolean): FunctionRisk {
+function scoreFunction(fn: FunctionUnit, lint: LintFinding[], sensitiveFile: boolean, t: ReviewThresholds): FunctionRisk {
   const reasons: string[] = [];
   let score = 0;
 
@@ -89,8 +90,16 @@ function scoreFunction(fn: FunctionUnit, lint: LintFinding[], sensitiveFile: boo
   }
 
   if (fn.complexity > COMPLEXITY_THRESHOLD) {
-    score += Math.min(5, Math.floor((fn.complexity - COMPLEXITY_THRESHOLD) / 2) + 2);
-    reasons.push(`high cyclomatic complexity (${fn.complexity})`);
+    const nesting = fn.maxNesting ?? 0;
+    // Only tangled complexity is worth an AI call on its own. Many flat
+    // branches (a mapper handling optional fields) are noted as context in
+    // case something else escalates the function, but add no risk.
+    if (nesting >= t.deepNesting || fn.complexity >= t.veryHighComplexity) {
+      score += Math.min(5, Math.floor((fn.complexity - COMPLEXITY_THRESHOLD) / 2) + 2);
+      reasons.push(`high cyclomatic complexity (${fn.complexity}, nested ${nesting} deep)`);
+    } else {
+      reasons.push(`${fn.complexity} paths but flat (nested ${nesting} deep), so complexity alone is not a concern`);
+    }
   }
 
   const inRange = lint.filter((l) => l.line >= fn.startLine && l.line <= fn.endLine);
@@ -108,10 +117,15 @@ function scoreFunction(fn: FunctionUnit, lint: LintFinding[], sensitiveFile: boo
  * LLM — capped so a large file can't balloon into a huge Stage 2 prompt.
  * A score under MIN_ESCALATION_SCORE means nothing here justifies AI spend.
  */
-export function selectRiskyFunctions(functions: FunctionUnit[], lint: LintFinding[], filename = ''): FunctionRisk[] {
+export function selectRiskyFunctions(
+  functions: FunctionUnit[],
+  lint: LintFinding[],
+  filename = '',
+  thresholds: ReviewThresholds = DEFAULT_THRESHOLDS,
+): FunctionRisk[] {
   const sensitiveFile = SENSITIVE_PATH.test(filename.split('/').slice(-2).join('/'));
   return functions
-    .map((fn) => scoreFunction(fn, lint, sensitiveFile))
+    .map((fn) => scoreFunction(fn, lint, sensitiveFile, thresholds))
     .filter((r) => r.score >= MIN_ESCALATION_SCORE)
     .sort((a, b) => b.score - a.score)
     .slice(0, MAX_ESCALATED_FUNCTIONS);

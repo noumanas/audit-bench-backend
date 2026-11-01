@@ -6,6 +6,13 @@ import { AuditResult } from '../common/types';
 import { LineRange } from '../common/diff-ranges';
 import { Stage1Result } from './stage1/types';
 
+/**
+ * Bumped whenever prompts, calibration or Stage 1 findings change what a
+ * review returns, so results cached under the old rules aren't served as if
+ * the new engine produced them. v2: context-aware review (docs/review-engine.md).
+ */
+export const REVIEW_ENGINE_VERSION = 'engine-v2';
+
 export interface CachedAuditResult extends AuditResult {
   stage1: Stage1Result | null;
   aiInvoked: boolean;
@@ -46,7 +53,7 @@ export class AuditCacheService {
     // so results cached before that — often local-only "clean" ones — don't apply.
     const rangesPart = changedRanges ? `diff-v2:${changedRanges.map((r) => `${r.start}-${r.end}`).join(',')}` : '';
     // Only appended when a team has rules, so every existing cache key stays valid.
-    const normalized = `${content} ${provider} ${[...focusAreas].sort().join(',')} ${rangesPart}${rulesKey ? ` rules:${rulesKey}` : ''}`;
+    const normalized = `${content} ${provider} ${[...focusAreas].sort().join(',')} ${rangesPart}${rulesKey ? ` rules:${rulesKey}` : ''} ${REVIEW_ENGINE_VERSION}`;
     return createHash('sha256').update(normalized).digest('hex');
   }
 

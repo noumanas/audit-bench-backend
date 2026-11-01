@@ -35,7 +35,7 @@ import { Prisma, ScanSourceType } from '@prisma/client';
 import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
 import { PrSnapshot, readinessForScan } from '../common/merge-readiness';
 import { matchesGlob } from '../common/finding-fingerprint';
-import { relatedContextFor } from '../analysis/related-context';
+import { relatedContextFor, testContextFor } from '../analysis/related-context';
 import {
   NO_RULES,
   ReviewRules,
@@ -266,7 +266,7 @@ export class RepositoryService {
         shareId: opts.shareId,
         requesterIpHash: opts.requesterIpHash,
       },
-      rules.key,
+      rules,
     );
 
     void this.processScan(job.id, filesToAnalyze, providerName, repoContext, Boolean(opts.localOnly), rules);
@@ -329,7 +329,12 @@ export class RepositoryService {
     analyzable.splice(maxScanFiles);
     // Only worth computing when the AI will read it.
     if (opts.repoFiles?.length && !opts.localOnly) {
-      for (const f of analyzable) f.relatedContext = relatedContextFor(f, opts.repoFiles) || undefined;
+      for (const f of analyzable) {
+        // Callers that could break, then the tests that cover the change: one
+        // string, so it rides the existing cache key and prompt plumbing.
+        const context = [relatedContextFor(f, opts.repoFiles), testContextFor(f, opts.repoFiles)].filter(Boolean);
+        f.relatedContext = context.join('\n\n') || undefined;
+      }
     }
 
     const secrets = scanSecrets(analyzable);
@@ -363,7 +368,7 @@ export class RepositoryService {
             } as unknown as Prisma.InputJsonValue)
           : undefined,
       },
-      rules.key,
+      rules,
     );
 
     void this.processScan(job.id, analyzable, providerName, repoContext, Boolean(opts.localOnly), rules);
@@ -375,7 +380,7 @@ export class RepositoryService {
     files: ScannedFile[],
     providerName: LlmProviderName,
     jobDataBase: JobDataBase,
-    rulesKey?: string,
+    rules: ReviewRules = NO_RULES,
   ) {
     // Cheap, local-only pre-check: will this job make at least one fresh
     // LLM call? Only then does it need a quota gate — a scan/review that
@@ -384,7 +389,7 @@ export class RepositoryService {
     // scan that might cost nothing. See QuotaService for the full rationale.
     const willInvokeAi = jobDataBase.localOnly
       ? false
-      : await this.anyFileNeedsFreshAiCall(files, providerName, rulesKey);
+      : await this.anyFileNeedsFreshAiCall(files, providerName, rules);
     const jobData = {
       userId: actor.id,
       // Same team-visibility stamp as Audit — see AuditService.runAudit.
@@ -412,8 +417,9 @@ export class RepositoryService {
   private async anyFileNeedsFreshAiCall(
     files: ScannedFile[],
     providerName: LlmProviderName,
-    rulesKey?: string,
+    rules: ReviewRules,
   ): Promise<boolean> {
+    const rulesKey = rules.key || undefined;
     for (const file of files) {
       const hash = this.cache.hashFor(
         file.content,
@@ -427,7 +433,7 @@ export class RepositoryService {
       // AI-reviewed cache entry spares one, not a cached local-only result.
       if (cached && (cached.aiInvoked || !file.changedRanges?.length)) continue;
       if (file.changedRanges?.length) return true;
-      const fullStage1 = await runStage1(file.content, file.path);
+      const fullStage1 = await runStage1(file.content, file.path, rules.thresholds);
       const stage1 = file.changedRanges ? filterStage1ToRanges(fullStage1, file.changedRanges) : fullStage1;
       if (!stage1.clean) return true;
     }
@@ -469,6 +475,7 @@ export class RepositoryService {
                 suppressFingerprints,
                 rulesKey: rules.key || undefined,
                 relatedContext: file.relatedContext,
+                thresholds: rules.thresholds,
               });
 
               if (fromCache) filesFromCache++;
@@ -664,7 +671,10 @@ export class RepositoryService {
     const data = outcome.ok
       ? { prPublishedAt: new Date(), prPublishError: null }
       : { prPublishedAt: null, prPublishError: outcome.error };
-    await this.prisma.scanJob.update({ where: { id: jobId }, data });
+    await this.prisma.scanJob.update({
+      where: { id: jobId },
+      data: { ...data, ...(outcome.ok && outcome.repeats ? { prRepeatStats: { ...outcome.repeats } } : {}) },
+    });
     return data;
   }
 
@@ -672,7 +682,7 @@ export class RepositoryService {
   async buildPrFeedback(jobId: string, scanUrl?: string): Promise<PrFeedback> {
     const job = await this.prisma.scanJob.findUniqueOrThrow({ where: { id: jobId }, include: { files: true } });
     const snapshot = job.sourceType === 'github_pr' ? (job.prSnapshot as unknown as PrSnapshot | null) : null;
-    const findings = withoutConflictingReplacements(
+    const all = withoutConflictingReplacements(
       job.files.flatMap((file) =>
         ((Array.isArray(file.findings) ? file.findings : []) as unknown as Finding[]).map((f) => ({
           path: file.path,
@@ -687,9 +697,14 @@ export class RepositoryService {
           examplePatch: f.examplePatch,
           replacement: f.replacement ?? null,
           confidence: f.confidence,
+          failureScenario: f.failureScenario ?? null,
+          testEvidence: f.testEvidence ?? null,
         })),
       ),
     );
+    // Optional suggestions go in the summary only (see suggestionLines).
+    const findings = all.filter((f) => f.severity !== 'info');
+    const suggestions = all.filter((f) => f.severity === 'info');
     const insights = (job.prInsights ?? undefined) as PrInsights | undefined;
     const checks = snapshot
       ? deterministicChecks(snapshot, {
@@ -702,6 +717,7 @@ export class RepositoryService {
       verdict: job.verdict ?? 'pass',
       summary: job.summary ?? '',
       findings,
+      ...(suggestions.length ? { suggestions } : {}),
       changedRanges: (job.changedRanges ?? undefined) as PrFeedback['changedRanges'],
       scanUrl,
       // The headline must agree with the checks listed under it (and drives the merge gate).

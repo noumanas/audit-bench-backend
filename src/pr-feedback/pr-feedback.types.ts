@@ -53,6 +53,12 @@ export interface PrFeedbackFinding {
   /** Exact new code for lines line..endLine — posted as a one-click GitHub suggestion. */
   replacement?: string | null;
   confidence?: number;
+  /** Concrete input or state, and the wrong result it produces. */
+  failureScenario?: string | null;
+  /** What the repository's tests say about this case. */
+  testEvidence?: string | null;
+  /** Raised before on this pull request: came back after being fixed, or survived a change to its lines. */
+  repeat?: 'reappeared' | 'still_present';
 }
 
 export interface PrFeedback {
@@ -72,6 +78,10 @@ export interface PrFeedback {
   checks?: PreMergeCheck[];
   /** True for a free review made with local checks only (no AI). */
   local?: boolean;
+  /** Optional ("info") suggestions: listed in the summary, never posted as comments, never change the verdict. */
+  suggestions?: PrFeedbackFinding[];
+  /** Findings left out because they were already raised on this pull request (see filterRepeatFindings). */
+  notRepeated?: { open: number; dismissed: number };
   /** GitHub PR reviews with a snapshot — conflicts, CI and blockers, rendered at the top of the summary. */
   readiness?: MergeReadiness;
   /**
@@ -92,8 +102,20 @@ export function automatedReviewNotice(via: NonNullable<PrFeedback['viaUserAccoun
     : '> 🤖 **Automated review by Audit Bench Ai**, not a personal review. It was posted through the account connected to Audit Bench Ai.';
 }
 
+/** How a published review handled findings already raised on the pull request. */
+export interface RepeatStats {
+  posted: number;
+  open: number;
+  dismissed: number;
+}
+
 export interface PrPublisher {
-  publish(userId: string, context: Extract<PrContext, { kind: string }>, feedback: PrFeedback): Promise<void>;
+  /** Returns repeat statistics when the publisher checked for findings already on the PR. */
+  publish(
+    userId: string,
+    context: Extract<PrContext, { kind: string }>,
+    feedback: PrFeedback,
+  ): Promise<void | { repeats?: RepeatStats }>;
   /** Clears any "reviewing…" status when a review couldn't finish. */
   fail?(userId: string, context: Extract<PrContext, { kind: string }>, reason: string): Promise<void>;
 }

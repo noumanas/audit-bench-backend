@@ -12,6 +12,8 @@ import { stage1ToFindings } from './stage1/to-findings';
 import { filterStage1ToRanges } from './stage1/filter-to-ranges';
 import { findingFingerprint } from '../common/finding-fingerprint';
 import { buildDiffPrompt, buildFocusedPrompt } from './stage2/focused-prompt';
+import { calibrateFindings } from './stage2/calibrate';
+import { DEFAULT_THRESHOLDS, ReviewThresholds, isDefaultThresholds } from '../common/review-thresholds';
 
 export interface PipelineInput {
   filename: string;
@@ -37,6 +39,8 @@ export interface PipelineInput {
   rulesKey?: string;
   /** PR/MR reviews: unchanged code elsewhere that uses what this file's changes touch. */
   relatedContext?: string;
+  /** The team's review strictness (ReviewSettings); defaults when absent. */
+  thresholds?: ReviewThresholds;
 }
 
 export interface PipelineOptions {
@@ -65,13 +69,14 @@ const LOW_CONFIDENCE_THRESHOLD = 0.6;
  * one team can never be served to another.
  */
 export function pipelineRulesKey(
-  input: Pick<PipelineInput, 'rulesKey' | 'teamRules' | 'suppressFingerprints'>,
+  input: Pick<PipelineInput, 'rulesKey' | 'teamRules' | 'suppressFingerprints' | 'thresholds'>,
 ): string | undefined {
   if (input.rulesKey) return input.rulesKey;
   const suppress = [...(input.suppressFingerprints ?? [])].sort();
-  if (!input.teamRules && !suppress.length) return undefined;
+  const thresholds = input.thresholds && !isDefaultThresholds(input.thresholds) ? input.thresholds : undefined;
+  if (!input.teamRules && !suppress.length && !thresholds) return undefined;
   return createHash('sha256')
-    .update(JSON.stringify({ teamRules: input.teamRules ?? '', suppress }))
+    .update(JSON.stringify({ teamRules: input.teamRules ?? '', suppress, ...(thresholds ? { thresholds } : {}) }))
     .digest('hex')
     .slice(0, 16);
 }
@@ -111,9 +116,10 @@ export class PipelineService {
       return { result: cached, fromCache: true, usage: ZERO_USAGE };
     }
 
-    const fullStage1 = await runStage1(input.code, input.filename);
+    const thresholds = input.thresholds ?? DEFAULT_THRESHOLDS;
+    const fullStage1 = await runStage1(input.code, input.filename, thresholds);
     const stage1 = input.changedLineRanges ? filterStage1ToRanges(fullStage1, input.changedLineRanges) : fullStage1;
-    const baseFindings = keep(stage1ToFindings(stage1));
+    const baseFindings = keep(stage1ToFindings(stage1, thresholds));
 
     let result: CachedAuditResult;
     let usage: TokenUsage = ZERO_USAGE;
@@ -189,12 +195,27 @@ export class PipelineService {
         }
       }
 
-      const aiFindings = keep(aiResult.findings);
+      // Optional suggestions belong to PR reviews (listed in the summary), and
+      // only when the team wants them. Audits and scans never carry them, so
+      // clients that predate "info" (the VS Code extension, the CLI) never see one.
+      const allowInfo = diffReview && thresholds.optionalSuggestions;
+      const { findings: calibrated, report } = calibrateFindings(
+        allowInfo ? aiResult.findings : aiResult.findings.filter((f) => f.severity !== 'info'),
+        thresholds,
+      );
+      if (report.unsupported || report.downgraded || report.duplicates) {
+        this.logger.log(
+          `Calibrated ${input.filename}: ${report.unsupported} withheld (low confidence), ${report.downgraded} downgraded, ${report.duplicates} merged`,
+        );
+      }
+      const aiFindings = keep(calibrated);
+      const untouched =
+        aiFindings.length === aiResult.findings.length && !report.downgraded && !report.duplicates;
       const findings = [...baseFindings, ...aiFindings];
       result = {
-        // If the team's rules removed findings, judge what's left rather than the AI's verdict on all of them.
+        // If calibration or the team's rules changed anything, judge what's left rather than the AI's verdict on all of it.
         verdict: worstVerdict([
-          aiFindings.length === aiResult.findings.length ? aiResult.verdict : verdictForSeverities(aiFindings),
+          untouched ? aiResult.verdict : verdictForSeverities(aiFindings),
           verdictForSeverities(baseFindings),
         ]),
         summary: aiResult.summary,

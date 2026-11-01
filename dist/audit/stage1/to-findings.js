@@ -1,7 +1,44 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.complexityFinding = complexityFinding;
 exports.stage1ToFindings = stage1ToFindings;
-function stage1ToFindings(stage1) {
+const review_thresholds_1 = require("../../common/review-thresholds");
+const COMPLEXITY_FLOOR = 10;
+function complexityFinding(fn, t = review_thresholds_1.DEFAULT_THRESHOLDS) {
+    if (fn.complexity <= COMPLEXITY_FLOOR)
+        return null;
+    const nesting = fn.maxNesting ?? 0;
+    const deep = nesting >= t.deepNesting;
+    if (!deep && fn.complexity < t.veryHighComplexity)
+        return null;
+    const span = `lines ${fn.startLine}-${fn.endLine}`;
+    return deep
+        ? {
+            severity: 'low',
+            category: 'Maintainability',
+            title: `Deeply nested conditions in ${fn.name}()`,
+            line: fn.startLine,
+            endLine: fn.endLine,
+            description: `${fn.name}() (${span}) nests conditions ${nesting} levels deep, with ${fn.complexity} paths through it. At that depth it is hard to see which conditions hold at any line, which is where missed edge cases tend to hide.`,
+            rootCause: 'Conditions are handled by nesting further rather than exiting early.',
+            suggestedFix: 'Return early for the simple cases so the main path sits at one level, or move the innermost nested block into a named helper. Make sure each path has a test before restructuring.',
+            examplePatch: null,
+            confidence: 0.65,
+        }
+        : {
+            severity: 'low',
+            category: 'Maintainability',
+            title: `Very large number of branches in ${fn.name}()`,
+            line: fn.startLine,
+            endLine: fn.endLine,
+            description: `${fn.name}() (${span}) has ${fn.complexity} paths through it. The branches are not deeply nested, so this is only worth changing if they handle unrelated jobs or the function keeps growing.`,
+            rootCause: 'Many cases are handled in one function.',
+            suggestedFix: 'If the branches map inputs to outputs, a lookup table can replace them. If they do unrelated jobs, separate those jobs. Otherwise no change is needed.',
+            examplePatch: null,
+            confidence: 0.5,
+        };
+}
+function stage1ToFindings(stage1, thresholds = review_thresholds_1.DEFAULT_THRESHOLDS) {
     const findings = [];
     for (const d of stage1.tsDiagnostics) {
         findings.push({
@@ -73,19 +110,11 @@ function stage1ToFindings(stage1) {
         }
     }
     for (const fn of stage1.functions) {
-        if (fn.complexity > 10 && !stage1.riskyFunctions.some((r) => r.fn.name === fn.name)) {
-            findings.push({
-                severity: 'low',
-                category: 'Maintainability',
-                title: `High cyclomatic complexity: ${fn.name}()`,
-                line: fn.startLine,
-                description: `Complexity of ${fn.complexity} makes this function harder to test and reason about.`,
-                rootCause: 'Too many independent branches/conditions in one function.',
-                suggestedFix: 'Split into smaller functions with single responsibilities.',
-                examplePatch: null,
-                confidence: 0.7,
-            });
-        }
+        if (stage1.riskyFunctions.some((r) => r.fn.name === fn.name))
+            continue;
+        const finding = complexityFinding(fn, thresholds);
+        if (finding)
+            findings.push(finding);
     }
     return findings;
 }

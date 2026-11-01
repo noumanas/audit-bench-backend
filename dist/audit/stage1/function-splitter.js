@@ -78,6 +78,7 @@ function splitFunctions(code, filename) {
             endLine: end,
             code: fnCode,
             complexity: (0, complexity_1.cyclomaticComplexity)(node),
+            maxNesting: (0, complexity_1.maxNestingDepth)(node),
             callsInFile: [...new Set(callsInFile)],
         };
     });

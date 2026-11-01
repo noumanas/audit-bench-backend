@@ -2,6 +2,7 @@ import { LlmService } from '../llm/llm.service';
 import { AuditCacheService, CachedAuditResult } from './cache.service';
 import { LlmProviderName, TokenUsage } from '../common/types';
 import { LineRange } from '../common/diff-ranges';
+import { ReviewThresholds } from '../common/review-thresholds';
 export interface PipelineInput {
     filename: string;
     language?: string;
@@ -15,6 +16,7 @@ export interface PipelineInput {
     suppressFingerprints?: string[];
     rulesKey?: string;
     relatedContext?: string;
+    thresholds?: ReviewThresholds;
 }
 export interface PipelineOptions {
     beforeAiCall?: () => Promise<void>;
@@ -24,7 +26,7 @@ export interface PipelineOutput {
     fromCache: boolean;
     usage: TokenUsage;
 }
-export declare function pipelineRulesKey(input: Pick<PipelineInput, 'rulesKey' | 'teamRules' | 'suppressFingerprints'>): string | undefined;
+export declare function pipelineRulesKey(input: Pick<PipelineInput, 'rulesKey' | 'teamRules' | 'suppressFingerprints' | 'thresholds'>): string | undefined;
 export declare class PipelineService {
     private readonly llm;
     private readonly cache;

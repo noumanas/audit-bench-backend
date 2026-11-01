@@ -7,8 +7,16 @@ import { PrismaService } from '../prisma/prisma.service';
 import { GithubPrDetails, GithubPrFile, GithubPrSummary, GithubRepoSummary } from './github.types';
 import { parseChangedRanges } from '../common/diff-ranges';
 import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
-import { PrContext, PrFeedback, PrFeedbackFinding, PrPublisher, REVIEW_FOOTER } from '../pr-feedback/pr-feedback.types';
+import {
+  PrContext,
+  PrFeedback,
+  PrFeedbackFinding,
+  PrPublisher,
+  RepeatStats,
+  REVIEW_FOOTER,
+} from '../pr-feedback/pr-feedback.types';
 import { commentLines, inlineCommentBody } from '../pr-feedback/inline-comment';
+import { withoutRepeatFindings } from '../pr-feedback/repeat-findings';
 import { TokenCryptoService } from '../common/token-crypto.service';
 import { GithubAppAuthService, GithubAuth } from './github-app-auth.service';
 
@@ -340,7 +348,7 @@ export class GithubService implements OnModuleInit, PrPublisher {
    * is used. Skipped (undefined) for repos over REPO_CONTEXT_MAX_KB or if the
    * download fails: context improves a review but never blocks one.
    */
-  private async repoFilesForContext(
+  async repoFilesForContext(
     auth: GithubAuth,
     owner: string,
     repo: string,
@@ -488,15 +496,23 @@ export class GithubService implements OnModuleInit, PrPublisher {
   }
 
   /** PrPublisher — posts the review (inline comments + summary) and the merge-blocking commit status. */
-  async publish(userId: string, context: Extract<PrContext, { kind: 'github' }>, feedback: PrFeedback): Promise<void> {
+  async publish(
+    userId: string,
+    context: Extract<PrContext, { kind: 'github' }>,
+    feedback: PrFeedback,
+  ): Promise<{ repeats?: RepeatStats }> {
     // Reviews started by the GitHub App post as its bot; the rest as the user.
-    const token = await this.requireToken(context.installationId ? { installationId: context.installationId } : userId);
+    const auth: GithubAuth = context.installationId ? { installationId: context.installationId } : userId;
+    const token = await this.requireToken(auth);
     if (!context.installationId) feedback = { ...feedback, viaUserAccount: { host: 'github' } };
+    const deduped = await this.withoutRepeats(auth, context, feedback);
+    feedback = deduped.feedback;
+    const result = { repeats: deduped.stats };
     await this.postPrReview(token, context.owner, context.repo, context.pullNumber, context.headSha, feedback);
     // Only a GitHub App can create check runs; a personal token gets the older commit status.
     if (!context.installationId) {
       await this.postCommitStatus(token, context.owner, context.repo, context.headSha, feedback);
-      return;
+      return result;
     }
     try {
       await this.postCheckRun(token, context.owner, context.repo, context.headSha, feedback, context.checkRunId);
@@ -511,6 +527,37 @@ export class GithubService implements OnModuleInit, PrPublisher {
       if (!res.every((r) => r.ok)) {
         throw new Error(`The review was posted, but GitHub refused its pass/fail check. ${(err as Error).message}`);
       }
+    }
+    return result;
+  }
+
+  /**
+   * Drops findings already raised on this pull request by an earlier review
+   * (see filterRepeatFindings). Best effort: if the earlier comments can't be
+   * read, the review posts everything rather than not posting.
+   */
+  private async withoutRepeats(
+    auth: GithubAuth,
+    context: Extract<PrContext, { kind: 'github' }>,
+    feedback: PrFeedback,
+  ): Promise<{ feedback: PrFeedback; stats?: RepeatStats }> {
+    if (!feedback.findings.length) return { feedback, stats: { posted: 0, open: 0, dismissed: 0 } };
+    try {
+      const [comments, threads] = await Promise.all([
+        this.listPullReviewComments(auth, context.owner, context.repo, context.pullNumber),
+        this.reviewThreadStates(auth, context.owner, context.repo, context.pullNumber),
+      ]);
+      const deduped = withoutRepeatFindings(feedback, comments, threads);
+      const { open, dismissed } = deduped.stats;
+      if (open || dismissed) {
+        this.logger.log(
+          `${context.owner}/${context.repo}#${context.pullNumber}: not repeating ${open} open and ${dismissed} dismissed finding(s)`,
+        );
+      }
+      return deduped;
+    } catch (err) {
+      this.logger.warn(`Couldn't read earlier review comments, posting all findings: ${(err as Error).message}`);
+      return { feedback };
     }
   }
 
@@ -1022,8 +1069,8 @@ export interface GithubReviewComment {
   original_start_line: number | null;
   created_at: string;
   user: { login: string } | null;
-  /** GitHub's reaction summary; "+1" and "-1" are 👍 and 👎. */
-  reactions?: { '+1'?: number; '-1'?: number };
+  /** GitHub's reaction summary; "+1", "-1" and "eyes" are 👍, 👎 and 👀. */
+  reactions?: { '+1'?: number; '-1'?: number; eyes?: number };
 }
 
 export { buildSummaryBody };

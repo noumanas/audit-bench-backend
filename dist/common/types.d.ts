@@ -1,6 +1,6 @@
-export type Severity = 'critical' | 'high' | 'medium' | 'low';
+export type Severity = 'critical' | 'high' | 'medium' | 'low' | 'info';
 export type Verdict = 'pass' | 'needs_work' | 'do_not_ship';
-export type FindingCategory = 'Security' | 'Logic' | 'Performance' | 'Architecture' | 'Maintainability' | 'Testing';
+export type FindingCategory = 'Security' | 'Logic' | 'Performance' | 'Architecture' | 'Maintainability' | 'Testing' | 'Semantic Accuracy' | 'Reliability' | 'Data Integrity' | 'API Design' | 'Concurrency' | 'Resource Management';
 export interface Finding {
     severity: Severity;
     category: FindingCategory;
@@ -13,6 +13,9 @@ export interface Finding {
     examplePatch: string | null;
     replacement?: string | null;
     confidence: number;
+    evidence?: string | null;
+    failureScenario?: string | null;
+    testEvidence?: string | null;
 }
 export interface AuditResult {
     verdict: Verdict;

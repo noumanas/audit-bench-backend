@@ -1,6 +1,8 @@
 import { z } from 'zod';
+export declare const FINDING_CATEGORIES: readonly ["Security", "Logic", "Performance", "Architecture", "Maintainability", "Testing", "Semantic Accuracy", "Reliability", "Data Integrity", "API Design", "Concurrency", "Resource Management"];
 export declare const findingSchema: z.ZodObject<{
     severity: z.ZodEnum<{
+        info: "info";
         critical: "critical";
         high: "high";
         medium: "medium";
@@ -13,6 +15,12 @@ export declare const findingSchema: z.ZodObject<{
         Architecture: "Architecture";
         Maintainability: "Maintainability";
         Testing: "Testing";
+        "Semantic Accuracy": "Semantic Accuracy";
+        Reliability: "Reliability";
+        "Data Integrity": "Data Integrity";
+        "API Design": "API Design";
+        Concurrency: "Concurrency";
+        "Resource Management": "Resource Management";
     }>;
     title: z.ZodString;
     line: z.ZodDefault<z.ZodOptional<z.ZodNullable<z.ZodNumber>>>;
@@ -23,6 +31,9 @@ export declare const findingSchema: z.ZodObject<{
     examplePatch: z.ZodDefault<z.ZodOptional<z.ZodNullable<z.ZodString>>>;
     replacement: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     confidence: z.ZodNumber;
+    evidence: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    failureScenario: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    testEvidence: z.ZodOptional<z.ZodNullable<z.ZodString>>;
 }, z.core.$strip>;
 export declare const auditResultSchema: z.ZodObject<{
     verdict: z.ZodEnum<{
@@ -33,6 +44,7 @@ export declare const auditResultSchema: z.ZodObject<{
     summary: z.ZodString;
     findings: z.ZodArray<z.ZodObject<{
         severity: z.ZodEnum<{
+            info: "info";
             critical: "critical";
             high: "high";
             medium: "medium";
@@ -45,6 +57,12 @@ export declare const auditResultSchema: z.ZodObject<{
             Architecture: "Architecture";
             Maintainability: "Maintainability";
             Testing: "Testing";
+            "Semantic Accuracy": "Semantic Accuracy";
+            Reliability: "Reliability";
+            "Data Integrity": "Data Integrity";
+            "API Design": "API Design";
+            Concurrency: "Concurrency";
+            "Resource Management": "Resource Management";
         }>;
         title: z.ZodString;
         line: z.ZodDefault<z.ZodOptional<z.ZodNullable<z.ZodNumber>>>;
@@ -55,6 +73,9 @@ export declare const auditResultSchema: z.ZodObject<{
         examplePatch: z.ZodDefault<z.ZodOptional<z.ZodNullable<z.ZodString>>>;
         replacement: z.ZodOptional<z.ZodNullable<z.ZodString>>;
         confidence: z.ZodNumber;
+        evidence: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+        failureScenario: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+        testEvidence: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     }, z.core.$strip>>;
 }, z.core.$strip>;
 export type Finding = z.infer<typeof findingSchema>;

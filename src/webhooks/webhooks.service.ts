@@ -15,10 +15,12 @@ import { LlmService } from '../llm/llm.service';
 import { RepositoryService } from '../repository/repository.service';
 import { QuotaService } from '../quota/quota.service';
 import { FINDING_MARKER, parseFindingComment } from '../pr-feedback/inline-comment';
-import { ReviewRulesService } from '../review-rules/review-rules.service';
+import { FeedbackSignal, ReviewRulesService } from '../review-rules/review-rules.service';
+import { testContextFor } from '../analysis/related-context';
 import { BitbucketService } from '../bitbucket/bitbucket.service';
 import {
   MAX_AGENT_REPLIES_PER_THREAD,
+  Recheck,
   buildRecheckPrompt,
   codeWindow,
   formatAgentReply,
@@ -36,6 +38,15 @@ import {
 } from './mention-answer';
 
 const BOT_MENTION = '@auditbench';
+/** A contributor reply that leans on tests, so the recheck should see them. */
+const THREAD_SIGNAL: Record<Recheck['status'], FeedbackSignal | null> = {
+  resolved: 'resolved',
+  not_an_issue: 'not_an_issue',
+  still_applies: 'confirmed',
+  downgraded: 'downgraded',
+  needs_info: null,
+};
+const TALKS_ABOUT_TESTS = /\b(tests?|tested|specs?|covered|coverage)\b/i;
 const MAX_CONTEXT_FILES = 5;
 const MAX_CONTEXT_CHARS_PER_FILE = 2000;
 const GITHUB_AUTO_REVIEW_ACTIONS = new Set(['opened', 'reopened', 'synchronize']);
@@ -263,6 +274,23 @@ export class WebhooksService {
           throw err;
         });
 
+      // A reply about tests is checked against the tests themselves. That
+      // needs the repository (size-capped, as for PR context), so it's only
+      // fetched when the contributor brings tests up.
+      let tests: string | undefined;
+      if (content !== null && TALKS_ABOUT_TESTS.test(text)) {
+        const repoFiles = await this.github.repoFilesForContext(
+          auth,
+          owner,
+          repo,
+          headSha,
+          body.pull_request?.base?.repo?.size,
+        );
+        if (repoFiles) {
+          tests = testContextFor({ path: root.path, content, changedRanges: [{ start, end }] }, repoFiles) || undefined;
+        }
+      }
+
       const prompt = buildRecheckPrompt({
         path: root.path,
         start,
@@ -270,6 +298,7 @@ export class WebhooksService {
         outdated,
         headSha,
         code: codeWindow(content, start, end, outdated),
+        tests,
         thread: thread.map((c) => ({
           author: c.user?.login ?? 'someone',
           body: c.body,
@@ -288,8 +317,11 @@ export class WebhooksService {
         rootId,
         formatAgentReply(result, headSha, resolved),
       );
-      // How the thread ended teaches the team's review rules.
-      if (result.status === 'resolved' || result.status === 'not_an_issue') {
+      // How the thread ended teaches the team's review rules (resolved,
+      // not_an_issue) and feeds review-quality metrics (all of them). One row
+      // per thread, updated to its latest outcome.
+      const signal = THREAD_SIGNAL[result.status];
+      if (signal) {
         const finding = parseFindingComment(root.body ?? '');
         if (finding) {
           await this.reviewRules.recordFeedback(await this.ownerOf(quotaUserId), {
@@ -297,7 +329,7 @@ export class WebhooksService {
             path: root.path,
             category: finding.category,
             title: finding.title,
-            signal: result.status,
+            signal,
             source: 'thread',
             sourceRef: `thread:${repoIdentifier}:${rootId}`,
           });
@@ -337,6 +369,10 @@ export class WebhooksService {
         this.github.reviewThreadStates(auth, owner, repo, pullNumber).catch(() => new Map()),
       ]);
       const team = await this.ownerOf(ownerUserId);
+      // Threads a person replied in: they saw the finding, whatever came of it.
+      const repliedTo = new Set(
+        comments.filter((c) => c.in_reply_to_id && !c.body?.includes('<!-- audit-bench')).map((c) => c.in_reply_to_id),
+      );
       for (const c of comments) {
         const finding = parseFindingComment(c.body ?? '');
         if (!finding) continue;
@@ -361,6 +397,13 @@ export class WebhooksService {
             signal: 'up',
             source: 'reaction',
             sourceRef: `reaction:${c.id}:up`,
+          });
+        if ((c.reactions?.eyes ?? 0) > 0 || repliedTo.has(c.id))
+          await this.reviewRules.recordFeedback(team, {
+            ...base,
+            signal: 'acknowledged',
+            source: 'reaction',
+            sourceRef: `reaction:${c.id}:acknowledged`,
           });
         const thread = threads.get(c.id);
         const outcome = down ? 'dismissed' : up || thread?.resolved || thread?.outdated ? 'accepted' : 'ignored';

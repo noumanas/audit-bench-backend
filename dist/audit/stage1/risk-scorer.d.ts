@@ -1,2 +1,3 @@
 import { FunctionRisk, FunctionUnit, LintFinding } from './types';
-export declare function selectRiskyFunctions(functions: FunctionUnit[], lint: LintFinding[], filename?: string): FunctionRisk[];
+import { ReviewThresholds } from '../../common/review-thresholds';
+export declare function selectRiskyFunctions(functions: FunctionUnit[], lint: LintFinding[], filename?: string, thresholds?: ReviewThresholds): FunctionRisk[];

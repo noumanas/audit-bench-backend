@@ -48,6 +48,24 @@ const details = (summary: string, body: string[], open = false) => [
  * issue / scope checks), a walkthrough, review details, a prompt an AI
  * coding agent can paste to fix everything, and how to talk back.
  */
+/** "Not repeated: 2 still open from an earlier review, 1 your team dismissed." — or null. */
+function notRepeatedNote(feedback: PrFeedback): string | null {
+  const skipped = feedback.notRepeated;
+  if (!skipped || skipped.open + skipped.dismissed === 0) return null;
+  const parts = [
+    skipped.open ? `${skipped.open} still open from an earlier review` : null,
+    skipped.dismissed ? `${skipped.dismissed} your team dismissed` : null,
+  ].filter(Boolean);
+  return `_Not repeated: ${parts.join(', ')}._`;
+}
+
+/** Optional suggestions, one line each: never comments, never the verdict. */
+function suggestionLines(feedback: PrFeedback): string[] {
+  return (feedback.suggestions ?? [])
+    .slice(0, 20)
+    .map((f) => `- \`${f.path}\`${f.line ? `:${f.line}` : ''}: **${f.title}**. ${f.suggestedFix || f.description}`);
+}
+
 export function buildSummaryBody(feedback: PrFeedback, opts: { posted?: number; headSha?: string } = {}): string {
   const sha = (opts.headSha ?? feedback.headSha)?.slice(0, 7);
   const insights = feedback.insights;
@@ -64,6 +82,8 @@ export function buildSummaryBody(feedback: PrFeedback, opts: { posted?: number; 
     lines.push(
       `**Findings: ${feedback.findings.length}**, listed in the fix prompt below (they couldn't be placed as inline comments).`,
     );
+  const repeats = notRepeatedNote(feedback);
+  if (repeats) lines.push(repeats);
   lines.push('');
 
   // Merge risk (AI) and readiness (GitHub state + findings).
@@ -165,6 +185,11 @@ export function buildSummaryBody(feedback: PrFeedback, opts: { posted?: number; 
     '',
   );
 
+  const suggestions = suggestionLines(feedback);
+  if (suggestions.length) {
+    lines.push(...details(`💡 Optional suggestions (${feedback.suggestions!.length})`, suggestions), '');
+  }
+
   if (feedback.findings.length) {
     lines.push(
       ...details('🤖 Prompt to fix review comments', [
@@ -217,6 +242,8 @@ export function buildPlainSummary(feedback: PrFeedback, opts: { posted?: number;
       '',
     );
   }
+  const repeats = notRepeatedNote(feedback);
+  if (repeats) lines.push(repeats, '');
   if (feedback.readiness) lines.push(`**Merge readiness:** ${READINESS_LABEL[feedback.readiness.status]}`, '');
   lines.push(`**Findings:** ${counts.length ? counts.map(([s, n]) => `${n} ${s}`).join(', ') : 'none'}`, '');
   if (feedback.summary) lines.push(`**Scope:** ${feedback.summary}${sha ? ` (commit \`${sha}\`)` : ''}`, '');
@@ -237,6 +264,8 @@ export function buildPlainSummary(feedback: PrFeedback, opts: { posted?: number;
       '',
     );
   }
+  const suggestions = suggestionLines(feedback);
+  if (suggestions.length) lines.push('**Optional suggestions** (no action needed):', '', ...suggestions, '');
   if (feedback.scanUrl) lines.push(`[Open the full report and fix with AI](${feedback.scanUrl})`, '');
   lines.push(
     '_Reviewed by [Audit Bench Ai](https://auditbenchai.com/?utm_source=pr_review&utm_medium=comment). Free pull request reviews for open source at [auditbenchai.com/scan](https://auditbenchai.com/scan?utm_source=pr_review&utm_medium=comment)._',

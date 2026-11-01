@@ -53,6 +53,7 @@ export declare class RepositoryService {
         changedRanges: Prisma.JsonValue | null;
         prPublishedAt: Date | null;
         prPublishError: string | null;
+        prRepeatStats: Prisma.JsonValue | null;
         prInsights: Prisma.JsonValue | null;
         provider: string;
         framework: string | null;
@@ -99,6 +100,7 @@ export declare class RepositoryService {
         changedRanges: Prisma.JsonValue | null;
         prPublishedAt: Date | null;
         prPublishError: string | null;
+        prRepeatStats: Prisma.JsonValue | null;
         prInsights: Prisma.JsonValue | null;
         provider: string;
         framework: string | null;
@@ -151,6 +153,7 @@ export declare class RepositoryService {
         changedRanges: Prisma.JsonValue | null;
         prPublishedAt: Date | null;
         prPublishError: string | null;
+        prRepeatStats: Prisma.JsonValue | null;
         prInsights: Prisma.JsonValue | null;
         provider: string;
         framework: string | null;
@@ -228,6 +231,7 @@ export declare class RepositoryService {
         changedRanges: Prisma.JsonValue | null;
         prPublishedAt: Date | null;
         prPublishError: string | null;
+        prRepeatStats: Prisma.JsonValue | null;
         prInsights: Prisma.JsonValue | null;
         provider: string;
         framework: string | null;
@@ -290,6 +294,7 @@ export declare class RepositoryService {
         changedRanges: Prisma.JsonValue | null;
         prPublishedAt: Date | null;
         prPublishError: string | null;
+        prRepeatStats: Prisma.JsonValue | null;
         prInsights: Prisma.JsonValue | null;
         provider: string;
         framework: string | null;

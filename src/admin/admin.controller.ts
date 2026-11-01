@@ -12,6 +12,7 @@ import { UpdateRoleDto } from './dto/update-role.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { ActivityService } from '../activity/activity.service';
+import { ReviewRulesService } from '../review-rules/review-rules.service';
 
 class DeleteUserDto {
   @IsString()
@@ -27,7 +28,15 @@ export class AdminController {
     private readonly adminService: AdminService,
     private readonly usage: AdminUsageService,
     private readonly activity: ActivityService,
+    private readonly reviewRules: ReviewRulesService,
   ) {}
+
+  // Review usefulness across every team: precision, dismissals, overstated severity, token cost.
+  @Get('review-quality')
+  reviewQuality(@Query('days') days?: string) {
+    const n = Number(days);
+    return this.reviewRules.quality(null, Number.isFinite(n) && n > 0 && n <= 365 ? n : 90);
+  }
 
   // Sign-ups, sign-ins (and failures) and plan events with IP + location.
   @Get('activity')

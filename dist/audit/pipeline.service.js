@@ -25,15 +25,18 @@ const to_findings_1 = require("./stage1/to-findings");
 const filter_to_ranges_1 = require("./stage1/filter-to-ranges");
 const finding_fingerprint_1 = require("../common/finding-fingerprint");
 const focused_prompt_1 = require("./stage2/focused-prompt");
+const calibrate_1 = require("./stage2/calibrate");
+const review_thresholds_1 = require("../common/review-thresholds");
 const LOW_CONFIDENCE_THRESHOLD = 0.6;
 function pipelineRulesKey(input) {
     if (input.rulesKey)
         return input.rulesKey;
     const suppress = [...(input.suppressFingerprints ?? [])].sort();
-    if (!input.teamRules && !suppress.length)
+    const thresholds = input.thresholds && !(0, review_thresholds_1.isDefaultThresholds)(input.thresholds) ? input.thresholds : undefined;
+    if (!input.teamRules && !suppress.length && !thresholds)
         return undefined;
     return (0, crypto_1.createHash)('sha256')
-        .update(JSON.stringify({ teamRules: input.teamRules ?? '', suppress }))
+        .update(JSON.stringify({ teamRules: input.teamRules ?? '', suppress, ...(thresholds ? { thresholds } : {}) }))
         .digest('hex')
         .slice(0, 16);
 }
@@ -54,9 +57,10 @@ let PipelineService = PipelineService_1 = class PipelineService {
         if (cached && !(diffReview && !cached.aiInvoked)) {
             return { result: cached, fromCache: true, usage: types_1.ZERO_USAGE };
         }
-        const fullStage1 = await (0, run_stage1_1.runStage1)(input.code, input.filename);
+        const thresholds = input.thresholds ?? review_thresholds_1.DEFAULT_THRESHOLDS;
+        const fullStage1 = await (0, run_stage1_1.runStage1)(input.code, input.filename, thresholds);
         const stage1 = input.changedLineRanges ? (0, filter_to_ranges_1.filterStage1ToRanges)(fullStage1, input.changedLineRanges) : fullStage1;
-        const baseFindings = keep((0, to_findings_1.stage1ToFindings)(stage1));
+        const baseFindings = keep((0, to_findings_1.stage1ToFindings)(stage1, thresholds));
         let result;
         let usage = types_1.ZERO_USAGE;
         if (!stage1.clean && input.localOnly) {
@@ -122,11 +126,17 @@ let PipelineService = PipelineService_1 = class PipelineService {
                     this.logger.warn(`Escalation pass failed, keeping first-pass result: ${err.message}`);
                 }
             }
-            const aiFindings = keep(aiResult.findings);
+            const allowInfo = diffReview && thresholds.optionalSuggestions;
+            const { findings: calibrated, report } = (0, calibrate_1.calibrateFindings)(allowInfo ? aiResult.findings : aiResult.findings.filter((f) => f.severity !== 'info'), thresholds);
+            if (report.unsupported || report.downgraded || report.duplicates) {
+                this.logger.log(`Calibrated ${input.filename}: ${report.unsupported} withheld (low confidence), ${report.downgraded} downgraded, ${report.duplicates} merged`);
+            }
+            const aiFindings = keep(calibrated);
+            const untouched = aiFindings.length === aiResult.findings.length && !report.downgraded && !report.duplicates;
             const findings = [...baseFindings, ...aiFindings];
             result = {
                 verdict: (0, verdict_1.worstVerdict)([
-                    aiFindings.length === aiResult.findings.length ? aiResult.verdict : (0, verdict_1.verdictForSeverities)(aiFindings),
+                    untouched ? aiResult.verdict : (0, verdict_1.verdictForSeverities)(aiFindings),
                     (0, verdict_1.verdictForSeverities)(baseFindings),
                 ]),
                 summary: aiResult.summary,

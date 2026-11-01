@@ -2,6 +2,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditResult } from '../common/types';
 import { LineRange } from '../common/diff-ranges';
 import { Stage1Result } from './stage1/types';
+export declare const REVIEW_ENGINE_VERSION = "engine-v2";
 export interface CachedAuditResult extends AuditResult {
     stage1: Stage1Result | null;
     aiInvoked: boolean;

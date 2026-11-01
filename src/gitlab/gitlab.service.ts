@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { gitHostRequestFailed } from '../common/git-host-errors';
 import * as crypto from 'crypto';
 import { ConfigService } from '@nestjs/config';
@@ -11,15 +11,19 @@ import {
   PrFeedback,
   PrPublisher,
   REVIEW_FOOTER,
+  RepeatStats,
   automatedReviewNotice,
 } from '../pr-feedback/pr-feedback.types';
 import { inlineCommentBody } from '../pr-feedback/inline-comment';
+import { ExistingComment, withoutRepeatFindings } from '../pr-feedback/repeat-findings';
 import { gitlabInstanceUrl } from '../common/gitlab-url';
 import { TokenCryptoService } from '../common/token-crypto.service';
 import { ContributorStat } from '../analysis/types';
 
 @Injectable()
 export class GitlabService implements OnModuleInit, PrPublisher {
+  private readonly logger = new Logger(GitlabService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
@@ -354,12 +358,59 @@ export class GitlabService implements OnModuleInit, PrPublisher {
   }
 
   /** PrPublisher — posts inline discussions + a summary note, and the merge-blocking commit status. */
-  async publish(userId: string, context: Extract<PrContext, { kind: 'gitlab' }>, feedback: PrFeedback): Promise<void> {
+  async publish(
+    userId: string,
+    context: Extract<PrContext, { kind: 'gitlab' }>,
+    feedback: PrFeedback,
+  ): Promise<{ repeats?: RepeatStats }> {
     const token = await this.requireToken(userId);
     feedback = { ...feedback, viaUserAccount: { host: 'gitlab' } };
+    let repeats: RepeatStats | undefined;
+    if (feedback.findings.length) {
+      // Best effort, as on GitHub: if the earlier threads can't be read, post everything.
+      try {
+        const { comments, states } = await this.earlierThreads(token, context.projectId, context.mrIid);
+        const deduped = withoutRepeatFindings(feedback, comments, states);
+        feedback = deduped.feedback;
+        repeats = deduped.stats;
+      } catch (err) {
+        this.logger.warn(`Couldn't read earlier MR threads, posting all findings: ${(err as Error).message}`);
+      }
+    }
     await this.postMrDiscussions(token, context.projectId, context.mrIid, context.diffRefs, feedback);
     await this.postMrNoteWithToken(token, context.projectId, context.mrIid, buildSummaryBody(feedback));
     await this.postCommitStatus(token, context.projectId, context.headSha, feedback);
+    return { repeats };
+  }
+
+  /**
+   * The merge request's existing threads, shaped for filterRepeatFindings:
+   * each thread's first note, its replies, and whether it was resolved.
+   * GitLab doesn't flag outdated positions here, so that state isn't used.
+   */
+  private async earlierThreads(token: string, projectId: number, mrIid: number) {
+    const comments: ExistingComment[] = [];
+    const states = new Map<number, { resolved: boolean; outdated: boolean }>();
+    for (let page = 1; page <= 5; page++) {
+      const res = await fetch(
+        `${this.baseUrl()}/projects/${projectId}/merge_requests/${mrIid}/discussions?per_page=100&page=${page}`,
+        { headers: this.authHeaders(token) },
+      );
+      if (!res.ok) throw new Error(`GitLab returned ${res.status} listing discussions`);
+      const batch = (await res.json()) as Array<{
+        notes?: Array<{ id: number; body?: string; resolved?: boolean; position?: { new_path?: string } }>;
+      }>;
+      for (const d of batch) {
+        const [root, ...replies] = d.notes ?? [];
+        if (!root) continue;
+        const path = root.position?.new_path ?? '';
+        comments.push({ id: root.id, body: root.body ?? '', path });
+        for (const n of replies) comments.push({ id: n.id, in_reply_to_id: root.id, body: n.body ?? '', path });
+        states.set(root.id, { resolved: Boolean(root.resolved), outdated: false });
+      }
+      if (batch.length < 100) break;
+    }
+    return { comments, states };
   }
 
   private async postMrDiscussions(

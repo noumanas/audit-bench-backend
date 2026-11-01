@@ -23,6 +23,7 @@ export declare class RepositoryController {
         changedRanges: import("@prisma/client/runtime/library").JsonValue | null;
         prPublishedAt: Date | null;
         prPublishError: string | null;
+        prRepeatStats: import("@prisma/client/runtime/library").JsonValue | null;
         prInsights: import("@prisma/client/runtime/library").JsonValue | null;
         provider: string;
         framework: string | null;
@@ -69,6 +70,7 @@ export declare class RepositoryController {
         changedRanges: import("@prisma/client/runtime/library").JsonValue | null;
         prPublishedAt: Date | null;
         prPublishError: string | null;
+        prRepeatStats: import("@prisma/client/runtime/library").JsonValue | null;
         prInsights: import("@prisma/client/runtime/library").JsonValue | null;
         provider: string;
         framework: string | null;
@@ -131,6 +133,7 @@ export declare class RepositoryController {
         changedRanges: import("@prisma/client/runtime/library").JsonValue | null;
         prPublishedAt: Date | null;
         prPublishError: string | null;
+        prRepeatStats: import("@prisma/client/runtime/library").JsonValue | null;
         prInsights: import("@prisma/client/runtime/library").JsonValue | null;
         provider: string;
         framework: string | null;

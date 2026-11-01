@@ -5,8 +5,9 @@ import { TokenCryptoService } from '../common/token-crypto.service';
 import { gitHostRequestFailed } from '../common/git-host-errors';
 import { parseUnifiedDiff } from '../common/diff-ranges';
 import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
-import { PrContext, PrFeedback, PrPublisher } from '../pr-feedback/pr-feedback.types';
+import { PrContext, PrFeedback, PrPublisher, RepeatStats } from '../pr-feedback/pr-feedback.types';
 import { commentLines, inlineCommentBody } from '../pr-feedback/inline-comment';
+import { ExistingComment, withoutRepeatFindings } from '../pr-feedback/repeat-findings';
 import { buildPlainSummary } from '../pr-feedback/summary-comment';
 import { ScannedFile } from '../analysis/types';
 
@@ -223,10 +224,22 @@ export class BitbucketService implements OnModuleInit, PrPublisher {
     userId: string,
     context: Extract<PrContext, { kind: 'bitbucket' }>,
     feedback: PrFeedback,
-  ): Promise<void> {
+  ): Promise<{ repeats?: RepeatStats }> {
     const token = await this.requireToken(userId);
     feedback = { ...feedback, viaUserAccount: { host: 'bitbucket' } };
     const base = `${API}/repositories/${context.workspace}/${context.repoSlug}`;
+    let repeats: RepeatStats | undefined;
+    if (feedback.findings.length) {
+      // Best effort, as on GitHub: if the earlier comments can't be read, post everything.
+      try {
+        const { comments, states } = await this.earlierComments(token, `${base}/pullrequests/${context.pullId}/comments`);
+        const deduped = withoutRepeatFindings(feedback, comments, states);
+        feedback = deduped.feedback;
+        repeats = deduped.stats;
+      } catch (err) {
+        this.logger.warn(`Couldn't read earlier PR comments, posting all findings: ${(err as Error).message}`);
+      }
+    }
     const post = (path: string, body: unknown) =>
       fetch(`${base}${path}`, {
         method: 'POST',
@@ -273,6 +286,40 @@ export class BitbucketService implements OnModuleInit, PrPublisher {
     });
     if (!status.ok)
       this.logger.warn(`Build status not set on ${context.workspace}/${context.repoSlug} (${status.status})`);
+    return { repeats };
+  }
+
+  /**
+   * The pull request's existing comments, shaped for filterRepeatFindings.
+   * Bitbucket marks a comment resolved, and an inline one outdated once its
+   * lines change; deleted comments are skipped.
+   */
+  private async earlierComments(token: string, url: string) {
+    const comments: ExistingComment[] = [];
+    const states = new Map<number, { resolved: boolean; outdated: boolean }>();
+    let next: string | undefined = `${url}?pagelen=100`;
+    for (let page = 0; next && page < 5; page++) {
+      const res = await fetch(next, { headers: this.headers(token) });
+      if (!res.ok) throw new Error(`Bitbucket returned ${res.status} listing comments`);
+      const body = (await res.json()) as {
+        next?: string;
+        values?: Array<{
+          id: number;
+          deleted?: boolean;
+          content?: { raw?: string };
+          inline?: { path?: string; outdated?: boolean };
+          parent?: { id: number };
+          resolution?: unknown;
+        }>;
+      };
+      for (const c of body.values ?? []) {
+        if (c.deleted) continue;
+        comments.push({ id: c.id, in_reply_to_id: c.parent?.id, body: c.content?.raw ?? '', path: c.inline?.path ?? '' });
+        if (!c.parent) states.set(c.id, { resolved: Boolean(c.resolution), outdated: Boolean(c.inline?.outdated) });
+      }
+      next = body.next;
+    }
+    return { comments, states };
   }
 
   /** Bitbucket signs webhook deliveries with `X-Hub-Signature: sha256=<hmac>` over the raw body. */
