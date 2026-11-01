@@ -39,6 +39,26 @@ const REPO_CONTEXT_MAX_KB = 50 * 1024;
 
 /** How many of a PR's files are downloaded at once. */
 const PR_FILE_FETCH_CONCURRENCY = 8;
+/** Tries per GitHub file download: the first plus retries after 0.5s and 1s. */
+const FILE_FETCH_ATTEMPTS = 3;
+
+/**
+ * fetch, retried when the connection drops ("other side closed") or GitHub
+ * answers 429/5xx — under parallel downloads these happen now and then and
+ * clear up on the next try. Other responses come back as they are.
+ */
+export async function fetchWithRetry(url: string, init: RequestInit, attempts = FILE_FETCH_ATTEMPTS): Promise<Response> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const res = await fetch(url, init);
+      if (attempt >= attempts || (res.status < 500 && res.status !== 429)) return res;
+      await res.body?.cancel(); // free the connection before retrying
+    } catch (err) {
+      if (attempt >= attempts) throw err;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** (attempt - 1)));
+  }
+}
 
 @Injectable()
 export class GithubService implements OnModuleInit, PrPublisher {
@@ -483,7 +503,7 @@ export class GithubService implements OnModuleInit, PrPublisher {
     ref: string,
   ): Promise<string | null> {
     const encodedPath = path.split('/').map(encodeURIComponent).join('/');
-    const res = await fetch(
+    const res = await fetchWithRetry(
       `${GITHUB_API}/repos/${repoApiPath(owner, repo)}/contents/${encodedPath}?ref=${encodeURIComponent(ref)}`,
       {
         headers: this.authHeaders(token),

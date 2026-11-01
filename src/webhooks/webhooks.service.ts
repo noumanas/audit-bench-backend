@@ -511,7 +511,7 @@ export class WebhooksService {
           .stopReviewStatus(auth, owner, repo, eventHeadSha, this.quotaSkipMessage(err as Error), checkRunId)
           .catch(() => undefined);
       }
-      await this.handleAutoReviewError(err, () =>
+      await this.handleAutoReviewError(err, `${owner}/${repo}#${pullNumber} @ ${eventHeadSha ?? 'latest'}`, () =>
         this.github.postIssueComment(auth, owner, repo, pullNumber, this.quotaSkipMessage(err as Error)),
       );
     }
@@ -604,7 +604,7 @@ export class WebhooksService {
         prContext: { kind: 'gitlab', projectId, mrIid, headSha: fetchedSha, diffRefs, sourceBranch, targetBranch },
       });
     } catch (err) {
-      await this.handleAutoReviewError(err, () =>
+      await this.handleAutoReviewError(err, `GitLab project ${projectId} !${mrIid}`, () =>
         this.gitlab.postMrNote(config.userId, projectId, mrIid, this.quotaSkipMessage(err as Error)),
       );
     }
@@ -680,7 +680,12 @@ export class WebhooksService {
   }
 
   /** Quota/plan gates throw Forbidden (403) or a 429 HttpException — only those two are worth telling the author about. */
-  private async handleAutoReviewError(err: unknown, postSkipComment: () => Promise<unknown>): Promise<void> {
+  private async handleAutoReviewError(
+    err: unknown,
+    /** Which PR/MR and commit, so a failure in the logs can be matched to the check that shows it. */
+    target: string,
+    postSkipComment: () => Promise<unknown>,
+  ): Promise<void> {
     const isForbidden = err instanceof ForbiddenException;
     const isRateLimited = err instanceof HttpException && err.getStatus() === HttpStatus.TOO_MANY_REQUESTS;
     if (isForbidden || isRateLimited) {
@@ -691,7 +696,7 @@ export class WebhooksService {
       }
       return;
     }
-    this.logger.error('Auto-review failed', err as Error);
+    this.logger.error(`Auto-review of ${target} failed: ${(err as Error)?.message}`, (err as Error)?.stack);
   }
 
   /**
