@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.selectRiskyFunctions = selectRiskyFunctions;
+const review_thresholds_1 = require("../../common/review-thresholds");
 const RISKY_PATTERNS = [
     { pattern: /\beval\s*\(/, reason: 'eval()', weight: 5 },
     { pattern: /\bnew Function\s*\(/, reason: 'dynamic Function construction', weight: 5 },
@@ -58,7 +59,7 @@ const SENSITIVE_PATH_WEIGHT = 2;
 const MIN_ESCALATION_SCORE = 2;
 const COMPLEXITY_THRESHOLD = 10;
 const MAX_ESCALATED_FUNCTIONS = 5;
-function scoreFunction(fn, lint, sensitiveFile) {
+function scoreFunction(fn, lint, sensitiveFile, t) {
     const reasons = [];
     let score = 0;
     if (sensitiveFile) {
@@ -72,8 +73,14 @@ function scoreFunction(fn, lint, sensitiveFile) {
         }
     }
     if (fn.complexity > COMPLEXITY_THRESHOLD) {
-        score += Math.min(5, Math.floor((fn.complexity - COMPLEXITY_THRESHOLD) / 2) + 2);
-        reasons.push(`high cyclomatic complexity (${fn.complexity})`);
+        const nesting = fn.maxNesting ?? 0;
+        if (nesting >= t.deepNesting || fn.complexity >= t.veryHighComplexity) {
+            score += Math.min(5, Math.floor((fn.complexity - COMPLEXITY_THRESHOLD) / 2) + 2);
+            reasons.push(`high cyclomatic complexity (${fn.complexity}, nested ${nesting} deep)`);
+        }
+        else {
+            reasons.push(`${fn.complexity} paths but flat (nested ${nesting} deep), so complexity alone is not a concern`);
+        }
     }
     const inRange = lint.filter((l) => l.line >= fn.startLine && l.line <= fn.endLine);
     const errorCount = inRange.filter((l) => l.severity === 'error').length;
@@ -83,10 +90,10 @@ function scoreFunction(fn, lint, sensitiveFile) {
     }
     return { fn, score, reasons };
 }
-function selectRiskyFunctions(functions, lint, filename = '') {
+function selectRiskyFunctions(functions, lint, filename = '', thresholds = review_thresholds_1.DEFAULT_THRESHOLDS) {
     const sensitiveFile = SENSITIVE_PATH.test(filename.split('/').slice(-2).join('/'));
     return functions
-        .map((fn) => scoreFunction(fn, lint, sensitiveFile))
+        .map((fn) => scoreFunction(fn, lint, sensitiveFile, thresholds))
         .filter((r) => r.score >= MIN_ESCALATION_SCORE)
         .sort((a, b) => b.score - a.score)
         .slice(0, MAX_ESCALATED_FUNCTIONS);

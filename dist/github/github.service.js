@@ -22,6 +22,7 @@ const prisma_service_1 = require("../prisma/prisma.service");
 const diff_ranges_1 = require("../common/diff-ranges");
 const pr_feedback_service_1 = require("../pr-feedback/pr-feedback.service");
 const inline_comment_1 = require("../pr-feedback/inline-comment");
+const repeat_findings_1 = require("../pr-feedback/repeat-findings");
 const token_crypto_service_1 = require("../common/token-crypto.service");
 const github_app_auth_service_1 = require("./github-app-auth.service");
 const file_walker_1 = require("../analysis/file-walker");
@@ -353,13 +354,17 @@ let GithubService = GithubService_1 = class GithubService {
         return Buffer.from(data.content, 'base64').toString('utf8');
     }
     async publish(userId, context, feedback) {
-        const token = await this.requireToken(context.installationId ? { installationId: context.installationId } : userId);
+        const auth = context.installationId ? { installationId: context.installationId } : userId;
+        const token = await this.requireToken(auth);
         if (!context.installationId)
             feedback = { ...feedback, viaUserAccount: { host: 'github' } };
+        const deduped = await this.withoutRepeats(auth, context, feedback);
+        feedback = deduped.feedback;
+        const result = { repeats: deduped.stats };
         await this.postPrReview(token, context.owner, context.repo, context.pullNumber, context.headSha, feedback);
         if (!context.installationId) {
             await this.postCommitStatus(token, context.owner, context.repo, context.headSha, feedback);
-            return;
+            return result;
         }
         try {
             await this.postCheckRun(token, context.owner, context.repo, context.headSha, feedback, context.checkRunId);
@@ -370,6 +375,27 @@ let GithubService = GithubService_1 = class GithubService {
             if (!res.every((r) => r.ok)) {
                 throw new Error(`The review was posted, but GitHub refused its pass/fail check. ${err.message}`);
             }
+        }
+        return result;
+    }
+    async withoutRepeats(auth, context, feedback) {
+        if (!feedback.findings.length)
+            return { feedback, stats: { posted: 0, open: 0, dismissed: 0 } };
+        try {
+            const [comments, threads] = await Promise.all([
+                this.listPullReviewComments(auth, context.owner, context.repo, context.pullNumber),
+                this.reviewThreadStates(auth, context.owner, context.repo, context.pullNumber),
+            ]);
+            const deduped = (0, repeat_findings_1.withoutRepeatFindings)(feedback, comments, threads);
+            const { open, dismissed } = deduped.stats;
+            if (open || dismissed) {
+                this.logger.log(`${context.owner}/${context.repo}#${context.pullNumber}: not repeating ${open} open and ${dismissed} dismissed finding(s)`);
+            }
+            return deduped;
+        }
+        catch (err) {
+            this.logger.warn(`Couldn't read earlier review comments, posting all findings: ${err.message}`);
+            return { feedback };
         }
     }
     async postCheckRun(token, owner, repo, sha, feedback, checkRunId) {

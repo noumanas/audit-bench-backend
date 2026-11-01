@@ -2,11 +2,11 @@ import { OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { GithubPrDetails, GithubPrSummary, GithubRepoSummary } from './github.types';
 import { PrFeedbackService } from '../pr-feedback/pr-feedback.service';
-import { PrContext, PrFeedback, PrPublisher } from '../pr-feedback/pr-feedback.types';
+import { PrContext, PrFeedback, PrPublisher, RepeatStats } from '../pr-feedback/pr-feedback.types';
 import { TokenCryptoService } from '../common/token-crypto.service';
 import { GithubAppAuthService, GithubAuth } from './github-app-auth.service';
 export type { GithubAuth };
-import { ContributorStat } from '../analysis/types';
+import { ContributorStat, ScannedFile } from '../analysis/types';
 import { buildSummaryBody } from '../pr-feedback/summary-comment';
 export declare class GithubService implements OnModuleInit, PrPublisher {
     private readonly prisma;
@@ -42,7 +42,7 @@ export declare class GithubService implements OnModuleInit, PrPublisher {
         withSnapshot?: boolean;
         withRepoContext?: boolean;
     }): Promise<GithubPrDetails>;
-    private repoFilesForContext;
+    repoFilesForContext(auth: GithubAuth, owner: string, repo: string, sha: string, sizeKb: number | undefined): Promise<ScannedFile[] | undefined>;
     getRepoMeta(auth: GithubAuth, owner: string, repo: string): Promise<{
         defaultBranch: string;
     }>;
@@ -60,7 +60,10 @@ export declare class GithubService implements OnModuleInit, PrPublisher {
     private fetchFileContent;
     publish(userId: string, context: Extract<PrContext, {
         kind: 'github';
-    }>, feedback: PrFeedback): Promise<void>;
+    }>, feedback: PrFeedback): Promise<{
+        repeats?: RepeatStats;
+    }>;
+    private withoutRepeats;
     private postCheckRun;
     startReviewStatus(auth: GithubAuth, owner: string, repo: string, sha: string): Promise<number | undefined>;
     fail(userId: string, context: Extract<PrContext, {
@@ -112,6 +115,7 @@ export interface GithubReviewComment {
     reactions?: {
         '+1'?: number;
         '-1'?: number;
+        eyes?: number;
     };
 }
 export { buildSummaryBody };

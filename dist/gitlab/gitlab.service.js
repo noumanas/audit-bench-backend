@@ -8,6 +8,7 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var GitlabService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.GitlabService = void 0;
 exports.mapGitlabContributorStats = mapGitlabContributorStats;
@@ -20,13 +21,15 @@ const diff_ranges_1 = require("../common/diff-ranges");
 const pr_feedback_service_1 = require("../pr-feedback/pr-feedback.service");
 const pr_feedback_types_1 = require("../pr-feedback/pr-feedback.types");
 const inline_comment_1 = require("../pr-feedback/inline-comment");
+const repeat_findings_1 = require("../pr-feedback/repeat-findings");
 const gitlab_url_1 = require("../common/gitlab-url");
 const token_crypto_service_1 = require("../common/token-crypto.service");
-let GitlabService = class GitlabService {
+let GitlabService = GitlabService_1 = class GitlabService {
     prisma;
     config;
     prFeedback;
     tokenCrypto;
+    logger = new common_1.Logger(GitlabService_1.name);
     constructor(prisma, config, prFeedback, tokenCrypto) {
         this.prisma = prisma;
         this.config = config;
@@ -281,9 +284,45 @@ let GitlabService = class GitlabService {
     async publish(userId, context, feedback) {
         const token = await this.requireToken(userId);
         feedback = { ...feedback, viaUserAccount: { host: 'gitlab' } };
+        let repeats;
+        if (feedback.findings.length) {
+            try {
+                const { comments, states } = await this.earlierThreads(token, context.projectId, context.mrIid);
+                const deduped = (0, repeat_findings_1.withoutRepeatFindings)(feedback, comments, states);
+                feedback = deduped.feedback;
+                repeats = deduped.stats;
+            }
+            catch (err) {
+                this.logger.warn(`Couldn't read earlier MR threads, posting all findings: ${err.message}`);
+            }
+        }
         await this.postMrDiscussions(token, context.projectId, context.mrIid, context.diffRefs, feedback);
         await this.postMrNoteWithToken(token, context.projectId, context.mrIid, buildSummaryBody(feedback));
         await this.postCommitStatus(token, context.projectId, context.headSha, feedback);
+        return { repeats };
+    }
+    async earlierThreads(token, projectId, mrIid) {
+        const comments = [];
+        const states = new Map();
+        for (let page = 1; page <= 5; page++) {
+            const res = await fetch(`${this.baseUrl()}/projects/${projectId}/merge_requests/${mrIid}/discussions?per_page=100&page=${page}`, { headers: this.authHeaders(token) });
+            if (!res.ok)
+                throw new Error(`GitLab returned ${res.status} listing discussions`);
+            const batch = (await res.json());
+            for (const d of batch) {
+                const [root, ...replies] = d.notes ?? [];
+                if (!root)
+                    continue;
+                const path = root.position?.new_path ?? '';
+                comments.push({ id: root.id, body: root.body ?? '', path });
+                for (const n of replies)
+                    comments.push({ id: n.id, in_reply_to_id: root.id, body: n.body ?? '', path });
+                states.set(root.id, { resolved: Boolean(root.resolved), outdated: false });
+            }
+            if (batch.length < 100)
+                break;
+        }
+        return { comments, states };
     }
     async postMrDiscussions(token, projectId, mrIid, diffRefs, feedback) {
         const inline = feedback.findings.filter((f) => f.line !== null).slice(0, 50);
@@ -337,7 +376,7 @@ let GitlabService = class GitlabService {
     }
 };
 exports.GitlabService = GitlabService;
-exports.GitlabService = GitlabService = __decorate([
+exports.GitlabService = GitlabService = GitlabService_1 = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         config_1.ConfigService,

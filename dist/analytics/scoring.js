@@ -9,6 +9,7 @@ const SEVERITY_WEIGHT = {
     high: 15,
     medium: 6,
     low: 2,
+    info: 0,
 };
 const NPM_AUDIT_WEIGHT = {
     critical: 30,

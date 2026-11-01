@@ -1,10 +1,24 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.FINDING_STATUSES = exports.auditResultSchema = exports.findingSchema = void 0;
+exports.FINDING_STATUSES = exports.auditResultSchema = exports.findingSchema = exports.FINDING_CATEGORIES = void 0;
 const zod_1 = require("zod");
+exports.FINDING_CATEGORIES = [
+    'Security',
+    'Logic',
+    'Performance',
+    'Architecture',
+    'Maintainability',
+    'Testing',
+    'Semantic Accuracy',
+    'Reliability',
+    'Data Integrity',
+    'API Design',
+    'Concurrency',
+    'Resource Management',
+];
 exports.findingSchema = zod_1.z.object({
-    severity: zod_1.z.enum(['critical', 'high', 'medium', 'low']),
-    category: zod_1.z.enum(['Security', 'Logic', 'Performance', 'Architecture', 'Maintainability', 'Testing']),
+    severity: zod_1.z.enum(['critical', 'high', 'medium', 'low', 'info']),
+    category: zod_1.z.enum(exports.FINDING_CATEGORIES),
     title: zod_1.z.string().min(1),
     line: zod_1.z.number().int().nullable().optional().default(null),
     endLine: zod_1.z.number().int().nullable().optional(),
@@ -14,6 +28,9 @@ exports.findingSchema = zod_1.z.object({
     examplePatch: zod_1.z.string().nullable().optional().default(null),
     replacement: zod_1.z.string().nullable().optional(),
     confidence: zod_1.z.number().min(0).max(1),
+    evidence: zod_1.z.string().nullable().optional(),
+    failureScenario: zod_1.z.string().nullable().optional(),
+    testEvidence: zod_1.z.string().nullable().optional(),
 });
 exports.auditResultSchema = zod_1.z.object({
     verdict: zod_1.z.enum(['pass', 'needs_work', 'do_not_ship']),

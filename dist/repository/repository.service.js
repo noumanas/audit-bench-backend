@@ -168,7 +168,7 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
             isPublic: opts.isPublic,
             shareId: opts.shareId,
             requesterIpHash: opts.requesterIpHash,
-        }, rules.key);
+        }, rules);
         void this.processScan(job.id, filesToAnalyze, providerName, repoContext, Boolean(opts.localOnly), rules);
         return job;
     }
@@ -201,8 +201,10 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
             skipped.push({ path: f.path, reason: 'file_limit' });
         analyzable.splice(maxScanFiles);
         if (opts.repoFiles?.length && !opts.localOnly) {
-            for (const f of analyzable)
-                f.relatedContext = (0, related_context_1.relatedContextFor)(f, opts.repoFiles) || undefined;
+            for (const f of analyzable) {
+                const context = [(0, related_context_1.relatedContextFor)(f, opts.repoFiles), (0, related_context_1.testContextFor)(f, opts.repoFiles)].filter(Boolean);
+                f.relatedContext = context.join('\n\n') || undefined;
+            }
         }
         const secrets = (0, secrets_scanner_1.scanSecrets)(analyzable);
         const repoContext = `Reviewing a pull/merge request — only the lines this PR/MR actually changed are in scope for each file. ${analyzable.length} file(s) changed.`;
@@ -226,14 +228,14 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
                     filesSkipped: Math.max(opts.prSnapshot.changedFiles - analyzable.length, 0),
                 }
                 : undefined,
-        }, rules.key);
+        }, rules);
         void this.processScan(job.id, analyzable, providerName, repoContext, Boolean(opts.localOnly), rules);
         return job;
     }
-    async gateAndCreateJob(actor, files, providerName, jobDataBase, rulesKey) {
+    async gateAndCreateJob(actor, files, providerName, jobDataBase, rules = review_rules_service_1.NO_RULES) {
         const willInvokeAi = jobDataBase.localOnly
             ? false
-            : await this.anyFileNeedsFreshAiCall(files, providerName, rulesKey);
+            : await this.anyFileNeedsFreshAiCall(files, providerName, rules);
         const jobData = {
             userId: actor.id,
             organizationId: actor.organizationId,
@@ -250,7 +252,8 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
             }, (db) => db.scanJob.create({ data: jobData }))
             : this.prisma.scanJob.create({ data: jobData });
     }
-    async anyFileNeedsFreshAiCall(files, providerName, rulesKey) {
+    async anyFileNeedsFreshAiCall(files, providerName, rules) {
+        const rulesKey = rules.key || undefined;
         for (const file of files) {
             const hash = this.cache.hashFor(file.content, providerName, [], file.changedRanges, (0, cache_service_1.cacheExtraKey)(rulesKey, file.relatedContext));
             const cached = await this.cache.peek(hash);
@@ -258,7 +261,7 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
                 continue;
             if (file.changedRanges?.length)
                 return true;
-            const fullStage1 = await (0, run_stage1_1.runStage1)(file.content, file.path);
+            const fullStage1 = await (0, run_stage1_1.runStage1)(file.content, file.path, rules.thresholds);
             const stage1 = file.changedRanges ? (0, filter_to_ranges_1.filterStage1ToRanges)(fullStage1, file.changedRanges) : fullStage1;
             if (!stage1.clean)
                 return true;
@@ -289,6 +292,7 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
                         suppressFingerprints,
                         rulesKey: rules.key || undefined,
                         relatedContext: file.relatedContext,
+                        thresholds: rules.thresholds,
                     });
                     if (fromCache)
                         filesFromCache++;
@@ -443,13 +447,16 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
         const data = outcome.ok
             ? { prPublishedAt: new Date(), prPublishError: null }
             : { prPublishedAt: null, prPublishError: outcome.error };
-        await this.prisma.scanJob.update({ where: { id: jobId }, data });
+        await this.prisma.scanJob.update({
+            where: { id: jobId },
+            data: { ...data, ...(outcome.ok && outcome.repeats ? { prRepeatStats: { ...outcome.repeats } } : {}) },
+        });
         return data;
     }
     async buildPrFeedback(jobId, scanUrl) {
         const job = await this.prisma.scanJob.findUniqueOrThrow({ where: { id: jobId }, include: { files: true } });
         const snapshot = job.sourceType === 'github_pr' ? job.prSnapshot : null;
-        const findings = (0, inline_comment_1.withoutConflictingReplacements)(job.files.flatMap((file) => (Array.isArray(file.findings) ? file.findings : []).map((f) => ({
+        const all = (0, inline_comment_1.withoutConflictingReplacements)(job.files.flatMap((file) => (Array.isArray(file.findings) ? file.findings : []).map((f) => ({
             path: file.path,
             line: f.line,
             endLine: f.endLine ?? null,
@@ -462,7 +469,11 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
             examplePatch: f.examplePatch,
             replacement: f.replacement ?? null,
             confidence: f.confidence,
+            failureScenario: f.failureScenario ?? null,
+            testEvidence: f.testEvidence ?? null,
         }))));
+        const findings = all.filter((f) => f.severity !== 'info');
+        const suggestions = all.filter((f) => f.severity === 'info');
         const insights = (job.prInsights ?? undefined);
         const checks = snapshot
             ? (0, pr_insights_1.deterministicChecks)(snapshot, {
@@ -475,6 +486,7 @@ let RepositoryService = RepositoryService_1 = class RepositoryService {
             verdict: job.verdict ?? 'pass',
             summary: job.summary ?? '',
             findings,
+            ...(suggestions.length ? { suggestions } : {}),
             changedRanges: (job.changedRanges ?? undefined),
             scanUrl,
             readiness: (0, pr_insights_1.reconcileReadiness)((0, merge_readiness_1.readinessForScan)(job) ?? undefined, [

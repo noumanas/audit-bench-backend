@@ -1,0 +1,277 @@
+{
+  "date": "2026-11-01",
+  "provider": "gemini",
+  "summary": {
+    "bugs": 16,
+    "caught": 15,
+    "catchRate": 0.9375,
+    "cleanCases": 9,
+    "flaggedClean": 0,
+    "cleanFalseAlarmRate": 0,
+    "falsePositives": 0
+  },
+  "results": [
+    {
+      "id": "sql-injection",
+      "title": "Order lookup builds SQL from a query parameter",
+      "clean": false,
+      "caught": [
+        "SQL injection"
+      ],
+      "missed": [],
+      "falsePositives": []
+    },
+    {
+      "id": "missing-authz",
+      "title": "Invoice download checks login but not ownership",
+      "clean": false,
+      "caught": [
+        "Any logged-in user can download any invoice (no ownership check)"
+      ],
+      "missed": [],
+      "falsePositives": []
+    },
+    {
+      "id": "missing-await",
+      "title": "Payment captured without awaiting the result",
+      "clean": false,
+      "caught": [
+        "Capture not awaited; order marked paid even if capture fails"
+      ],
+      "missed": [],
+      "falsePositives": []
+    },
+    {
+      "id": "off-by-one",
+      "title": "Pagination skips the last item",
+      "clean": false,
+      "caught": [
+        "Off-by-one: each page returns one item too few"
+      ],
+      "missed": [],
+      "falsePositives": []
+    },
+    {
+      "id": "path-traversal",
+      "title": "File download joins a user-supplied name",
+      "clean": false,
+      "caught": [
+        "Path traversal: ../ escapes the uploads folder"
+      ],
+      "missed": [],
+      "falsePositives": []
+    },
+    {
+      "id": "secret-logged",
+      "title": "Login logs the password on failure",
+      "clean": false,
+      "caught": [
+        "Plaintext password written to logs"
+      ],
+      "missed": [],
+      "falsePositives": []
+    },
+    {
+      "id": "null-deref",
+      "title": "Profile handler assumes the address exists",
+      "clean": false,
+      "caught": [
+        "Crashes when the user has no address"
+      ],
+      "missed": [],
+      "falsePositives": []
+    },
+    {
+      "id": "race-condition",
+      "title": "Coupon redemption checks then updates without a transaction",
+      "clean": false,
+      "caught": [
+        "Race: concurrent redemptions exceed maxUses (read-then-write)"
+      ],
+      "missed": [],
+      "falsePositives": []
+    },
+    {
+      "id": "python-mutable-default",
+      "title": "Python helper shares a default list between calls",
+      "clean": false,
+      "caught": [
+        "Mutable default argument shared across calls"
+      ],
+      "missed": [],
+      "falsePositives": []
+    },
+    {
+      "id": "go-ignored-error",
+      "title": "Go handler ignores the error from decoding the request",
+      "clean": false,
+      "caught": [
+        "Decode error ignored; invalid input creates an empty order"
+      ],
+      "missed": [],
+      "falsePositives": []
+    },
+    {
+      "id": "wrong-comparison",
+      "title": "Admin check compares the wrong field",
+      "clean": false,
+      "caught": [
+        "Impersonated role grants real admin rights"
+      ],
+      "missed": [],
+      "falsePositives": []
+    },
+    {
+      "id": "unbounded-query",
+      "title": "Export loads every row into memory",
+      "clean": false,
+      "caught": [
+        "Unbounded query; large tenants exhaust memory"
+      ],
+      "missed": [],
+      "falsePositives": []
+    },
+    {
+      "id": "clean-refactor",
+      "title": "Clean: rename and extract a helper",
+      "clean": true,
+      "caught": [],
+      "missed": [],
+      "falsePositives": []
+    },
+    {
+      "id": "clean-parameterized",
+      "title": "Clean: parameterized query with ownership check",
+      "clean": true,
+      "caught": [],
+      "missed": [],
+      "falsePositives": []
+    },
+    {
+      "id": "clean-python",
+      "title": "Clean: Python helper with safe defaults",
+      "clean": true,
+      "caught": [],
+      "missed": [],
+      "falsePositives": []
+    },
+    {
+      "id": "clean-guarded",
+      "title": "Clean: async handler with validation and error handling",
+      "clean": true,
+      "caught": [],
+      "missed": [],
+      "falsePositives": []
+    },
+    {
+      "id": "flat-mapper",
+      "title": "Clean: row mapper with many flat branches, all covered by tests",
+      "clean": true,
+      "caught": [],
+      "missed": [],
+      "falsePositives": []
+    },
+    {
+      "id": "mixed-responsibilities",
+      "title": "Checkout mixes pricing, payment and email, with two tax rules that disagree",
+      "clean": false,
+      "caught": [
+        "receipt tax differs from the tax charged"
+      ],
+      "missed": [],
+      "falsePositives": []
+    },
+    {
+      "id": "semantic-unattributed",
+      "title": "Narration states model sentiment labels as fact",
+      "clean": false,
+      "caught": [],
+      "missed": [
+        "model judgment presented as fact"
+      ],
+      "falsePositives": []
+    },
+    {
+      "id": "semantic-attributed",
+      "title": "Clean: narration attributes sentiment labels to the model",
+      "clean": true,
+      "caught": [],
+      "missed": [],
+      "falsePositives": []
+    },
+    {
+      "id": "doc-assertion-whole-doc",
+      "title": "Docs test searches the whole document for each tool",
+      "clean": false,
+      "caught": [
+        "assertion can match another tool's section"
+      ],
+      "missed": [],
+      "falsePositives": []
+    },
+    {
+      "id": "doc-assertion-section",
+      "title": "Clean: docs test checks each tool's own section",
+      "clean": true,
+      "caught": [],
+      "missed": [],
+      "falsePositives": []
+    },
+    {
+      "id": "covered-edge-case",
+      "title": "Clean: missing-email case handled and covered by tests",
+      "clean": true,
+      "caught": [],
+      "missed": [],
+      "falsePositives": []
+    },
+    {
+      "id": "insufficient-evidence",
+      "title": "Clean: query input goes through a helper the review cannot see",
+      "clean": true,
+      "caught": [],
+      "missed": [],
+      "falsePositives": []
+    },
+    {
+      "id": "weak-test-regression",
+      "title": "Test passes although the discount it covers is broken",
+      "clean": false,
+      "caught": [
+        "assertion cannot catch a wrong discount"
+      ],
+      "missed": [],
+      "falsePositives": []
+    }
+  ],
+  "rechecks": [
+    {
+      "id": "valid-explanation",
+      "title": "Contributor is right: flat mapper, branches covered by tests",
+      "status": "not_an_issue",
+      "passed": true,
+      "expected": [
+        "not_an_issue"
+      ]
+    },
+    {
+      "id": "incorrect-explanation",
+      "title": "Contributor is wrong: the id is not guaranteed numeric",
+      "status": "still_applies",
+      "passed": true,
+      "expected": [
+        "still_applies"
+      ]
+    },
+    {
+      "id": "unsupported-test-claim",
+      "title": "Contributor says tests cover it, but no test mentions the function",
+      "status": "still_applies",
+      "passed": true,
+      "expected": [
+        "still_applies",
+        "needs_info"
+      ]
+    }
+  ]
+}
