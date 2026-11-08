@@ -7,6 +7,7 @@ import { SignupDto } from "./dto/signup.dto";
 import { LoginDto } from "./dto/login.dto";
 import { ActivityService } from "../activity/activity.service";
 import { RequestContext } from "../activity/request-context";
+export declare const SALT_ROUNDS = 12;
 export declare class AuthService {
     private readonly prisma;
     private readonly jwt;

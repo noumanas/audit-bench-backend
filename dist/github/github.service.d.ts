@@ -8,6 +8,7 @@ import { GithubAppAuthService, GithubAuth } from './github-app-auth.service';
 export type { GithubAuth };
 import { ContributorStat, ScannedFile } from '../analysis/types';
 import { buildSummaryBody } from '../pr-feedback/summary-comment';
+export declare function fetchWithRetry(url: string, init: RequestInit, attempts?: number): Promise<Response>;
 export declare class GithubService implements OnModuleInit, PrPublisher {
     private readonly prisma;
     private readonly prFeedback;

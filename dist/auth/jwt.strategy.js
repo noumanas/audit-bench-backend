@@ -32,6 +32,9 @@ let JwtStrategy = class JwtStrategy extends (0, passport_1.PassportStrategy)(pas
             throw new common_1.UnauthorizedException('User no longer exists');
         if (!user.isActive)
             throw new common_1.UnauthorizedException('This account has been suspended.');
+        if (user.passwordChangedAt && (payload.iat ?? 0) * 1000 < user.passwordChangedAt.getTime()) {
+            throw new common_1.UnauthorizedException('Your password was changed. Please sign in again.');
+        }
         return { id: user.id, email: user.email, role: user.role, organizationId: user.organizationId };
     }
 };
