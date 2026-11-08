@@ -3,6 +3,8 @@ import { Role } from '@prisma/client';
 export interface JwtPayload {
   sub: string; // user id
   email: string;
+  /** Issued-at, in seconds; added by the JWT library when signing. */
+  iat?: number;
 }
 
 export interface RequestUser {

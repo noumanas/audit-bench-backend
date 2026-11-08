@@ -11,6 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 var GithubService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildSummaryBody = exports.GithubService = void 0;
+exports.fetchWithRetry = fetchWithRetry;
 exports.mapGithubContributorStats = mapGithubContributorStats;
 exports.explainPostFailure = explainPostFailure;
 const common_1 = require("@nestjs/common");
@@ -33,6 +34,22 @@ const github_pr_snapshot_1 = require("../common/github-pr-snapshot");
 const GITHUB_API = 'https://api.github.com';
 const REPO_CONTEXT_MAX_KB = 50 * 1024;
 const PR_FILE_FETCH_CONCURRENCY = 8;
+const FILE_FETCH_ATTEMPTS = 3;
+async function fetchWithRetry(url, init, attempts = FILE_FETCH_ATTEMPTS) {
+    for (let attempt = 1;; attempt++) {
+        try {
+            const res = await fetch(url, init);
+            if (attempt >= attempts || (res.status < 500 && res.status !== 429))
+                return res;
+            await res.body?.cancel();
+        }
+        catch (err) {
+            if (attempt >= attempts)
+                throw err;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** (attempt - 1)));
+    }
+}
 let GithubService = GithubService_1 = class GithubService {
     prisma;
     prFeedback;
@@ -343,7 +360,7 @@ let GithubService = GithubService_1 = class GithubService {
     }
     async fetchFileContent(token, owner, repo, path, ref) {
         const encodedPath = path.split('/').map(encodeURIComponent).join('/');
-        const res = await fetch(`${GITHUB_API}/repos/${(0, github_url_1.repoApiPath)(owner, repo)}/contents/${encodedPath}?ref=${encodeURIComponent(ref)}`, {
+        const res = await fetchWithRetry(`${GITHUB_API}/repos/${(0, github_url_1.repoApiPath)(owner, repo)}/contents/${encodedPath}?ref=${encodeURIComponent(ref)}`, {
             headers: this.authHeaders(token),
         });
         if (!res.ok)

@@ -535,3 +535,67 @@ export function newSignupTeamEmail(input: NewSignupTeamEmailInput): RenderedEmai
     `\nLocation: ${input.location ?? 'Unknown'}\nWhen: ${when}\n\nOpen admin panel: ${input.adminUrl}`;
   return { subject: `[New user] ${input.email} via ${input.method}`, html, text };
 }
+
+export interface PasswordResetCodeEmailInput {
+  name: string | null;
+  code: string;
+  expiresInMinutes: number;
+}
+
+/** Step 1 of forgot-password (see PasswordResetService): the one-time code. */
+export function passwordResetCodeEmail({ name, code, expiresInMinutes }: PasswordResetCodeEmailInput): RenderedEmail {
+  const greeting = name ? `Hi ${escapeHtml(name)},` : 'Hi there,';
+  const footerNote =
+    "You're getting this because someone asked to reset the password for this address. If it wasn't you, ignore this email: your password won't change.";
+  const codeBox = `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 20px;">
+  <tr><td style="padding:14px 22px;border:1px solid ${C.line};border-radius:10px;background:${C.paper};font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:30px;font-weight:700;letter-spacing:8px;color:${C.ink};">${escapeHtml(code)}</td></tr>
+</table>`;
+  const html = layout({
+    preheader: `Your Audit Bench Ai password reset code is ${code}.`,
+    heading: 'Reset your password',
+    bodyHtml:
+      paragraph(greeting) +
+      paragraph('Enter this code on the reset page to choose a new password:') +
+      codeBox +
+      paragraph(
+        `The code expires in <strong>${expiresInMinutes} minutes</strong> and works once. Never share it: Audit Bench Ai will never ask you for it.`,
+      ),
+    footerNote,
+  });
+  const text =
+    `${name ? `Hi ${name},` : 'Hi there,'}\n\nYour Audit Bench Ai password reset code is: ${code}\n\n` +
+    `It expires in ${expiresInMinutes} minutes and works once. Never share it.` +
+    textFooter(footerNote);
+  return { subject: `${code} is your Audit Bench Ai reset code`, html, text };
+}
+
+export interface PasswordChangedEmailInput {
+  name: string | null;
+  appOrigin: string;
+}
+
+/** Sent after a successful reset, so the owner hears about it if it wasn't them. */
+export function passwordChangedEmail({ name, appOrigin }: PasswordChangedEmailInput): RenderedEmail {
+  const greeting = name ? `Hi ${escapeHtml(name)},` : 'Hi there,';
+  const footerNote = 'This is a security notice about your account, so it is sent even if you unsubscribed from other emails.';
+  const resetUrl = `${appOrigin}/forgot-password`;
+  const html = layout({
+    preheader: 'The password for your Audit Bench Ai account was just changed.',
+    heading: 'Your password was changed',
+    bodyHtml:
+      paragraph(greeting) +
+      paragraph(
+        'The password for your Audit Bench Ai account was just changed, and every other device was signed out.',
+      ) +
+      paragraph(
+        `If this wasn't you, reset your password straight away and reply to this email so we can help secure your account.`,
+      ) +
+      button('Reset password', resetUrl),
+    footerNote,
+  });
+  const text =
+    `${name ? `Hi ${name},` : 'Hi there,'}\n\nThe password for your Audit Bench Ai account was just changed, and every other device was signed out.\n\n` +
+    `If this wasn't you, reset your password now: ${resetUrl}\nand reply to this email so we can help.` +
+    textFooter(footerNote);
+  return { subject: 'Your Audit Bench Ai password was changed', html, text };
+}

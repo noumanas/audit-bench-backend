@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.AuthService = void 0;
+exports.AuthService = exports.SALT_ROUNDS = void 0;
 const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
 const email_domain_1 = require("./email-domain");
@@ -18,7 +18,7 @@ const bcrypt = require("bcryptjs");
 const prisma_service_1 = require("../prisma/prisma.service");
 const welcome_email_service_1 = require("../email/welcome-email.service");
 const activity_service_1 = require("../activity/activity.service");
-const SALT_ROUNDS = 12;
+exports.SALT_ROUNDS = 12;
 const DEFAULT_PLAN_SLUG = "free";
 let AuthService = class AuthService {
     prisma;
@@ -47,7 +47,7 @@ let AuthService = class AuthService {
         });
         if (!plan)
             throw new Error(`Default plan "${DEFAULT_PLAN_SLUG}" is not seeded`);
-        const passwordHash = await bcrypt.hash(dto.password, SALT_ROUNDS);
+        const passwordHash = await bcrypt.hash(dto.password, exports.SALT_ROUNDS);
         const role = "user";
         const user = await this.prisma.user.create({
             data: {
@@ -91,8 +91,8 @@ let AuthService = class AuthService {
         }
         if (!user.isActive)
             await failed("suspended", user.id);
-        if (bcrypt.getRounds(user.passwordHash) < SALT_ROUNDS) {
-            const upgradedHash = await bcrypt.hash(dto.password, SALT_ROUNDS);
+        if (bcrypt.getRounds(user.passwordHash) < exports.SALT_ROUNDS) {
+            const upgradedHash = await bcrypt.hash(dto.password, exports.SALT_ROUNDS);
             await this.prisma.user.update({
                 where: { id: user.id },
                 data: { passwordHash: upgradedHash },

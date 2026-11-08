@@ -20,7 +20,7 @@ import { RequestContext } from "../activity/request-context";
 // Bumped from 10 → 12 per current OWASP guidance. Existing hashes at the old
 // cost remain valid (bcrypt encodes its own cost factor) — login() upgrades
 // them opportunistically rather than forcing a mass reset.
-const SALT_ROUNDS = 12;
+export const SALT_ROUNDS = 12;
 const DEFAULT_PLAN_SLUG = "free";
 
 @Injectable()
