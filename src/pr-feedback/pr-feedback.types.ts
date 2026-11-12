@@ -122,4 +122,4 @@ export interface PrPublisher {
 
 /** Signs every review summary, so readers of the PR know where it came from. */
 export const REVIEW_FOOTER =
-  '<sub>Reviewed by [Audit Bench Ai](https://auditbenchai.com/?utm_source=pr_review&utm_medium=comment) · AI code review for security, logic and performance · [Review any public PR free](https://auditbenchai.com/scan?utm_source=pr_review&utm_medium=comment)</sub>';
+  '<sub>Reviewed by [Audit Bench Ai](https://auditbenchai.com/?utm_source=pr_review&utm_medium=comment) · Build fast. Check what ships. · [Review any public PR free](https://auditbenchai.com/scan?utm_source=pr_review&utm_medium=comment)</sub>';

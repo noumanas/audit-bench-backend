@@ -1,3 +1,4 @@
+import { BRAND_MARK_DATA_URI, BRAND_PURPLE } from '../common/brand';
 import { MergeReadiness } from '../common/merge-readiness';
 import { PrFeedback, REVIEW_FOOTER, automatedReviewNotice } from './pr-feedback.types';
 import { PreMergeCheck } from './pr-insights';
@@ -5,8 +6,10 @@ import { PreMergeCheck } from './pr-insights';
 /** Hidden marker on the summary, so Audit Bench Ai can tell its own summaries apart. */
 export const SUMMARY_MARKER = '<!-- audit-bench:summary -->';
 
+// Brand header: white mark on a black label, "Open full report" on purple.
 const OPEN_BADGE =
-  'https://img.shields.io/badge/Audit%20Bench%20Ai-Open%20full%20report%20%E2%86%97-2b5be3?style=for-the-badge';
+  `https://img.shields.io/badge/Audit%20Bench%20Ai-Open%20full%20report%20%E2%86%97-${BRAND_PURPLE}` +
+  `?style=for-the-badge&labelColor=000000&logo=${encodeURIComponent(BRAND_MARK_DATA_URI)}`;
 
 const VERDICT_LABEL = { pass: '✅ Pass', needs_work: '⚠️ Needs work', do_not_ship: '⛔ Do not ship' } as const;
 
