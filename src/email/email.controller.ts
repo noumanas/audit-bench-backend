@@ -103,9 +103,11 @@ function unsubscribePage(ok: boolean): string {
     ? "You won't get upgrade or reminder emails anymore. Account emails like team invites and plan updates will still reach you."
     : 'This unsubscribe link is incomplete or has been changed. Use the link from the bottom of the most recent email, or reply to it and we will remove you.';
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title></head>
-<body style="margin:0;background:#f2f3ee;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#10141c;">
-<div style="max-width:480px;margin:80px auto;padding:36px 32px;background:#fff;border:1px solid #dde0d8;border-radius:12px;">
+<body style="margin:0;background:#f7f7f7;font-family:Outfit,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#080808;">
+<div style="max-width:480px;margin:80px auto;padding:28px 32px 36px;background:#fff;border:1px solid #e3e3e3;border-radius:12px;">
+<img src="https://auditbenchai.com/brand/email-lockup.png" width="128" height="50" alt="Audit Bench Ai" style="display:block;margin:0 0 14px -4px;">
+<div style="width:96px;height:3px;margin:0 0 24px;background:linear-gradient(90deg,#7546f4 0 50%,#ff783b 50% 81%,#ffe36a 81%);"></div>
 <h1 style="margin:0 0 12px;font-size:22px;">${title}</h1>
-<p style="margin:0;font-size:15px;line-height:1.6;color:#6b7280;">${escapeHtml(message)}</p>
+<p style="margin:0;font-size:15px;line-height:1.6;color:#5c5c5c;">${escapeHtml(message)}</p>
 </div></body></html>`;
 }

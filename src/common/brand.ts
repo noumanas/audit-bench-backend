@@ -1,6 +1,6 @@
 /**
- * Brand values for what the backend draws onto GitHub and GitLab: the PR
- * summary's header badge and the README score badge. Same artwork and purple
+ * Brand values for what the backend draws outside the app: the PR summary's
+ * header badge, the README score badge and emails. Same artwork and colours
  * as the website (front-end Logo.tsx / globals.css).
  */
 export const BRAND_PURPLE = '7546f4';
@@ -11,3 +11,11 @@ export const BRAND_MARK_SVG =
 
 /** shields.io takes a custom logo as a base64 data URI. */
 export const BRAND_MARK_DATA_URI = `data:image/svg+xml;base64,${Buffer.from(BRAND_MARK_SVG).toString('base64')}`;
+
+/**
+ * Black "audit bench" lockup on white, 256x100 (shown at 128x50). Served by the
+ * website from public/brand/; emails need an absolute, publicly reachable URL.
+ */
+export const EMAIL_LOGO_URL = 'https://auditbenchai.com/brand/email-lockup.png';
+
+export const BRAND_TAGLINE = 'Build fast. Check what ships.';

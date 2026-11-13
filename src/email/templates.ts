@@ -1,11 +1,14 @@
 /**
  * Branded email templates. Email clients ignore <style> blocks and most
  * modern CSS, so everything here is table layout + inline styles; colors are
- * the site's ink/paper/cobalt palette (see front-end globals.css).
+ * the brand palette (see front-end globals.css): ink and paper, brand purple
+ * for actions, and the purple/orange/yellow stripe under the logo.
  *
  * Every template returns subject + html + a plain-text alternative, and
  * escapes anything user-supplied (names, org names, admin notes).
  */
+
+import { BRAND_TAGLINE, EMAIL_LOGO_URL } from '../common/brand';
 
 export interface RenderedEmail {
   subject: string;
@@ -14,17 +17,31 @@ export interface RenderedEmail {
 }
 
 const C = {
-  ink: '#10141c',
-  paper: '#f2f3ee',
+  ink: '#080808',
+  paper: '#f7f7f7',
   card: '#ffffff',
-  line: '#dde0d8',
-  muted: '#6b7280',
-  cobalt: '#2b5be3',
+  line: '#e3e3e3',
+  muted: '#5c5c5c',
+  /** Brand purple: buttons, links and highlights. */
+  cobalt: '#7546f4',
+  orange: '#ff783b',
+  yellow: '#ffe36a',
   pass: '#1f7a4d',
   critical: '#c92a3d',
 };
 
-const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+// Outfit is the brand face; most mail clients can't load web fonts, so the
+// system stack is what nearly everyone sees.
+const FONT = "Outfit,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+
+/** Purple / orange / yellow bar in the brand book's proportions. */
+const BRAND_STRIPE = `<table role="presentation" width="96" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px;">
+  <tr>
+    <td width="48" height="3" bgcolor="${C.cobalt}" style="font-size:0;line-height:0;">&nbsp;</td>
+    <td width="30" height="3" bgcolor="${C.orange}" style="font-size:0;line-height:0;">&nbsp;</td>
+    <td width="18" height="3" bgcolor="${C.yellow}" style="font-size:0;line-height:0;">&nbsp;</td>
+  </tr>
+</table>`;
 
 export function escapeHtml(value: string): string {
   return value
@@ -74,16 +91,15 @@ function layout({ preheader, heading, bodyHtml, footerNote, unsubscribeUrl }: La
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${C.paper};">
   <tr><td align="center" style="padding:32px 16px;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;">
-      <tr><td style="padding:0 4px 20px;font-family:${FONT};font-size:17px;font-weight:700;letter-spacing:-0.2px;color:${C.ink};">
-        audit<span style="color:${C.cobalt};">/</span>bench <span style="font-weight:500;color:${C.muted};">ai</span>
-      </td></tr>
-      <tr><td style="background:${C.card};border:1px solid ${C.line};border-radius:12px;padding:36px 32px;">
+      <tr><td style="background:${C.card};border:1px solid ${C.line};border-radius:12px;padding:28px 32px 36px;">
+        <a href="https://auditbenchai.com" style="display:inline-block;margin:0 0 14px -4px;"><img src="${EMAIL_LOGO_URL}" width="128" height="50" alt="Audit Bench Ai" style="display:block;border:0;width:128px;height:50px;font-family:${FONT};font-size:17px;font-weight:700;color:${C.ink};"></a>
+        ${BRAND_STRIPE}
         <h1 style="margin:0 0 20px;font-family:${FONT};font-size:22px;line-height:1.3;font-weight:700;color:${C.ink};">${escapeHtml(heading)}</h1>
         ${bodyHtml}
       </td></tr>
       <tr><td style="padding:20px 4px 0;font-family:${FONT};font-size:12px;line-height:1.6;color:${C.muted};">
         ${footerNote}<br>
-        Audit Bench Ai · AI code review for every pull request${unsubscribe}
+        Audit Bench Ai · ${BRAND_TAGLINE}${unsubscribe}
       </td></tr>
     </table>
   </td></tr>
@@ -93,7 +109,7 @@ function layout({ preheader, heading, bodyHtml, footerNote, unsubscribeUrl }: La
 }
 
 function textFooter(footerNote: string, unsubscribeUrl?: string): string {
-  return `\n\n—\n${footerNote}\nAudit Bench Ai${unsubscribeUrl ? `\nUnsubscribe: ${unsubscribeUrl}` : ''}`;
+  return `\n\n—\n${footerNote}\nAudit Bench Ai · ${BRAND_TAGLINE}${unsubscribeUrl ? `\nUnsubscribe: ${unsubscribeUrl}` : ''}`;
 }
 
 /** The subset of a Plan row the comparison table reads. */
